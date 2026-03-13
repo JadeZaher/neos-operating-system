@@ -461,7 +461,7 @@ Build the decentralized sync layer (GunDB relay + IPFS pinning), embeddable micr
 
 ---
 
-### 15. [ ] member_profile_harden_20260313 -- Member Profile Flow: Review & Harden
+### 15. [~] member_profile_harden_20260313 -- Member Profile Flow: Review & Harden
 **Priority:** P0
 **Type:** Bug (Review/Harden)
 **Status:** Pending
