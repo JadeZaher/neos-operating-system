@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Emergency — {{ state.state if state else 'Not Found' }}{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/emergency" class="hover:text-neos-primary transition-colors">Emergency</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Detail</span>
+</nav>
+
+{% if state %}
+<div class="max-w-4xl space-y-6">
+  {# Status header #}
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+    <div class="flex items-start justify-between mb-4">
+      <h1 class="text-2xl font-bold text-neos-text">Emergency Record</h1>
+      <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold capitalize
+        {% if state.state == 'open' %}bg-red-100 text-red-700
+        {% elif state.state == 'half_open' %}bg-yellow-100 text-yellow-700
+        {% else %}bg-green-100 text-green-700{% endif %}">{{ state.state | replace('_', ' ') }}</span>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div>
+        <span class="text-neos-muted block text-xs font-medium uppercase">Declared By</span>
+        <span class="font-medium">{{ state.declared_by or '—' }}</span>
+      </div>
+      <div>
+        <span class="text-neos-muted block text-xs font-medium uppercase">Declared At</span>
+        <span class="font-medium">{{ state.declared_at.strftime('%Y-%m-%d %H:%M UTC') if state.declared_at else '—' }}</span>
+      </div>
+      <div>
+        <span class="text-neos-muted block text-xs font-medium uppercase">Auto-Revert At</span>
+        <span class="font-medium
+          {% if state.state == 'open' %}text-red-600{% endif %}">{{ state.auto_revert_at.strftime('%Y-%m-%d %H:%M UTC') if state.auto_revert_at else '—' }}</span>
+      </div>
+      <div>
+        <span class="text-neos-muted block text-xs font-medium uppercase">Circuit Breaker</span>
+        <span class="font-medium capitalize">{{ state.state | replace('_', ' ') }}</span>
+      </div>
+    </div>
+  </div>
+
+  {# Reason #}
+  {% if state.notes %}
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+    <h2 class="font-semibold text-base text-neos-text mb-3">Reason for Declaration</h2>
+    <div class="text-sm text-neos-text whitespace-pre-wrap">{{ state.notes }}</div>
+  </div>
+  {% endif %}
+
+  {# Actions #}
+  {% if state.state == 'open' %}
+  <div class="flex gap-3">
+    <form method="POST" action="/dashboard/emergency/{{ state.id }}/resolve">
+      <button type="submit" class="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">Resolve Emergency</button>
+    </form>
+    <button type="button"
+            class="px-4 py-2 text-sm font-medium bg-neos-primary text-white rounded-lg hover:bg-neos-secondary transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Help me assess whether this emergency can be resolved safely'; document.querySelector('#chat-send-form').requestSubmit()">
+      AI Resolution Assessment
+    </button>
+  </div>
+  {% endif %}
+
+  <a href="/dashboard/emergency" class="inline-block px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">Back to Emergency Dashboard</a>
+</div>
+{% endif %}
+{% endblock %}

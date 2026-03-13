@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Conflict {{ conflict.case_id if conflict else 'Not Found' }}{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/conflicts" class="hover:text-neos-primary transition-colors">Conflicts</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">{{ conflict.case_id if conflict else 'Not Found' }}</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+{% if conflict %}
+<div class="flex flex-col lg:flex-row gap-6">
+  {# Main content #}
+  <div class="flex-1 space-y-6">
+    {# Header card #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h1 class="text-2xl font-bold text-neos-text">{{ conflict.case_id }}</h1>
+          <p class="text-sm text-neos-muted mt-1">
+            Tier {{ conflict.tier }} —
+            {% if conflict.tier == 1 %}NVC Direct Dialogue
+            {% elif conflict.tier == 2 %}Facilitated Coaching
+            {% elif conflict.tier == 3 %}Harm Circle
+            {% elif conflict.tier == 4 %}Community Impact Review{% endif %}
+          </p>
+        </div>
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold capitalize
+          {% if conflict.status == 'open' %}bg-yellow-100 text-yellow-700
+          {% elif conflict.status == 'in_progress' %}bg-blue-100 text-blue-700
+          {% elif conflict.status == 'resolved' %}bg-green-100 text-green-700
+          {% elif conflict.status == 'escalated' %}bg-red-100 text-red-700
+          {% else %}bg-gray-100 text-gray-600{% endif %}">{{ conflict.status | replace('_', ' ') }}</span>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+          <span class="text-neos-muted block text-xs font-medium uppercase">Severity</span>
+          <span class="font-medium capitalize">{{ conflict.severity }}</span>
+        </div>
+        <div>
+          <span class="text-neos-muted block text-xs font-medium uppercase">Scope</span>
+          <span class="font-medium capitalize">{{ conflict.scope }}</span>
+        </div>
+        <div>
+          <span class="text-neos-muted block text-xs font-medium uppercase">Safety Flag</span>
+          {% if conflict.safety_flag %}
+          <span class="text-red-600 font-semibold">&#9888; Active</span>
+          {% else %}
+          <span class="text-green-600">None</span>
+          {% endif %}
+        </div>
+        <div>
+          <span class="text-neos-muted block text-xs font-medium uppercase">Created</span>
+          <span class="font-medium">{{ conflict.created_at.strftime('%Y-%m-%d %H:%M') if conflict.created_at else '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Triage notes #}
+    {% if conflict.triage_notes %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+      <h2 class="font-semibold text-base text-neos-text mb-3">Triage Notes</h2>
+      <div class="text-sm text-neos-text whitespace-pre-wrap">{{ conflict.triage_notes }}</div>
+    </div>
+    {% endif %}
+
+    {# Resolution summary #}
+    {% if conflict.resolution_summary %}
+    <div class="bg-green-50 border border-green-200 rounded-xl p-6">
+      <h2 class="font-semibold text-base text-green-800 mb-3">Resolution Summary</h2>
+      <div class="text-sm text-green-700 whitespace-pre-wrap">{{ conflict.resolution_summary }}</div>
+    </div>
+    {% endif %}
+
+    {# Repair agreements #}
+    {% if repairs is defined and repairs %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+      <h2 class="font-semibold text-base text-neos-text mb-3">Repair Agreements</h2>
+      <div class="space-y-3">
+        {% for repair in repairs %}
+        <div class="border border-neos-border rounded-lg p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-neos-text">{{ repair.title }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
+              {% if repair.status == 'active' %}bg-green-100 text-green-700
+              {% elif repair.status == 'completed' %}bg-blue-100 text-blue-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">{{ repair.status }}</span>
+          </div>
+          <p class="text-xs text-neos-muted">Created {{ repair.created_at.strftime('%Y-%m-%d') if repair.created_at else '—' }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Sidebar actions #}
+  <div class="w-full lg:w-72 space-y-4">
+    {# AI guidance prompt #}
+    <div class="bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-4">
+      <h3 class="text-sm font-semibold text-neos-primary mb-2">AI Guidance</h3>
+      <p class="text-xs text-neos-muted mb-3">Ask the governance agent to help facilitate this conflict resolution process.</p>
+      <button type="button"
+              class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+              onclick="document.getElementById('chat-message-input').value='Help me facilitate conflict {{ conflict.case_id }} (Tier {{ conflict.tier }}, {{ conflict.severity }} severity)'; document.querySelector('#chat-send-form').requestSubmit()">
+        Get AI Facilitation Help
+      </button>
+    </div>
+
+    {# Status transitions #}
+    {% if conflict.status != 'resolved' %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-4">
+      <h3 class="text-sm font-semibold text-neos-text mb-3">Actions</h3>
+      <form method="POST" action="/dashboard/conflicts/{{ conflict.id }}/status" class="space-y-3">
+        {% if conflict.status == 'open' %}
+        <input type="hidden" name="new_status" value="in_progress">
+        <button type="submit" class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors">Begin Resolution Process</button>
+        {% elif conflict.status == 'in_progress' %}
+        <button type="submit" name="new_status" value="resolved" class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors">Mark Resolved</button>
+        <button type="submit" name="new_status" value="escalated" class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">Escalate to Next Tier</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

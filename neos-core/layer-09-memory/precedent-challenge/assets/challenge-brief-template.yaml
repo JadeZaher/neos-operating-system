@@ -1,0 +1,56 @@
+# NEOS Precedent Challenge Brief Template
+# Produced by the challenger when initiating a formal precedent challenge.
+# Submitted to the deciding body for ACT review.
+
+challenge_brief:
+  # --- Challenge Identification ---
+  challenge_id: ""             # Unique ID, e.g., PCH-OMNI-2026-003
+  filing_date: ""              # ISO 8601 date of challenge submission
+  challenger: ""               # Name of the participant filing the challenge
+  challenger_role: ""          # Their role in the ecosystem (e.g., TH member, AE steward)
+
+  # --- Challenged Precedent ---
+  challenged_precedent:
+    record_id: ""              # Decision record ID being challenged (e.g., DR-OMNI-2024-018)
+    date: ""                   # Date the original precedent was established
+    holding: ""                # Quoted holding from the original decision record
+    ratio_decidendi: ""        # Quoted ratio decidendi from the original record
+    precedent_level: ""        # routine | governance | constitutional
+    original_deciding_body: "" # Who made the original decision
+    current_status: ""         # active | modified (should be active for a valid challenge)
+
+  # --- Challenge Grounds ---
+  grounds:                     # One or more grounds for challenge
+    - ground_type: ""          # changed_circumstances | flawed_rationale | harmful_outcomes | conflicting_precedent | better_alternative
+      description: ""          # Detailed description of the ground
+      evidence: ""             # Documented evidence supporting this ground
+      # changed_circumstances: what conditions have changed since the original decision
+      # flawed_rationale: what error exists in the original reasoning
+      # harmful_outcomes: what harmful consequences the precedent is producing
+      # conflicting_precedent: which other precedent conflicts and how
+      # better_alternative: what superior approach has been identified
+
+  # --- Proposed Alternative ---
+  proposed_alternative:
+    new_holding: ""            # What the challenger proposes should replace the current holding
+    new_rationale: ""          # The reasoning supporting the proposed alternative
+    scope: ""                  # Whether this replaces, modifies, or narrows the original precedent
+
+  # --- Impact Analysis ---
+  impact:
+    affected_parties: []       # Who is affected by this challenge (individuals, circles, roles)
+    affected_agreements: []    # Agreement IDs affected if the precedent is overruled
+    affected_precedents: []    # Other decision record IDs that reference the challenged precedent
+    risk_assessment: ""        # What risks arise from overruling vs. maintaining the precedent
+
+  # --- Deciding Body ---
+  deciding_body: ""            # The body that will review this challenge
+  deciding_body_basis: ""      # Why this body is the correct reviewer (original decision maker or successor)
+  process_requirement: ""      # consent (routine/governance) | consensus (constitutional)
+
+  # --- Challenge Outcome (filled by deciding body after review) ---
+  outcome:
+    decision: ""               # upheld | modified | overruled
+    outcome_record_id: ""      # Decision record ID documenting the outcome
+    reasoning: ""              # Summary of the deciding body's reasoning
+    date: ""                   # ISO 8601 date of outcome

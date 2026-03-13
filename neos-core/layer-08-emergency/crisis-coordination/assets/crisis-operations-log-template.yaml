@@ -1,0 +1,79 @@
+# Crisis Operations Log Template -- output artifact of crisis-coordination
+# One log per emergency. Maintain in real time during active emergency.
+
+crisis_operations_log:
+
+  # Declaration
+  emergency_id: ""                # e.g. EMG-SHUR-2026-001
+  criterion_id: ""                # from emergency-criteria-design registry
+  criterion_name: ""              # human-readable
+  entry_data: ""                  # specific data that crossed the entry threshold
+  declaration_timestamp: ""       # ISO datetime
+  declared_by: ""                 # who confirmed the threshold crossing
+  auto_reversion_deadline: ""     # ISO datetime (declaration + maximum duration)
+
+  # Activated Roles
+  activated_roles:
+    - role_id: ""                 # from pre-authorization-protocol registry
+      role_name: ""               # e.g. Safety Coordinator
+      holder: ""                  # primary or alternate
+      activation_timestamp: ""    # ISO datetime
+      ceiling_status:
+        spending_used: 0          # cumulative spending
+        spending_limit: 0         # hard ceiling
+        contracts_used: 0         # contracts executed
+        contracts_limit: 0        # hard ceiling
+
+  # Decision Record
+  decisions:
+    - decision_id: ""             # e.g. EMG-SHUR-2026-001-D01
+      timestamp: ""               # ISO datetime
+      decision_maker: ""          # role ID of authorized decision-maker
+      timeline_classification: "" # immediate | short_cycle | deferred
+      description: ""             # what was decided
+      rationale: ""               # why this decision was necessary
+      authority_reference: ""     # which authority scope item authorizes this decision
+      ceiling_impact: ""          # spending or commitment amount
+      irreducible_constraint_check: "pass"  # pass | flagged
+      emergency_context_tag: true # always true for emergency decisions
+      reported_timestamp: ""      # when the decision was reported to ecosystem (for immediate)
+      consent_record: ""          # for short-cycle: consent participants and outcome
+      notes: ""
+
+  # Deferred Decision Queue
+  deferred_decisions:
+    - description: ""             # what was deferred
+      reason_deferred: ""         # why it falls outside emergency scope
+      logged_by: ""               # role ID
+      timestamp: ""               # ISO datetime
+      post_emergency_status: ""   # pending | processed | withdrawn
+
+  # Communication Log
+  communications:
+    - update_id: ""               # e.g. EMG-SHUR-2026-001-C01
+      timestamp: ""               # ISO datetime
+      issued_by: ""               # Communications Coordinator role ID
+      recipients: ""              # e.g. "all ecosystem members + OSC"
+      summary: ""                 # brief description of update content
+      ceiling_utilization_snapshot: ""  # current ceiling usage across all roles
+
+  # Duration Extensions
+  duration_extensions:
+    - extension_id: ""            # e.g. EMG-SHUR-2026-001-EXT01
+      requested_by: ""            # role ID
+      request_timestamp: ""       # ISO datetime
+      reason: ""                  # why extension is needed
+      requested_days: 0           # additional days requested
+      consent_participants: 0     # number of members who participated
+      consent_outcome: ""         # approved | rejected | modified
+      new_deadline: ""            # ISO datetime (if approved)
+
+  # Closure
+  exit_trigger: ""                # "exit_criteria_met" | "auto_reversion_timer" | "early_reversion_consent"
+  exit_data: ""                   # specific data confirming exit threshold met
+  closure_timestamp: ""           # ISO datetime
+  total_duration_days: 0          # actual duration
+  total_spending: 0               # total across all roles
+  total_decisions: 0              # count of all decisions (immediate + short-cycle)
+  total_deferred: 0               # count of deferred decisions
+  reversion_record_id: ""         # link to emergency-reversion record

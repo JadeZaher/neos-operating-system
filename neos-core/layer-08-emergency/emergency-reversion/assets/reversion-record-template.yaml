@@ -1,0 +1,69 @@
+# Reversion Record Template -- output artifact of emergency-reversion
+# One record per emergency reversion. Created when reversion trigger fires.
+
+reversion_record:
+
+  reversion_id: ""                # e.g. REV-SHUR-2026-001
+  emergency_id: ""                # from crisis-coordination log
+  criterion_id: ""                # from emergency-criteria-design registry
+
+  # Reversion Trigger
+  reversion_trigger:
+    type: ""                      # exit_criteria_met | auto_reversion_timer | early_reversion_consent | constraint_violation
+    confirming_data: ""           # specific data that triggered reversion
+    trigger_timestamp: ""         # ISO datetime
+
+  # Authority Cessation
+  authority_cessation:
+    - role_id: ""                 # from pre-authorization-protocol registry
+      role_name: ""               # e.g. Safety Coordinator
+      holder: ""                  # who held the role
+      cessation_timestamp: ""     # ISO datetime -- must be within minutes of reversion trigger
+      final_ceiling_utilization:
+        spending_used: 0
+        spending_limit: 0
+        contracts_executed: 0
+
+  # Decision Inventory
+  decision_inventory:
+    total_decisions: 0
+    categorization:
+      within_scope_within_ceiling: 0    # category (a) -- routine ratification
+      within_scope_ceiling_exceeded: 0  # category (b) -- review required
+      outside_scope: 0                  # category (c) -- mandatory review
+      constraint_violation: 0           # category (d) -- immediate review
+    decisions:
+      - decision_id: ""           # from crisis operations log
+        category: ""              # a | b | c | d
+        ratification_status: ""   # pending | ratified | auto_reverted | rejected
+        ratification_date: ""     # ISO date (if ratified)
+        ratification_act_id: ""   # ACT decision ID (if ratified)
+        notes: ""
+
+  # Deferred Decision Queue
+  deferred_queue:
+    total_deferred: 0
+    items:
+      - description: ""
+        processing_status: ""     # pending | entered_act | completed | withdrawn
+        act_decision_id: ""       # when processed through normal ACT
+
+  # Recovery State Timeline
+  recovery_state:
+    half_open_start: ""           # ISO datetime (= reversion trigger timestamp)
+    ratification_deadline: ""     # ISO datetime (half_open_start + 30 days)
+    post_emergency_review_date: "" # ISO date (within 14 days of reversion trigger)
+    half_open_end: ""             # ISO datetime (when circuit breaker returns to Closed)
+    closed_transition_trigger: "" # "review_complete_and_ratification_processed" | "30_day_auto_close"
+
+  # Auto-Reverted Decisions
+  auto_reverted_decisions:
+    - decision_id: ""
+      original_description: ""
+      revert_action: ""           # what was done to reverse the decision
+      revert_date: ""             # ISO date
+      consequences: ""            # any downstream effects of the reversion
+
+  # Publication
+  published_to: ""                # e.g. "all ecosystem members + OSC"
+  publication_date: ""            # ISO date

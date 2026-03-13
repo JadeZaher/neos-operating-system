@@ -1,0 +1,46 @@
+# Commitment Unwinding Ledger Template -- output artifact of commitment-unwinding
+# One ledger per departing member. Attached to their Departure Record.
+
+ledger:
+  ledger_id: ""                   # e.g. CUL-SHUR-2026-031
+  departing_member: ""            # member identity
+  departure_record_ref: ""        # reference to associated Departure Record ID
+  departure_timeline:
+    type: ""                      # "standard" (30-day) or "urgent" (7-day)
+    start_date: ""                # ISO date
+    end_date: ""                  # ISO date
+  coordinator_id: ""              # departure coordinator identity
+
+commitments:
+  - commitment_id: ""             # unique identifier within ledger
+    category: ""                  # role | agreement | economic | proposal | conflict-resolution
+    description: ""               # what the commitment entails
+    source_registry: ""           # which registry holds the original record
+    source_record_id: ""          # reference to original record
+    urgency: ""                   # blocking | time-sensitive | routine
+    complexity: ""                # simple-transfer | requires-consent | requires-restructuring
+    resolution_method: ""         # transfer | close | return | withdraw | pause | distribute
+    receiving_party: ""           # identity of person or body accepting the commitment
+    receiving_party_acknowledged: false
+    acknowledgment_date: ""       # ISO date
+    completion_date: ""           # ISO date
+    status: ""                    # completed | pending | emergency-queued
+    notes: ""
+
+emergency_queue:
+  - commitment_id: ""             # reference to commitment above
+    reason_unresolved: ""         # why it could not be resolved within timeline
+    assigned_to: ""               # governance facilitator or body responsible for resolution
+    target_resolution_date: ""    # ISO date
+    resolved: false
+
+summary:
+  total_commitments: 0
+  completed: 0
+  emergency_queued: 0
+  categories:
+    roles: 0
+    agreements: 0
+    economic: 0
+    proposals: 0
+    conflict_resolutions: 0

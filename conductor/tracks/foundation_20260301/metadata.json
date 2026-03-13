@@ -1,0 +1,27 @@
+{
+  "track_id": "foundation_20260301",
+  "title": "Foundation -- Agreement Layer + ACT Decision Engine",
+  "description": "Build the two foundational NEOS skill layers: Layer I (Agreement) and Layer III (ACT Decision Engine). Includes 11 governance skills, a global validation script, and layer integration.",
+  "status": "planned",
+  "priority": "P0",
+  "created_date": "2026-03-01",
+  "updated_date": "2026-03-01",
+  "layers": [1, 3],
+  "skills": [
+    "agreement-creation",
+    "agreement-amendment",
+    "agreement-review",
+    "agreement-registry",
+    "universal-agreement-field",
+    "act-advice-phase",
+    "act-consent-phase",
+    "act-test-phase",
+    "proposal-creation",
+    "proposal-resolution",
+    "consensus-check"
+  ],
+  "phases": 6,
+  "estimated_hours": "30-40",
+  "spec_path": "conductor/tracks/foundation_20260301/spec.md",
+  "plan_path": "conductor/tracks/foundation_20260301/plan.md"
+}

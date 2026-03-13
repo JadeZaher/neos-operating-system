@@ -1,0 +1,29 @@
+request_id: ""
+requester: ""
+requester_role: ""  # TH | AE | OSC | GEV | SHUR steward
+domain: ""
+resource_type: ""  # financial | physical_asset | time_allocation | access_permission | expertise
+description: ""
+amount_or_scope: ""
+funding_pool_target: ""
+rationale: ""
+timeline:
+  requested_start: ""
+  requested_end: ""
+stewardship_commitment: ""
+act_routing:
+  level: ""  # steward_discretion | circle_consent | ecosystem_consent
+  threshold_basis: ""  # percentage of pool or absolute amount
+decision_record:
+  act_phase: ""  # advice | consent | test | decided
+  decision_date: ""
+  positions: []
+  objections_integrated: []
+fulfillment:
+  status: ""  # pending | approved | in_progress | fulfilled | returned | denied
+  fulfilled_date: ""
+  stewardship_report_due: ""
+  actual_use: ""
+review_date: ""
+version: "1.0.0"
+created_date: ""

@@ -1,0 +1,98 @@
+# Unwinding Protocols by Commitment Type -- reference guide for departure coordinators
+# Each category defines the standard resolution paths and escalation procedures.
+
+protocols:
+
+  role_obligations:
+    description: "Formal roles held by the departing member in circles or AZPOs."
+    resolution_paths:
+      - method: "transfer"
+        description: "Identify a willing successor, conduct knowledge transfer, formally reassign."
+        requires_consent_from: "receiving party"
+        typical_timeline: "14 days (knowledge transfer) + 3 days (formal reassignment)"
+      - method: "distribute"
+        description: "Split role responsibilities across multiple members when no single successor is available."
+        requires_consent_from: "each receiving member"
+        typical_timeline: "7 days (distribution plan) + 7 days (implementation)"
+      - method: "emergency-queue"
+        description: "Role enters emergency queue when no successor or distribution is possible."
+        requires_consent_from: "none -- automatic fallback"
+        typical_timeline: "immediate"
+    escalation: "Sole critical role triggers graceful degradation (Layer VIII emergency coverage)."
+    max_timeline: "30 days -- cannot extend departure."
+
+  agreement_obligations:
+    description: "Agreements where the departing member is a named party."
+    resolution_paths:
+      - method: "remove-party"
+        description: "Amend the agreement to remove the departing member with consent from remaining parties."
+        requires_consent_from: "remaining agreement parties"
+        typical_timeline: "7-14 days"
+      - method: "transfer-party"
+        description: "Replace the departing member with a new party who consents to the agreement terms."
+        requires_consent_from: "new party + remaining parties"
+        typical_timeline: "14-21 days"
+      - method: "close-agreement"
+        description: "If the departing member is the sole remaining party, archive the agreement."
+        requires_consent_from: "none -- automatic"
+        typical_timeline: "immediate"
+      - method: "annotate-inactive"
+        description: "If remaining parties refuse to consent to amendment, mark member as departed-inactive."
+        requires_consent_from: "none -- fallback when consent is not achieved"
+        typical_timeline: "immediate"
+    escalation: "Agreement flagged for review at next scheduled review date."
+    max_timeline: "30 days -- cannot extend departure."
+
+  economic_commitments:
+    description: "Resource allocations, Current-See earmarks, shared stewardship, debts, contributions."
+    resolution_paths:
+      - method: "return"
+        description: "Unspent earmarked resources return to the source pool."
+        requires_consent_from: "resource steward acknowledgment"
+        typical_timeline: "3-7 days"
+      - method: "transfer"
+        description: "Committed resources transfer to the project steward or named successor."
+        requires_consent_from: "receiving steward"
+        typical_timeline: "7-14 days"
+      - method: "settle"
+        description: "Outstanding debts or contributions are settled per the original agreement terms."
+        requires_consent_from: "both parties"
+        typical_timeline: "7-21 days"
+    escalation: "Disputes escalate to Layer VI with 14-day expedited timeline."
+    max_timeline: "30 days -- cannot extend departure."
+
+  pending_proposals:
+    description: "Proposals authored by the departing member that are still in ACT process."
+    resolution_paths:
+      - method: "withdraw"
+        description: "The departing member withdraws the proposal from the ACT process."
+        requires_consent_from: "none -- author's right"
+        typical_timeline: "immediate"
+      - method: "transfer-authorship"
+        description: "A co-author or willing member assumes authorship and the proposal continues."
+        requires_consent_from: "new author"
+        typical_timeline: "7 days"
+      - method: "proceed-with-notation"
+        description: "The proposal continues in ACT with a notation that the author has departed."
+        requires_consent_from: "none -- automatic if no withdrawal or transfer within 7 days"
+        typical_timeline: "7 days (waiting period)"
+    escalation: "Proposals in active consent rounds pause for 7 days before defaulting to withdrawal."
+    max_timeline: "7 days for resolution decision."
+
+  active_conflict_resolutions:
+    description: "Conflict resolution processes where the departing member is a disputant or facilitator."
+    resolution_paths:
+      - method: "complete"
+        description: "If the process is near resolution, complete it before departure."
+        requires_consent_from: "all parties"
+        typical_timeline: "depends on process stage"
+      - method: "transfer-role"
+        description: "If the departing member is a mediator/facilitator, assign a replacement via Layer VI."
+        requires_consent_from: "remaining disputants"
+        typical_timeline: "7 days"
+      - method: "pause"
+        description: "If the departing member is a disputant, pause for 14 days for remaining party to decide."
+        requires_consent_from: "none -- automatic"
+        typical_timeline: "14 days"
+    escalation: "Remaining party may close, continue with substitute, or escalate per Layer VI."
+    max_timeline: "14 days for pause decision -- departure not delayed."

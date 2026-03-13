@@ -1,0 +1,26 @@
+{
+  "track_id": "conflict_repair_20260302",
+  "title": "Layer VI -- Conflict and Repair",
+  "description": "Build 6 governance skills for NEOS Layer VI: harm-circle, nvc-dialogue, repair-agreement, escalation-triage, coaching-intervention, and community-impact-assessment. Grounded in Transformative Justice, Restorative Justice, NVC, and Ostrom's accessible conflict resolution principle. OmniOne's Solutionary Culture as inline example.",
+  "status": "planned",
+  "priority": "P1",
+  "created_date": "2026-03-02",
+  "updated_date": "2026-03-02",
+  "layers": [6],
+  "skills": [
+    "harm-circle",
+    "nvc-dialogue",
+    "repair-agreement",
+    "escalation-triage",
+    "coaching-intervention",
+    "community-impact-assessment"
+  ],
+  "depends_on": [
+    "foundation_20260301",
+    "authority_role_20260302"
+  ],
+  "phases": 5,
+  "estimated_hours": "25-35",
+  "spec_path": "conductor/tracks/conflict_repair_20260302/spec.md",
+  "plan_path": "conductor/tracks/conflict_repair_20260302/plan.md"
+}

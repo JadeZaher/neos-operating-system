@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="NEOS Governance Dashboard — New Earth Operating System">
+  <title>{% block title %}Dashboard{% endblock %} — NEOS</title>
+
+  {# Tailwind CSS 4.x — CDN (exclusively, no custom CSS) #}
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'neos-primary': '#2D5A27',
+            'neos-secondary': '#1a3a17',
+            'neos-accent': '#7CB342',
+            'neos-bg': '#f5f5f0',
+            'neos-surface': '#ffffff',
+            'neos-border': '#e0ddd5',
+            'neos-text': '#1a1a1a',
+            'neos-muted': '#666666',
+          }
+        }
+      }
+    }
+  </script>
+  {% block styles %}{% endblock %}
+
+  {# htmx 2.x — CDN #}
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+
+{% set _active_page %}{% block active_page %}dashboard{% endblock %}{% endset %}
+
+<body
+  class="bg-neos-bg text-neos-text font-sans min-h-screen"
+  hx-indicator="#global-loading"
+>
+  {# Skip navigation link for accessibility #}
+  <a href="#main-content"
+     class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-neos-primary focus:text-white focus:px-4 focus:py-2 focus:rounded">
+    Skip to main content
+  </a>
+
+  {# Loading bar — visible when htmx is making a request #}
+  {% include "partials/loading.html" %}
+
+  {# Toast notification region #}
+  {% include "partials/notification.html" %}
+
+  <div class="flex min-h-screen">
+    {# ================================================================
+       Sidebar Navigation
+       ================================================================ #}
+    <aside
+      id="sidebar"
+      role="navigation"
+      aria-label="Main navigation"
+      class="fixed lg:static inset-y-0 left-0 z-40 w-64 bg-neos-primary text-white transform -translate-x-full lg:translate-x-0 transition-transform duration-200 flex flex-col"
+    >
+      <div class="flex items-center gap-3 px-4 py-5 border-b border-white/20">
+        <div class="w-9 h-9 rounded-lg bg-neos-accent text-neos-primary flex items-center justify-center font-bold text-lg" aria-hidden="true">N</div>
+        <div>
+          <span class="font-bold text-base tracking-wide">NEOS</span>
+          <span class="block text-xs text-white/70">Governance Dashboard</span>
+        </div>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto py-4" aria-label="Primary">
+        <div class="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white/50">Overview</div>
+
+        <a
+          href="/dashboard"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'dashboard' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9679;</span>
+          Dashboard
+        </a>
+
+        <div class="px-4 py-2 mt-4 text-xs font-semibold uppercase tracking-wider text-white/50">Directory</div>
+
+        <a
+          href="/ecosystems"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'ecosystems' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#127758;</span>
+          Ecosystems
+        </a>
+
+        <div class="px-4 py-2 mt-4 text-xs font-semibold uppercase tracking-wider text-white/50">Governance</div>
+
+        <a
+          href="/dashboard/agreements"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'agreements' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9634;</span>
+          Agreements
+        </a>
+
+        <a
+          href="/dashboard/domains"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'domains' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9673;</span>
+          Domains
+        </a>
+
+        <a
+          href="/dashboard/members"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'members' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9823;</span>
+          Members
+        </a>
+
+        <a
+          href="/dashboard/proposals"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'proposals' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9998;</span>
+          Proposals
+        </a>
+
+        <a
+          href="/dashboard/decisions"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'decisions' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9878;</span>
+          Decisions
+        </a>
+
+        <div class="px-4 py-2 mt-4 text-xs font-semibold uppercase tracking-wider text-white/50">Processes</div>
+
+        <a
+          href="/dashboard/conflicts"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'conflicts' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9888;</span>
+          Conflicts
+        </a>
+
+        <a
+          href="/dashboard/safeguards"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'safeguards' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9741;</span>
+          Safeguards
+        </a>
+
+        <a
+          href="/dashboard/emergency"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'emergency' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9889;</span>
+          Emergency
+        </a>
+
+        <div class="px-4 py-2 mt-4 text-xs font-semibold uppercase tracking-wider text-white/50">Lifecycle</div>
+
+        <a
+          href="/dashboard/onboarding"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'onboarding' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#10003;</span>
+          Onboarding
+        </a>
+
+        <a
+          href="/dashboard/exit"
+          class="flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors{% if _active_page == 'exit' %} bg-white/20 text-white{% endif %}"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#10145;</span>
+          Exit
+        </a>
+      </nav>
+
+      <div class="px-4 py-3 text-xs text-white/40 border-t border-white/10">
+        NEOS v0.1.0
+      </div>
+    </aside>
+
+    {# Sidebar overlay for mobile #}
+    <div
+      id="sidebar-overlay"
+      class="fixed inset-0 bg-black/50 z-30 lg:hidden hidden"
+      onclick="toggleSidebar()"
+      aria-hidden="true"
+    ></div>
+
+    {# ================================================================
+       Main Content Area
+       ================================================================ #}
+    <div class="flex-1 flex flex-col min-w-0">
+      <header class="bg-neos-surface border-b border-neos-border px-4 lg:px-6 py-3 flex items-center justify-between" role="banner">
+        <div class="flex items-center gap-4">
+          <button
+            class="lg:hidden p-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-neos-accent"
+            type="button"
+            aria-label="Toggle navigation menu"
+            onclick="toggleSidebar()"
+          >
+            &#9776;
+          </button>
+
+          <a href="/ecosystems" class="flex items-center gap-1.5" title="Change ecosystem selection">
+            {% if ecosystems is defined and ecosystems|length > 0 %}
+              {% for eco in ecosystems[:3] %}
+                <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-neos-accent/15 text-neos-primary border border-neos-accent/30">{{ eco.name }}</span>
+              {% endfor %}
+              {% if ecosystems|length > 3 %}
+                <span class="text-xs text-neos-muted">+{{ ecosystems|length - 3 }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-sm text-neos-muted hover:text-neos-primary transition-colors">Select Ecosystems</span>
+            {% endif %}
+          </a>
+        </div>
+
+        <div class="flex items-center gap-3">
+          {% block header_actions %}{% endblock %}
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-neos-accent/20 hover:bg-neos-accent/30 focus:outline-none focus:ring-2 focus:ring-neos-accent text-neos-primary font-medium text-sm transition-colors"
+            aria-label="Toggle governance agent chat"
+            onclick="toggleChat()"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            <span class="hidden sm:inline">AI Assistant</span>
+          </button>
+          {% if member %}
+            <div class="flex items-center gap-3 ml-2 pl-3 border-l border-neos-border">
+              <span class="text-sm text-neos-text font-medium">{{ member.display_name }}</span>
+              {% if member.profile %}
+                <span class="text-xs text-neos-muted bg-neos-bg px-2 py-0.5 rounded">{{ member.profile }}</span>
+              {% endif %}
+              <form method="POST" action="/auth/logout" class="inline">
+                <button type="submit"
+                  class="text-sm text-neos-muted hover:text-red-600 transition-colors">
+                  Sign out
+                </button>
+              </form>
+            </div>
+          {% endif %}
+        </div>
+      </header>
+
+      {# Breadcrumb bar showing ecosystem > page hierarchy #}
+      <div class="bg-neos-surface border-b border-neos-border px-4 lg:px-6 py-2">
+        <nav class="flex items-center gap-1.5 text-sm text-neos-muted" aria-label="Breadcrumb">
+          <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+          {% if ecosystems is defined and ecosystems|length > 0 %}
+            <span aria-hidden="true">/</span>
+            <a href="/ecosystems" class="font-medium text-neos-text hover:text-neos-primary transition-colors">
+              {% if ecosystems|length == 1 %}
+                {{ ecosystems[0].name }}
+              {% else %}
+                {{ ecosystems|length }} Ecosystems
+              {% endif %}
+            </a>
+          {% endif %}
+          {% block breadcrumb %}{% endblock %}
+        </nav>
+      </div>
+
+      <main id="main-content" class="flex-1 p-4 lg:p-6 overflow-y-auto" role="main">
+        {# AI Quick Actions bar — visible on every page, context-aware #}
+        {% block ai_actions %}
+        <div class="bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div class="flex items-center gap-2 shrink-0">
+            <svg class="w-5 h-5 text-neos-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            <span class="text-sm font-semibold text-neos-primary">AI Governance Agent</span>
+          </div>
+          <div class="flex flex-wrap gap-2 flex-1">
+            <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+                    onclick="openChatWithMessage('Analyze our current governance health and highlight any risks or areas needing attention')">
+              Governance Health Check
+            </button>
+            <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+                    onclick="openChatWithMessage('Help me draft a new governance proposal using the ACT process')">
+              Draft Proposal
+            </button>
+            <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+                    onclick="openChatWithMessage('Search decision records for precedents and relevant past decisions')">
+              Search Precedents
+            </button>
+            <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+                    onclick="openChatWithMessage('Explain the NEOS governance framework and how it works')">
+              Explain NEOS
+            </button>
+          </div>
+          <button type="button" class="text-xs text-neos-primary hover:text-neos-secondary font-medium shrink-0 transition-colors"
+                  onclick="toggleChat()">
+            Open Full Chat &rarr;
+          </button>
+        </div>
+        {% endblock %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  {# ================================================================
+     Chat Panel — slide-out right panel
+     ================================================================ #}
+  <div
+    id="chat-panel-wrapper"
+    class="fixed inset-y-0 right-0 z-40 w-full sm:w-[400px] bg-neos-surface border-l border-neos-border shadow-xl transform translate-x-full transition-transform duration-200 flex flex-col"
+  >
+    <div class="flex items-center justify-between px-4 py-2 border-b border-neos-border">
+      <span class="text-xs text-neos-muted">Governance Agent</span>
+      <button type="button" class="p-1 rounded hover:bg-gray-100 text-neos-muted" onclick="toggleChat()" aria-label="Close chat">&times;</button>
+    </div>
+    {% include "chat/panel.html" %}
+  </div>
+  <div
+    id="chat-overlay"
+    class="fixed inset-0 bg-black/30 z-30 sm:hidden hidden"
+    onclick="toggleChat()"
+    aria-hidden="true"
+  ></div>
+
+  {% block scripts %}{% endblock %}
+
+  <script>
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.toggle('hidden');
+  }
+  function toggleChat() {
+    const panel = document.getElementById('chat-panel-wrapper');
+    panel.classList.toggle('translate-x-full');
+    panel.classList.toggle('translate-x-0');
+    document.getElementById('chat-overlay').classList.toggle('hidden');
+  }
+  function openChatWithMessage(msg) {
+    toggleChat();
+    const ta = document.querySelector('#chat-send-form textarea');
+    if (ta) { ta.value = msg; }
+    // Small delay to let panel animate open
+    setTimeout(() => document.querySelector('#chat-send-form').requestSubmit(), 100);
+  }
+  </script>
+</body>
+</html>

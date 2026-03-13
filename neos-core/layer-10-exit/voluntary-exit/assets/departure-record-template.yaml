@@ -1,0 +1,46 @@
+# Departure Record Template -- output artifact of voluntary-exit
+# One record per individual departure. Filed in governance memory (Layer IX).
+
+departure:
+  departure_id: ""                # e.g. DR-SHUR-2026-031
+  member_identity: ""             # departing member's ecosystem identity
+  departure_scope: ""             # "azpo" or "ecosystem"
+  azpo_name: ""                   # AZPO being departed (if scope is azpo)
+  ecosystem_name: ""              # ecosystem being departed (if scope is ecosystem)
+  declaration_date: ""            # ISO date -- when member declared intent
+  effective_departure_date: ""    # ISO date -- when departure becomes final
+  timeline_type: ""               # "standard" (30-day) or "urgent" (7-day)
+
+coordinator:
+  coordinator_id: ""              # identity of assigned departure coordinator
+  coordinator_circle: ""          # coordinator's primary circle (must differ from member's)
+  assignment_date: ""             # ISO date
+
+commitment_unwinding:
+  ledger_reference: ""            # reference to Commitment Unwinding Ledger ID
+  roles_transferred: 0            # count of roles successfully handed off
+  agreements_resolved: 0          # count of agreements settled or amended
+  economic_commitments_settled: 0 # count of economic items resolved
+  proposals_withdrawn_or_transferred: 0
+  conflict_resolutions_completed: 0
+  emergency_queue_items: 0        # commitments that could not be resolved before departure
+  unwinding_status: ""            # "complete" | "partial" | "emergency-deferred"
+
+data_export:
+  portable_record_generated: false
+  portable_record_id: ""          # reference to the portable governance record
+  export_date: ""                 # ISO date
+  member_confirmed_receipt: false
+
+re_entry:
+  eligible: true                  # default true unless member explicitly declines
+  re_entry_window: ""             # "indefinite" unless agreement specifies otherwise
+  conditions: ""                  # any conditions noted (e.g., "must consent to current UAF")
+
+communication:
+  departure_notice_published: false
+  notice_date: ""                 # ISO date
+  notice_scope: ""                # e.g. "SHUR Bali members" or "all ecosystem members"
+  editorial_included: false       # must be false unless member explicitly requested
+
+notes: ""                         # any additional context (e.g., "member unreachable during final week")

@@ -1,0 +1,92 @@
+# Capture Assessment Report Template -- output artifact of capture-pattern-recognition
+# Fill one report per assessment cycle. Publish to all ecosystem members.
+
+report:
+  report_id: ""              # e.g. CAR-SHUR-2026-Q1
+  assessment_scope: ""       # AZPO name or "ecosystem"
+  assessment_period:
+    start: ""                # ISO date
+    end: ""                  # ISO date
+  assessor_ids: []           # list of participant IDs who conducted analysis
+  source_audit_ids: []       # Governance Health Report IDs used as input
+  date_produced: ""          # ISO date
+
+capture_types:
+
+  - type: capital
+    description: "A funding source gains disproportionate influence over governance outcomes."
+    signature_indicators:
+      - indicator: GHI-03 Resource Concentration Index
+        threshold: ">= 50% critical, 30-49% warning"
+      - indicator: Funding-conditional proposal bias
+        threshold: "Proposals aligned with major funder approved at rate 20%+ above baseline"
+      - indicator: Self-censorship in funder-related discussions
+        threshold: "Objection rate on funder-related proposals 50%+ below baseline"
+    measured_values: {}       # fill per assessment
+    confidence: ""            # low | medium | high
+    evidence_summary: ""
+    benign_explanation: ""
+    benign_explanation_sufficient: false
+    recommended_safeguards: []
+
+  - type: charisma
+    description: "A personality becomes psychologically unsafe to challenge."
+    signature_indicators:
+      - indicator: GHI-02 Approval Rate by Author Role
+        threshold: "Ratio < 0.50 critical, 0.50-0.79 warning (for specific individual vs. baseline)"
+      - indicator: GHI-06 Objection withdrawal disparity
+        threshold: "Objection withdrawal rate for individual's proposals 50%+ above baseline"
+      - indicator: GHI-01 Proposal Authorship Diversity
+        threshold: "Single author responsible for > 25% of proposals"
+    measured_values: {}
+    confidence: ""
+    evidence_summary: ""
+    benign_explanation: ""
+    benign_explanation_sufficient: false
+    recommended_safeguards: []
+
+  - type: emergency
+    description: "Temporary authority becomes permanent through repeated invocation or scope creep."
+    signature_indicators:
+      - indicator: Emergency declaration frequency
+        threshold: "> 2 declarations per year or increasing trend over 3 quarters"
+      - indicator: Emergency scope creep
+        threshold: "> 20% of emergency decisions fall outside declared emergency scope"
+      - indicator: Post-emergency authority return delay
+        threshold: "Authority not returned within 14 days of emergency conclusion"
+    measured_values: {}
+    confidence: ""
+    evidence_summary: ""
+    benign_explanation: ""
+    benign_explanation_sufficient: false
+    recommended_safeguards: []
+
+  - type: ossification
+    description: "Leadership calcifies regardless of formal rotation rules."
+    signature_indicators:
+      - indicator: GHI-05 Leadership Tenure
+        threshold: ">= 4 cycles critical, 3 cycles warning"
+      - indicator: GHI-04 Participation Trend (non-leadership)
+        threshold: "Non-leadership participation declining > 10% while leadership stable"
+      - indicator: Non-leadership proposal approval rate
+        threshold: "Non-leadership proposal approval rate < 60% while leadership > 85%"
+    measured_values: {}
+    confidence: ""
+    evidence_summary: ""
+    benign_explanation: ""
+    benign_explanation_sufficient: false
+    recommended_safeguards: []
+
+cross_type_interactions: ""    # document any co-occurring capture patterns
+
+overall_risk_summary: ""       # low | moderate | elevated | high
+
+recommendations: []            # list of structural recommendations with safeguard references
+
+publication:
+  published_date: ""
+  published_to: ""             # "all ecosystem members" or specific scope
+  suppression_attempted: false
+  suppression_notes: ""
+
+next_assessment_due: ""        # ISO date

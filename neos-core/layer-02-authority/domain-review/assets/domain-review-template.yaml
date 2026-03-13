@@ -1,0 +1,100 @@
+# Domain Review Record Template
+# Produced by the domain-review skill at each scheduled or triggered evaluation.
+# One record per review event. Set next_evaluation_date before closing.
+
+review_id: ""                        # e.g., REV-CE-2026-001
+domain_id: ""                        # e.g., DOM-AE-ECON-001
+domain_contract_version: ""          # version reviewed, e.g., 1.2.0
+review_type: ""                      # scheduled | requested_by_steward | requested_by_delegator | threshold_event
+trigger: ""                          # narrative description of what caused this review
+
+review_body:
+  - name: ""
+    role: ""                         # delegator | steward | dependent_domain | advisory
+  facilitator: ""                    # must not be the steward
+
+date: ""                             # date the review session was held
+
+element_evaluation:
+  - element: purpose
+    current_state: ""                # describe what the purpose is in practice today
+    assessment: ""                   # adequate | needs_refinement | outdated | not_applicable
+    notes: ""
+
+  - element: key_responsibilities
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: customers
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: deliverables
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: dependencies
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: constraints
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: challenges
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: resources
+    current_state: ""
+    assessment: ""
+    notes: ""
+
+  - element: delegator_responsibilities
+    current_state: ""               # what the delegating body has and has not fulfilled
+    assessment: ""
+    notes: ""                       # if inadequate, note the delegator remediation commitment here
+
+  - element: competencies
+    current_state: ""               # whether current steward meets stated competency requirements
+    assessment: ""
+    notes: ""
+
+  - element: metrics_and_evaluation_schedule
+    current_state: ""               # whether metrics are being tracked and cadence is appropriate
+    assessment: ""
+    notes: ""
+
+steward_assessment:
+  self_assessment_summary: ""       # steward's own summary, presented first in the session
+  metric_performance:
+    - metric: ""
+      target: ""
+      actual: ""
+      met: false                    # true | false
+      notes: ""
+  customer_feedback_summary: ""     # collected in writing before the session
+  dependent_domain_feedback_summary: ""
+  qualitative_assessment: ""        # review body's overall qualitative assessment of domain health
+
+outcome: ""                         # reaffirm | refine | reassign | merge | sunset
+outcome_rationale: ""               # narrative explanation of why this outcome was chosen
+consent_record_id: ""               # ID of the consent record from the delegating body's consent round
+
+follow_up_actions:
+  - action: ""
+    type: ""                        # domain_mapping | role_transfer | authority_boundary_negotiation | role_sunset
+    responsible: ""                 # who is accountable for initiating the follow-up skill
+    deadline: ""
+    linked_review_record: ""        # cross-reference if this action is conditional on another action
+
+next_evaluation_date: ""            # set in Step 6; must be between 3 and 12 months from review date
+
+boundary_resolutions_reviewed: []   # list of boundary-resolution IDs involving this domain since last review
+notes: ""                           # any additional context, minority positions, or observations

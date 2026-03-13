@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Edit" if agreement is defined and agreement else "New" }} Agreement{% endblock %}
+
+{% block content %}
+{# ----------------------------------------------------------------
+   Breadcrumb
+   ---------------------------------------------------------------- #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/agreements" class="hover:text-neos-primary transition-colors">Agreements</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">
+    {% if agreement is defined and agreement %}Edit: {{ agreement.title }}{% else %}New Agreement{% endif %}
+  </span>
+</nav>
+
+{# ----------------------------------------------------------------
+   Page Header
+   ---------------------------------------------------------------- #}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-neos-text tracking-tight">
+    {% if agreement is defined and agreement %}Edit Agreement{% else %}Create New Agreement{% endif %}
+  </h1>
+  <p class="text-sm text-neos-muted mt-1">Define a governance agreement for your ecosystem</p>
+</div>
+
+{# ----------------------------------------------------------------
+   Error Alert
+   ---------------------------------------------------------------- #}
+{% if error is defined and error %}
+<div
+  class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+  role="alert"
+>
+  <span class="mt-0.5 shrink-0 text-base" aria-hidden="true">&#9888;</span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------
+   Form Card
+   ---------------------------------------------------------------- #}
+<div class="bg-neos-surface border border-neos-border rounded-xl">
+  <div class="px-6 py-5 border-b border-neos-border">
+    <h2 class="text-base font-semibold text-neos-text">Agreement Details</h2>
+  </div>
+  <div class="px-6 py-6">
+    <form
+      method="post"
+      action="{% if agreement is defined and agreement %}/dashboard/agreements/{{ agreement.id }}{% else %}/dashboard/agreements{% endif %}"
+    >
+      {# Hidden ecosystem_id #}
+      <input
+        type="hidden"
+        name="ecosystem_id"
+        value="{{ agreement.ecosystem_id if agreement is defined and agreement and agreement.ecosystem_id else '' }}"
+      >
+
+      {# ---- Agreement ID ---- #}
+      <div class="mb-5">
+        <label for="agreement-id" class="block text-sm font-medium text-neos-text mb-1">
+          Agreement ID
+          <span class="text-neos-muted font-normal text-xs ml-1">(optional — auto-generated if blank)</span>
+        </label>
+        <input
+          id="agreement-id"
+          type="text"
+          name="agreement_id"
+          value="{{ agreement.agreement_id if agreement is defined and agreement and agreement.agreement_id else '' }}"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          placeholder="e.g., AGR-2026-001"
+        >
+        <p class="mt-1 text-xs text-neos-muted">Unique identifier for cross-referencing in other agreements</p>
+      </div>
+
+      {# ---- Title ---- #}
+      <div class="mb-5">
+        <label for="agreement-title" class="block text-sm font-medium text-neos-text mb-1">
+          Title <span class="text-red-500">*</span>
+        </label>
+        <input
+          id="agreement-title"
+          type="text"
+          name="title"
+          value="{{ agreement.title if agreement is defined and agreement else '' }}"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          placeholder="e.g., Resource Allocation Protocol"
+          required
+        >
+      </div>
+
+      {# ---- Type + Hierarchy Level (2-col on sm+) ---- #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <label for="agreement-type" class="block text-sm font-medium text-neos-text mb-1">
+            Type <span class="text-red-500">*</span>
+          </label>
+          <select
+            id="agreement-type"
+            name="type"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            required
+          >
+            <option value="" disabled>Select type...</option>
+            <option value="uaf" {% if agreement is defined and agreement and agreement.type == 'uaf' %}selected{% endif %}>UAF (Universal Agreement Field)</option>
+            <option value="policy" {% if agreement is defined and agreement and agreement.type == 'policy' %}selected{% endif %}>Policy</option>
+            <option value="protocol" {% if agreement is defined and agreement and agreement.type == 'protocol' %}selected{% endif %}>Protocol</option>
+            <option value="role_definition" {% if agreement is defined and agreement and agreement.type == 'role_definition' %}selected{% endif %}>Role Definition</option>
+            <option value="domain_contract" {% if agreement is defined and agreement and agreement.type == 'domain_contract' %}selected{% endif %}>Domain Contract</option>
+            <option value="guideline" {% if agreement is defined and agreement and agreement.type == 'guideline' %}selected{% endif %}>Guideline</option>
+          </select>
+          <p class="mt-1 text-xs text-neos-muted">Determines governance scope and authority level</p>
+        </div>
+
+        <div>
+          <label for="agreement-hierarchy" class="block text-sm font-medium text-neos-text mb-1">
+            Hierarchy Level <span class="text-red-500">*</span>
+          </label>
+          <select
+            id="agreement-hierarchy"
+            name="hierarchy_level"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            required
+          >
+            <option value="ecosystem" {% if agreement is not defined or not agreement or agreement.hierarchy_level == 'ecosystem' %}selected{% endif %}>Ecosystem</option>
+            <option value="domain" {% if agreement is defined and agreement and agreement.hierarchy_level == 'domain' %}selected{% endif %}>Domain</option>
+            <option value="local" {% if agreement is defined and agreement and agreement.hierarchy_level == 'local' %}selected{% endif %}>Local</option>
+          </select>
+          <p class="mt-1 text-xs text-neos-muted">Where this agreement applies in the governance hierarchy</p>
+        </div>
+      </div>
+
+      {# ---- Domain + Proposer (2-col on sm+) ---- #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <label for="agreement-domain" class="block text-sm font-medium text-neos-text mb-1">Domain</label>
+          <select
+            id="agreement-domain"
+            name="domain"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          >
+            <option value="">No specific domain</option>
+            {% if domains is defined %}
+              {% for d in domains %}
+                <option
+                  value="{{ d.domain_id }}"
+                  {% if agreement is defined and agreement and agreement.domain == d.domain_id %}selected{% endif %}
+                >{{ d.domain_id }}{% if d.purpose %} — {{ d.purpose[:60] }}{% endif %}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+          <p class="mt-1 text-xs text-neos-muted">The domain this agreement governs</p>
+        </div>
+
+        <div>
+          <label for="agreement-proposer" class="block text-sm font-medium text-neos-text mb-1">Proposer</label>
+          <input
+            id="agreement-proposer"
+            type="text"
+            name="proposer"
+            value="{{ agreement.proposer if agreement is defined and agreement and agreement.proposer else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="e.g., GEV or member name"
+          >
+          <p class="mt-1 text-xs text-neos-muted">Member or body that proposed this agreement</p>
+        </div>
+      </div>
+
+      {# ---- Version ---- #}
+      <div class="mb-5">
+        <label for="agreement-version" class="block text-sm font-medium text-neos-text mb-1">Version</label>
+        <input
+          id="agreement-version"
+          type="text"
+          name="version"
+          value="{{ agreement.version if agreement is defined and agreement and agreement.version else '1.0' }}"
+          class="w-full sm:w-40 px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent font-mono"
+          placeholder="1.0"
+        >
+      </div>
+
+      {# ---- Agreement Text ---- #}
+      <div class="mb-5">
+        <label for="agreement-text" class="block text-sm font-medium text-neos-text mb-1">
+          Agreement Text <span class="text-red-500">*</span>
+        </label>
+        <textarea
+          id="agreement-text"
+          name="text"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+          rows="12"
+          placeholder="Write the full agreement text. Markdown is supported."
+          required
+        >{{ agreement.text if agreement is defined and agreement and agreement.text else '' }}</textarea>
+        <p class="mt-1 text-xs text-neos-muted">Supports Markdown. Be precise about obligations, rights, and conditions.</p>
+      </div>
+
+      {# ---- Review Date + Sunset Date (2-col on sm+) ---- #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+        <div>
+          <label for="agreement-review-date" class="block text-sm font-medium text-neos-text mb-1">Review Date</label>
+          <input
+            id="agreement-review-date"
+            type="date"
+            name="review_date"
+            value="{{ agreement.review_date if agreement is defined and agreement and agreement.review_date else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          >
+          <p class="mt-1 text-xs text-neos-muted">When this agreement should be reviewed for relevance</p>
+        </div>
+
+        <div>
+          <label for="agreement-sunset-date" class="block text-sm font-medium text-neos-text mb-1">Sunset Date</label>
+          <input
+            id="agreement-sunset-date"
+            type="date"
+            name="sunset_date"
+            value="{{ agreement.sunset_date if agreement is defined and agreement and agreement.sunset_date else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          >
+          <p class="mt-1 text-xs text-neos-muted">Date after which this agreement automatically expires</p>
+        </div>
+      </div>
+
+      {# ---- Form Actions ---- #}
+      <div class="flex items-center gap-3 pt-4 border-t border-neos-border">
+        <button
+          type="submit"
+          class="inline-flex items-center px-5 py-2.5 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+        >
+          {% if agreement is defined and agreement %}Update Agreement{% else %}Create Agreement{% endif %}
+        </button>
+        <a
+          href="/dashboard/agreements"
+          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

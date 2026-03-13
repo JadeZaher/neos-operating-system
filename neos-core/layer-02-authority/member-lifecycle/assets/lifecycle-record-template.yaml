@@ -1,0 +1,53 @@
+# Lifecycle Record Template
+# One record per participant per AZPO.
+# Current status drives quorum eligibility. All transitions are append-only (never delete).
+# Reference: neos-core/layer-02-authority/member-lifecycle/SKILL.md
+
+member_id: ""               # Unique identifier (ecosystem-assigned, immutable)
+display_name: ""            # Human-readable name (may be updated)
+azpo: ""                    # AZPO this record belongs to (empty = ecosystem-level record)
+
+current_status: ""          # prospective | onboarding | active | inactive | reactivating | exiting | exited
+
+profile: ""                 # co_creator | builder | collaborator | townhall
+                            # Profiles are participation tiers (platform access), not authority scopes.
+                            # Profile changes require AE or TH consent.
+
+onboarding_record:
+  facilitator: ""           # Name and role of the onboarding facilitator
+  uaf_version_consented: "" # Version string of the UAF consented to (e.g., "2.1.0")
+  consent_date: ""          # ISO 8601 date of section-by-section consent (e.g., "2026-02-18")
+  cooling_off_start: ""     # ISO 8601 datetime when cooling-off period began (end of walkthrough session)
+  cooling_off_end: ""       # ISO 8601 datetime when cooling-off period ended (must be >= 48h after start)
+  section_consents:
+    - section: ""           # UAF section identifier or title (e.g., "Section 1: Agreements and Accountability")
+      consented: null       # true | false
+      notes: ""             # Required if consented is false. Record objection and resolution status.
+  profile_proposed_by: ""   # Facilitator name who proposed the profile
+  profile_consented_by: ""  # Council that ran consent on the profile (e.g., "AE", "TH")
+  profile_consent_date: ""  # ISO 8601 date of profile consent
+
+status_transitions:
+  - from_status: ""         # Status before transition
+    to_status: ""           # Status after transition
+    date: ""                # ISO 8601 date of transition
+    trigger: ""             # Human-readable trigger (e.g., "onboarding_complete", "inactivity_threshold_elapsed", "voluntary_exit_declaration")
+    notes: ""               # Optional context (e.g., "14-day response window lapsed with no response")
+
+roles_held: []              # List of role-assignment record IDs (cross-reference to role-assignment skill outputs)
+                            # Format: ["RA-OMNI-001", "RA-OMNI-007"]
+                            # Active roles only. Historical roles are captured in status_transitions notes.
+
+last_governance_activity_date: ""   # ISO 8601 date of most recent qualifying governance activity.
+                                    # Qualifying: consent round participation, advice given, proposal submitted, meeting attendance.
+
+inactivity_notice_date: ""          # ISO 8601 date inactivity notification was sent. Empty if not yet notified.
+                                    # 14-day response window starts from this date.
+
+inactivity_response_deadline: ""    # ISO 8601 date by which member must respond. Computed: inactivity_notice_date + 14 days.
+
+exit_declaration_date: ""           # ISO 8601 date voluntary exit declaration was submitted. Empty if not exiting.
+exit_wind_down_deadline: ""         # ISO 8601 date by which wind-down must complete. Computed: exit_declaration_date + 30 days.
+exit_completed_date: ""             # ISO 8601 date status transitioned to exited.
+
+notes: ""                           # Free text for unusual circumstances, corrections, or cross-references.

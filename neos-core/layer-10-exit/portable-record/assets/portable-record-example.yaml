@@ -1,0 +1,178 @@
+# Portable Governance Record -- Example (Rina, OmniOne Bali SHUR)
+# Generated during voluntary exit. Demonstrates a typical full-detail export.
+
+record:
+  record_id: "PGR-OMNI-2026-RINA"
+  schema_version: "1.0.0"
+  generation_date: "2026-03-15"
+  format: "yaml"
+  verification_hash: "sha256:a3f8c9d2e1b4a7f6c5d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+  generated_under: "normal"
+
+member:
+  member_id: "OMNI-MBR-2025-RINA"
+  display_name: "Rina"
+  membership_start: "2025-01-15"
+  membership_end: "2026-03-28"
+  departure_status: "departed"
+
+ecosystems:
+  - ecosystem_name: "OmniOne"
+    ecosystem_id: "OMNI-001"
+    membership_period:
+      start: "2025-01-15"
+      end: "2026-03-28"
+    azpos_participated: ["SHUR Bali"]
+
+roles:
+  detail_level: "full"
+  entries:
+    - role_name: "Comms Steward"
+      circle: "Bali Welcome Circle"
+      azpo: "SHUR Bali"
+      start_date: "2025-03-01"
+      end_date: "2026-03-28"
+      tenure_cycles: 4
+      handoff_method: "transferred"
+      source_ref: "role-assignment:RA-SHUR-2025-014"
+
+    - role_name: "Proposal Reviewer"
+      circle: "Resource Allocation Circle"
+      azpo: "SHUR Bali"
+      start_date: "2025-06-15"
+      end_date: "2026-03-28"
+      tenure_cycles: 3
+      handoff_method: "distributed"
+      source_ref: "role-assignment:RA-SHUR-2025-031"
+
+agreements:
+  detail_level: "full"
+  entries:
+    - agreement_name: "Universal Agreement Field (UAF)"
+      agreement_id: "UAF-2025-001"
+      role_in_agreement: "party"
+      join_date: "2025-01-15"
+      exit_date: "2026-03-28"
+      exit_method: "departed"
+      source_ref: "agreement-registry:UAF-2025-001"
+
+    - agreement_name: "Circle Communications Protocol"
+      agreement_id: "AGR-SHUR-2025-008"
+      role_in_agreement: "party"
+      join_date: "2025-03-01"
+      exit_date: "2026-03-20"
+      exit_method: "amended-out"
+      source_ref: "agreement-registry:AGR-SHUR-2025-008"
+
+    - agreement_name: "Shared Equipment Stewardship"
+      agreement_id: "AGR-SHUR-2025-015"
+      role_in_agreement: "party"
+      join_date: "2025-04-10"
+      exit_date: "2026-03-22"
+      exit_method: "amended-out"
+      source_ref: "agreement-registry:AGR-SHUR-2025-015"
+
+proposals:
+  detail_level: "full"
+  entries:
+    - proposal_title: "Community Newsletter Launch"
+      proposal_id: "PROP-SHUR-2025-012"
+      role: "author"
+      submitted_date: "2025-05-20"
+      outcome: "consented"
+      source_ref: "decision-log:DEC-SHUR-2025-012"
+
+    - proposal_title: "Social Media Engagement Guidelines"
+      proposal_id: "PROP-SHUR-2025-027"
+      role: "author"
+      submitted_date: "2025-08-14"
+      outcome: "consented"
+      source_ref: "decision-log:DEC-SHUR-2025-027"
+
+    - proposal_title: "Video Documentation Project"
+      proposal_id: "PROP-SHUR-2025-041"
+      role: "author"
+      submitted_date: "2025-11-03"
+      outcome: "withdrawn"
+      source_ref: "decision-log:DEC-SHUR-2025-041"
+
+    - proposal_title: "Community Composting Program"
+      proposal_id: "PROP-SHUR-2026-005"
+      role: "author"
+      submitted_date: "2026-02-10"
+      outcome: "transferred"
+      source_ref: "decision-log:DEC-SHUR-2026-005"
+
+act_participation:
+  detail_level: "summary"
+  summary:
+    total_decisions_participated: 18
+    consent_given: 15
+    objections_raised: 2
+    objections_integrated: 2
+  entries: []
+
+conflict_resolution:
+  detail_level: "excluded"
+  entries: []
+
+resources:
+  detail_level: "full"
+  entries:
+    - resource_type: "allocation"
+      description: "Community garden project earmark"
+      amount: "45 Current-Sees"
+      period: "2026-Q1"
+      status: "returned"
+      source_ref: "resource-ledger:RES-SHUR-2026-009"
+
+current_see_history:
+  detail_level: "full"
+  summary:
+    total_months_participating: 14
+    allocation_per_period: "111 per person"
+  entries:
+    - period: "2025-Q1"
+      allocated: 111
+      exercised: 87
+      source_ref: "current-see-ledger:CS-OMNI-2025-Q1"
+    - period: "2025-Q2"
+      allocated: 111
+      exercised: 104
+      source_ref: "current-see-ledger:CS-OMNI-2025-Q2"
+    - period: "2025-Q3"
+      allocated: 111
+      exercised: 111
+      source_ref: "current-see-ledger:CS-OMNI-2025-Q3"
+    - period: "2025-Q4"
+      allocated: 111
+      exercised: 98
+      source_ref: "current-see-ledger:CS-OMNI-2025-Q4"
+    - period: "2026-Q1"
+      allocated: 111
+      exercised: 72
+      source_ref: "current-see-ledger:CS-OMNI-2026-Q1"
+
+departure_records:
+  - departure_id: "DR-SHUR-2026-031"
+    departure_date: "2026-03-28"
+    scope: "ecosystem"
+    ecosystem: "OmniOne"
+    azpo: "SHUR Bali"
+    re_entry_eligible: true
+    source_ref: "departure-record:DR-SHUR-2026-031"
+
+markdown_summary: |
+  # Portable Governance Record
+  Generated: 2026-03-15
+  Member: Rina
+  Ecosystem: OmniOne (SHUR Bali)
+  Tenure: January 2025 to March 2026 (14 months)
+
+  ## Highlights
+  - 2 circle roles held (Comms Steward, Proposal Reviewer)
+  - 3 agreements participated in
+  - 4 proposals authored (2 consented, 1 withdrawn, 1 transferred)
+  - 18 ACT decisions participated in (2 objections raised, both integrated)
+  - 14 months of Current-See participation
+  - Clean departure with full commitment unwinding

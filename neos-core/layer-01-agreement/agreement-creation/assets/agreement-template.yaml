@@ -1,0 +1,21 @@
+agreement_id: ""
+type: ""  # space | access | organizational | uaf
+title: ""
+version: "1.0.0"
+status: draft  # draft | advice | consent | test | active | sunset
+proposer: ""
+affected_parties: []
+domain: ""
+created_date: ""
+ratification_date: ""
+review_date: ""
+sunset_date: ""
+text: ""
+ratification_record:
+  - participant: ""
+    role: ""
+    position: ""  # consent | stand_aside | objection
+    date: ""
+amendment_history: []
+parent_agreement_id: ""  # null for root agreements
+hierarchy_level: ""  # universal | ecosystem | access | stewardship | ethos | culture_code | personal

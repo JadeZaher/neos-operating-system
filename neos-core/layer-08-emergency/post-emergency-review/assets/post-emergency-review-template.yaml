@@ -1,0 +1,99 @@
+# Post-Emergency Review Report Template -- output artifact of post-emergency-review
+# One report per reviewed emergency. Published to all ecosystem members.
+
+post_emergency_review:
+
+  review_id: ""                   # e.g. PER-SHUR-2026-001
+  emergency_id: ""                # from crisis-coordination log
+  criterion_id: ""                # from emergency-criteria-design registry
+  emergency_period:
+    start_date: ""                # ISO date
+    end_date: ""                  # ISO date
+    duration_days: 0
+
+  # Review Body
+  review_body:
+    - member_name: ""
+      member_role: ""             # normal governance role (not emergency role)
+      azpo: ""                    # home AZPO
+      independence_declaration: "" # statement confirming no emergency role held
+  review_date: ""                 # ISO date
+  review_body_appointed_by: ""    # role-assignment process reference
+
+  # Declaration Compliance
+  declaration_assessment:
+    criterion_properly_triggered: true  # was the entry threshold validly crossed?
+    data_source_confirmed: true         # did the specified data source confirm?
+    declaration_timely: true            # was the declaration made promptly?
+    circuit_breaker_logged: true        # was the Closed-to-Open transition logged?
+    notes: ""
+
+  # Decision-by-Decision Evaluation
+  decision_evaluations:
+    total_decisions_reviewed: 0
+    summary:
+      within_scope_within_ceiling: 0
+      within_scope_ceiling_exceeded: 0
+      outside_scope: 0
+      constraint_violations: 0
+    evaluations:
+      - decision_id: ""           # from crisis operations log
+        decision_description: ""
+        role_holder: ""
+        assessment:
+          within_scope: true
+          within_ceiling: true
+          properly_classified: true    # immediate/short-cycle/deferred
+          reported_on_time: true       # 24h for immediate decisions
+          constraints_respected: true
+        ceiling_impact: ""
+        notes: ""
+
+  # Ceiling Utilization Analysis
+  ceiling_analysis:
+    - role_id: ""
+      role_name: ""
+      spending_ceiling: ""
+      spending_actual: ""
+      ceiling_exceeded: false
+      justification: ""           # role holder's stated justification if exceeded
+      review_body_assessment: ""  # proportionate | disproportionate | structural_gap
+
+  # Deferred Decision Queue Assessment
+  deferred_assessment:
+    total_deferred: 0
+    properly_classified: 0        # decisions correctly deferred
+    improperly_deferred: 0        # crisis decisions that should have been acted on
+    improperly_escalated: 0       # non-crisis decisions that used emergency authority
+    notes: ""
+
+  # Reversion Compliance
+  reversion_assessment:
+    authority_ceased_immediately: true
+    authority_continuation_attempts: 0
+    ratification_completed_on_time: true
+    auto_reverted_decisions: 0
+    notes: ""
+
+  # Exit Criteria Assessment
+  exit_criteria_assessment:
+    exit_criteria_properly_monitored: true
+    reversion_trigger_timely: true
+    maximum_duration_adequate: true
+    extensions_properly_processed: true
+    notes: ""
+
+  # Structural Recommendations
+  recommendations:
+    - recommendation_id: ""       # e.g. PER-SHUR-2026-001-R01
+      category: ""                # criteria | pre_authorization | coordination | reversion | general
+      description: ""             # structural recommendation
+      act_process_status: ""      # pending | entered_act | consented | rejected
+      act_decision_id: ""         # when processed through ACT
+
+  # Publication
+  published_to: ""                # e.g. "all ecosystem members + OSC"
+  publication_date: ""            # ISO date
+  role_holder_responses:          # appendices from reviewed role holders
+    - role_holder: ""
+      response: ""

@@ -1,0 +1,105 @@
+# Safeguard Trigger Registry Template -- output artifact of safeguard-trigger-design
+# One entry per trigger. Maintain as a living registry for each AZPO.
+
+triggers:
+
+  - trigger_id: ""             # e.g. SGT-SHUR-001
+    trigger_name: ""           # human-readable name
+    capture_type: ""           # capital | charisma | emergency | ossification
+    monitored_indicator: ""    # e.g. GHI-03 or capture confidence score
+    threshold: ""              # measurable criterion that fires the trigger
+    safeguard_action: ""       # bounded intervention description
+    notification_recipients: [] # roles or groups notified on activation
+    installed_by: ""           # ACT decision ID that authorized installation
+    installation_date: ""      # ISO date
+    review_date: ""            # ISO date -- when trigger is re-evaluated
+    status: ""                 # active | suspended | retired
+    activation_history:
+      - activation_date: ""    # ISO date
+        data_snapshot: ""      # indicator value(s) that caused activation
+        action_taken: ""       # what safeguard action was executed
+        post_review_outcome: ""  # confirmed | false_positive | recalibrated
+    modification_history:
+      - modification_date: ""  # ISO date
+        modified_by: ""        # ACT decision ID
+        change_description: ""
+
+# --- Starter Trigger Set (OmniOne defaults, customize per ecosystem) ---
+
+starter_triggers:
+
+  # Capital Capture Triggers
+  - trigger_id: SGT-STARTER-CAP-01
+    trigger_name: Resource Concentration Alert
+    capture_type: capital
+    monitored_indicator: GHI-03 Resource Concentration Index
+    threshold: "Single source >= 40% of total resources for 2 consecutive quarters"
+    safeguard_action: "Initiate mandatory funding diversification review via structural-diversity-maintenance. Freeze new funding commitments from concentrated source above threshold until review completes."
+    notification_recipients: [all AZPO members, OSC, financial steward]
+    review_date: "annual"
+
+  - trigger_id: SGT-STARTER-CAP-02
+    trigger_name: Funding-Conditional Proposal Bias
+    capture_type: capital
+    monitored_indicator: "Approval rate differential: funder-aligned vs. non-funder-aligned proposals"
+    threshold: "Funder-aligned proposals approved at rate 25%+ above baseline for 2 consecutive quarters"
+    safeguard_action: "Flag all funder-related proposals for enhanced ACT scrutiny. Publish a funding influence report to all ecosystem members."
+    notification_recipients: [all AZPO members, OSC]
+    review_date: "annual"
+
+  # Charisma Capture Triggers
+  - trigger_id: SGT-STARTER-CHR-01
+    trigger_name: Approval Rate Disparity Alert
+    capture_type: charisma
+    monitored_indicator: GHI-02 Approval Rate by Author Role
+    threshold: "Individual proposal approval rate exceeds baseline by 25%+ AND objection withdrawal rate for that individual exceeds baseline by 40%+"
+    safeguard_action: "Initiate anonymous objection round for the individual's next 3 proposals. Publish approval disparity data to all ecosystem members."
+    notification_recipients: [all AZPO members, OSC]
+    review_date: "annual"
+
+  - trigger_id: SGT-STARTER-CHR-02
+    trigger_name: Leadership Tenure Alert
+    capture_type: charisma
+    monitored_indicator: GHI-05 Leadership Tenure
+    threshold: ">= 4 consecutive cycles in same leadership role"
+    safeguard_action: "Initiate mandatory leadership review and rotation process via role-assignment. The incumbent steps into advisory role during review."
+    notification_recipients: [all AZPO members, OSC, role-assignment steward]
+    review_date: "annual"
+
+  # Emergency Capture Triggers
+  - trigger_id: SGT-STARTER-EMG-01
+    trigger_name: Emergency Scope Creep Alert
+    capture_type: emergency
+    monitored_indicator: "Percentage of emergency decisions outside declared scope"
+    threshold: "> 20% of decisions made under emergency authority fall outside the declared emergency scope"
+    safeguard_action: "Flag out-of-scope decisions for post-emergency ACT review. Notify all members of scope boundary violations."
+    notification_recipients: [all AZPO members, OSC]
+    review_date: "annual"
+
+  - trigger_id: SGT-STARTER-EMG-02
+    trigger_name: Emergency Authority Retention Alert
+    capture_type: emergency
+    monitored_indicator: "Days between emergency conclusion and authority return"
+    threshold: "Emergency authority not returned within 14 days of declared emergency conclusion"
+    safeguard_action: "Initiate mandatory authority return process. Suspend further emergency decision-making until authority is formally returned through ACT process."
+    notification_recipients: [all AZPO members, OSC, emergency coordinator]
+    review_date: "annual"
+
+  # Ossification Capture Triggers
+  - trigger_id: SGT-STARTER-OSS-01
+    trigger_name: Participation Decline Alert
+    capture_type: ossification
+    monitored_indicator: GHI-04 Participation Trend
+    threshold: "Non-leadership participation declines > 15% over 2 consecutive quarters while leadership participation remains stable"
+    safeguard_action: "Initiate community engagement review. Publish participation disparity data. Recommend structural-diversity-maintenance assessment."
+    notification_recipients: [all AZPO members, OSC]
+    review_date: "annual"
+
+  - trigger_id: SGT-STARTER-OSS-02
+    trigger_name: Proposal Approval Inequity Alert
+    capture_type: ossification
+    monitored_indicator: "Approval rate differential: leadership-authored vs. non-leadership-authored proposals"
+    threshold: "Non-leadership proposal approval rate < 55% while leadership approval rate > 85% for 2 consecutive quarters"
+    safeguard_action: "Initiate proposal process review via ACT. Publish approval inequity data. Recommend proposal mentorship program through structural-diversity-maintenance."
+    notification_recipients: [all AZPO members, OSC]
+    review_date: "annual"

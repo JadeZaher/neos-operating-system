@@ -1,0 +1,22 @@
+{
+  "track_id": "authority_role_20260302",
+  "title": "Authority & Role Layer (Layer II)",
+  "status": "planned",
+  "priority": "P0",
+  "created": "2026-03-02",
+  "layers": [2],
+  "depends_on": ["foundation_20260301"],
+  "skills": [
+    "domain-mapping",
+    "authority-boundary-negotiation",
+    "role-assignment",
+    "role-transfer",
+    "domain-review",
+    "role-sunset",
+    "member-lifecycle"
+  ],
+  "phases": 6,
+  "estimated_hours": "25-35",
+  "spec_path": "conductor/tracks/authority_role_20260302/spec.md",
+  "plan_path": "conductor/tracks/authority_role_20260302/plan.md"
+}

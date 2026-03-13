@@ -1,0 +1,77 @@
+# Governance Health Indicators -- used by governance-health-audit skill
+# Each indicator has a healthy range, warning threshold, and critical threshold.
+# Thresholds shown are OmniOne defaults; calibrate per ecosystem.
+
+indicators:
+
+  - id: GHI-01
+    name: Proposal Authorship Diversity
+    description: Percentage of unique authors among all proposals in the audit period.
+    data_source: proposal registry
+    measurement: (unique_authors / total_proposals) * 100
+    healthy: ">= 60%"
+    warning: "40-59%"
+    critical: "< 40%"
+
+  - id: GHI-02
+    name: Approval Rate by Author Role
+    description: Ratio of approval rates between leadership-authored and non-leadership-authored proposals.
+    data_source: decision logs
+    measurement: approval_rate_non_leadership / approval_rate_leadership
+    healthy: ">= 0.80"
+    warning: "0.50-0.79"
+    critical: "< 0.50"
+
+  - id: GHI-03
+    name: Resource Concentration Index
+    description: Percentage of total resources controlled or allocated by the single largest source.
+    data_source: resource allocation records
+    measurement: largest_source_amount / total_resources * 100
+    healthy: "< 30%"
+    warning: "30-49%"
+    critical: ">= 50%"
+
+  - id: GHI-04
+    name: Participation Trend
+    description: Change in average meeting/decision participation over the audit period vs. prior period.
+    data_source: participation records
+    measurement: (current_avg - prior_avg) / prior_avg * 100
+    healthy: ">= -5%"
+    warning: "-5% to -20%"
+    critical: "< -20%"
+
+  - id: GHI-05
+    name: Leadership Tenure
+    description: Number of consecutive review cycles the same person holds a leadership role.
+    data_source: role-assignment records
+    measurement: consecutive_cycles_in_role
+    healthy: "<= 2 cycles"
+    warning: "3 cycles"
+    critical: ">= 4 cycles"
+
+  - id: GHI-06
+    name: Objection Integration Rate
+    description: Percentage of formal objections that resulted in proposal modification.
+    data_source: ACT consent-phase logs
+    measurement: (objections_integrated / total_objections) * 100
+    healthy: ">= 70%"
+    warning: "40-69%"
+    critical: "< 40%"
+
+  - id: GHI-07
+    name: Review Compliance Rate
+    description: Percentage of agreements reviewed on or before their scheduled review date.
+    data_source: agreement registry
+    measurement: (timely_reviews / due_reviews) * 100
+    healthy: ">= 85%"
+    warning: "60-84%"
+    critical: "< 60%"
+
+  - id: GHI-08
+    name: Cross-Unit Engagement Frequency
+    description: Number of cross-circle or cross-AZPO interactions per quarter.
+    data_source: cross-unit coordination logs
+    measurement: cross_unit_interactions_per_quarter
+    healthy: ">= 4 per quarter"
+    warning: "2-3 per quarter"
+    critical: "<= 1 per quarter"

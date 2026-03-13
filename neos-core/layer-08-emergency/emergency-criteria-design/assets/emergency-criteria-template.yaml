@@ -1,0 +1,33 @@
+# Emergency Criteria Registry Template -- output artifact of emergency-criteria-design
+# One entry per criterion. Maintain as a living registry for each AZPO.
+
+criteria:
+
+  - criterion_id: ""            # e.g. ECR-SHUR-001
+    category: ""                # physical_safety | resource_crisis | governance_incapacity | external_legal_threat | infrastructure_failure
+    criterion_name: ""          # human-readable name
+    entry_threshold: ""         # measurable condition that triggers Closed-to-Open transition
+    exit_threshold: ""          # equally measurable condition that triggers reversion process
+    data_source: ""             # where the measurement comes from (e.g., BMKG, financial records)
+    measurement_method: ""      # how the threshold is evaluated
+    maximum_duration_days: 30   # hard backstop -- auto-reversion if exceeded
+    circuit_breaker_mapping:
+      closed_to_open: ""        # restates entry threshold
+      open_to_half_open: ""     # restates exit threshold + reversion trigger
+      half_open_to_closed: ""   # post-emergency review completion
+    pre_authorized_roles: []    # role IDs activated when this criterion fires (from pre-authorization-protocol)
+    installed_by: ""            # ACT decision ID that authorized installation
+    installation_date: ""       # ISO date
+    review_date: ""             # ISO date -- annual review minimum
+    status: ""                  # active | suspended | retired
+    activation_history:
+      - activation_date: ""    # ISO date
+        entry_data: ""         # specific data that crossed the entry threshold
+        exit_date: ""          # ISO date when exit threshold was met
+        exit_data: ""          # specific data confirming exit threshold met
+        duration_days: 0       # actual duration
+        reversion_record_id: "" # link to reversion record (from emergency-reversion)
+    modification_history:
+      - modification_date: ""  # ISO date
+        modified_by: ""        # ACT decision ID
+        change_description: ""

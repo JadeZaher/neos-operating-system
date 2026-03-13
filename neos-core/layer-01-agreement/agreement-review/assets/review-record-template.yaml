@@ -1,0 +1,18 @@
+review_id: ""
+agreement_id: ""
+agreement_version: ""
+review_type: scheduled  # scheduled | requested | threshold_event
+trigger: ""
+review_body: []
+date: ""
+evaluation:
+  relevance: ""
+  appropriateness: ""
+  context_changes: ""
+  conflicts_logged: []
+outcome: ""  # renew | revise | sunset
+next_review_date: ""
+follow_up_actions:
+  - action: ""
+    responsible: ""
+    deadline: ""

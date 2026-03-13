@@ -1,0 +1,95 @@
+# Community Impact Assessment Report Template
+# Output artifact for the community-impact-assessment skill
+
+community_impact_assessment:
+  id: ""                            # Unique ID, e.g. CIA-SHUR-2026-001
+  date: ""                          # ISO 8601 date of assessment completion
+  status: ""                        # triggered | preparing | in-session | report-drafting | completed | deferred
+
+  scope: ""                         # azpo-wide | ecosystem-wide
+  scope_rationale: ""               # Why this scope was determined
+
+  convener:
+    name: ""
+    role: ""
+    azpo: ""                        # Should not be directly implicated in findings
+    conflict_of_interest_check: ""
+
+  analysis_team:
+    - name: ""
+      role: ""
+      azpo: ""                      # Should not be involved in underlying conflicts
+      expertise: ""
+
+  triggering_evidence:
+    trigger_type: ""                # pattern-detected | structural-gap-found | broad-impact-incident | repair-agreement-implication
+    summary: ""                     # Privacy-protected summary of the systemic concern
+    linked_conflict_records:
+      - record_type: ""            # triage | harm-circle | coaching | repair-agreement
+        record_id: ""
+        privacy_status: ""         # systemic-findings-shareable | individual-details-private
+    pattern_description: ""         # If pattern-based: what the pattern is and how it was detected
+
+  privacy_boundaries:
+    established_date: ""
+    shareable_information: ""       # What can be discussed in community session
+    private_information: ""         # What is protected from community session
+    individual_consent_to_share:
+      - name: ""
+        consented_to_share: ""     # What specific information they consented to share
+
+  systemic_analysis:
+    structural_gap_identified: ""   # What governance mechanism failed or is absent
+    conditions_that_allowed_pattern: "" # Why the gap persisted
+    hypotheses: []                  # Preliminary hypotheses about root causes
+    evidence_reviewed: []           # Documents, records, and data examined
+
+  community_processing_session:
+    date: ""
+    location: ""
+    participants_invited: 0
+    participants_attended: 0
+    attendance_notes: ""            # Quorum assessment, representation gaps
+
+    phase_1_impact:
+      summary: ""                   # Summarized impact statements (not individual attributions unless consented)
+      themes_identified: []         # Common themes across impact statements
+
+    phase_2_analysis:
+      analysis_presented: true
+      community_refinements: ""     # How participants refined the analysis
+      competing_analyses: []        # If disagreement existed, document alternatives
+
+    phase_3_recommendations:
+      recommendations:
+        - id: ""                   # e.g. CIA-SHUR-2026-001-R1
+          description: ""           # Specific governance change proposed
+          rationale: ""             # Why this change addresses the structural gap
+          scope: ""                 # circle | azpo | ecosystem
+          act_proposal_id: ""       # Linked proposal once submitted
+          act_status: ""            # pending | submitted | consented | rejected | amended
+
+  implementation_tracking:
+    - recommendation_id: ""
+      status: ""                    # proposed | in-act | adopted | rejected | implemented | effectiveness-review
+      follow_up_dates:
+        - date: ""
+          assessment: ""           # Is the implemented change addressing the gap?
+      effectiveness_finding: ""     # After implementation: did the change work?
+
+  linked_records:
+    triggering_triage_ids: []
+    triggering_harm_circle_ids: []
+    triggering_coaching_ids: []
+    triggering_repair_agreement_ids: []
+    resulting_act_proposal_ids: []
+    domain_reference: ""
+    follow_up_assessment_id: ""     # If a follow-up CIA was triggered
+
+  privacy_note: >
+    This report documents systemic findings and governance recommendations.
+    Individual details from underlying conflict processes are not included
+    unless the individuals explicitly consented to sharing.
+
+  created_at: ""                    # ISO 8601 timestamp
+  created_by: ""                    # Convener who finalized the report

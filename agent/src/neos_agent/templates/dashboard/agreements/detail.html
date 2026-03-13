@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}{{ agreement.title if agreement is defined and agreement else "Agreement" }}{% endblock %}
+
+{% block content %}
+{# ----------------------------------------------------------------
+   Error state — no agreement loaded
+   ---------------------------------------------------------------- #}
+{% if error is defined and error and (agreement is not defined or not agreement) %}
+<div
+  class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+  role="alert"
+>
+  <span class="mt-0.5 shrink-0 text-base" aria-hidden="true">&#9888;</span>
+  <div>
+    <p class="font-semibold">Unable to load agreement</p>
+    <p class="mt-0.5">{{ error }}</p>
+  </div>
+</div>
+<a href="/dashboard/agreements" class="inline-flex items-center gap-1 text-sm text-neos-primary hover:underline">
+  &#8592; Back to Agreements
+</a>
+{% else %}
+
+{# ----------------------------------------------------------------
+   Breadcrumb
+   ---------------------------------------------------------------- #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/agreements" class="hover:text-neos-primary transition-colors">Agreements</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium truncate max-w-xs" aria-current="page">{{ agreement.title }}</span>
+</nav>
+
+{# Inline error alert (agreement loaded but operation error) #}
+{% if error is defined and error %}
+<div
+  class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm"
+  role="alert"
+>
+  <span class="mt-0.5 shrink-0" aria-hidden="true">&#9888;</span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------
+   Page Header
+   ---------------------------------------------------------------- #}
+<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+  <div class="min-w-0">
+    <div class="flex flex-wrap items-center gap-3 mb-2">
+      <h1 class="text-2xl font-bold text-neos-text tracking-tight">{{ agreement.title }}</h1>
+
+      {# Status badge #}
+      {% set status = agreement.status | default('draft') %}
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
+        {% if status == 'active' %}bg-green-100 text-green-700
+        {% elif status == 'ratified' %}bg-blue-100 text-blue-700
+        {% elif status == 'suspended' %}bg-yellow-100 text-yellow-700
+        {% elif status == 'expired' %}bg-red-100 text-red-700
+        {% elif status == 'archived' %}bg-gray-200 text-gray-500
+        {% else %}bg-gray-100 text-gray-600{% endif %}
+        capitalize"
+      >{{ status }}</span>
+    </div>
+    <p class="text-sm text-neos-muted">
+      {{ agreement.agreement_id }} &middot; v{{ agreement.version }}
+    </p>
+  </div>
+
+  <div class="flex items-center gap-2 shrink-0">
+    <a
+      href="/dashboard/agreements/{{ agreement.id }}/edit"
+      class="inline-flex items-center px-3 py-2 border border-neos-border text-sm font-medium text-neos-text rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent"
+    >
+      Edit
+    </a>
+  </div>
+</div>
+
+{# ----------------------------------------------------------------
+   Two-column layout: main + sidebar
+   ---------------------------------------------------------------- #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  {# ---- Main column (spans 2/3) ---- #}
+  <div class="lg:col-span-2 space-y-6">
+
+    {# Detail card #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Details</h2>
+      </div>
+      <dl class="divide-y divide-neos-border">
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Agreement ID</dt>
+          <dd class="text-sm text-neos-text col-span-2 font-mono">{{ agreement.agreement_id or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Type</dt>
+          <dd class="text-sm text-neos-text col-span-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 capitalize">
+              {{ agreement.type | replace('_', ' ') if agreement.type else '—' }}
+            </span>
+          </dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Domain</dt>
+          <dd class="text-sm col-span-2">
+            {% if agreement.domain %}
+              <a href="/dashboard/domains?search={{ agreement.domain }}" class="text-neos-primary hover:underline">{{ agreement.domain }}</a>
+            {% else %}
+              <span class="text-neos-muted">—</span>
+            {% endif %}
+          </dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Hierarchy Level</dt>
+          <dd class="text-sm text-neos-text col-span-2 capitalize">{{ agreement.hierarchy_level or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Proposer</dt>
+          <dd class="text-sm text-neos-text col-span-2">{{ agreement.proposer or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Created</dt>
+          <dd class="text-sm text-neos-text col-span-2">{{ agreement.created_date or agreement.created_at or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Review Date</dt>
+          <dd class="text-sm text-neos-text col-span-2">{{ agreement.review_date or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Sunset Date</dt>
+          <dd class="text-sm text-neos-text col-span-2">{{ agreement.sunset_date or '—' }}</dd>
+        </div>
+        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+          <dt class="text-sm font-medium text-neos-muted">Ratification Date</dt>
+          <dd class="text-sm text-neos-text col-span-2">{{ agreement.ratification_date or '—' }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    {# Agreement Text #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Text</h2>
+      </div>
+      <div class="px-6 py-5 prose prose-sm max-w-none text-neos-text leading-relaxed">
+        {{ agreement.text_html | safe if agreement.text_html is defined else agreement.text | default("No content provided.", true) }}
+      </div>
+    </div>
+
+    {# ---- Status Transition Form ---- #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Status Transition</h2>
+      </div>
+      <div class="px-6 py-5">
+        <form
+          class="space-y-4"
+          method="post"
+          action="/dashboard/agreements/{{ agreement.id }}/status"
+        >
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="transition-status" class="block text-sm font-medium text-neos-text mb-1">New Status</label>
+              <select
+                id="transition-status"
+                name="new_status"
+                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+              >
+                <option value="">Select status...</option>
+                {% set s = agreement.status | default('draft') %}
+                {% if s == 'draft' %}
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                {% elif s == 'active' %}
+                  <option value="ratified">Ratified</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="archived">Archived</option>
+                  <option value="expired">Expired</option>
+                {% elif s == 'ratified' %}
+                  <option value="suspended">Suspended</option>
+                  <option value="archived">Archived</option>
+                  <option value="expired">Expired</option>
+                {% elif s == 'suspended' %}
+                  <option value="active">Reactivate</option>
+                  <option value="archived">Archived</option>
+                {% elif s == 'archived' %}
+                  <option value="active">Restore Active</option>
+                {% endif %}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label for="transition-reason" class="block text-sm font-medium text-neos-text mb-1">Reason <span class="text-neos-muted font-normal text-xs">(optional)</span></label>
+            <textarea
+              id="transition-reason"
+              name="reason"
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+              rows="3"
+              placeholder="Provide context for this status change..."
+            ></textarea>
+          </div>
+          <div>
+            <button
+              type="submit"
+              class="inline-flex items-center px-4 py-2 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2 disabled:opacity-50"
+            >
+              Apply Transition
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# ---- History Section ---- #}
+    {% if show_history is defined and show_history %}
+    <div class="space-y-6">
+
+      {# Amendments #}
+      {% if amendments is defined and amendments %}
+      <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+          <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Amendments</h2>
+        </div>
+        <ul class="divide-y divide-neos-border" role="list">
+          {% for amendment in amendments %}
+          <li class="px-6 py-4">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                  {{ amendment.amendment_type or 'amendment' }}
+                </span>
+                <span class="text-sm font-semibold text-neos-text">{{ amendment.amendment_id or '—' }}</span>
+              </div>
+              <span class="text-xs text-neos-muted">{{ amendment.date or '—' }}</span>
+            </div>
+            {% if amendment.rationale %}
+            <p class="text-sm text-neos-muted">{{ amendment.rationale }}</p>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {# Reviews #}
+      {% if reviews is defined and reviews %}
+      <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+          <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Reviews</h2>
+        </div>
+        <ul class="divide-y divide-neos-border" role="list">
+          {% for review in reviews %}
+          <li class="px-6 py-4 flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-neos-text">{{ review.review_type or 'Review' }}</p>
+              <p class="text-xs text-neos-muted">{{ review.date or '—' }}</p>
+            </div>
+            {% if review.outcome %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold
+              {% if review.outcome == 'affirmed' %}bg-green-100 text-green-700
+              {% elif review.outcome == 'amended' %}bg-blue-100 text-blue-700
+              {% else %}bg-yellow-100 text-yellow-700{% endif %}
+            ">{{ review.outcome }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {# Ratification Records #}
+      {% if ratifications is defined and ratifications %}
+      <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+          <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Ratification Records</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm" aria-label="Ratification records">
+            <thead>
+              <tr class="border-b border-neos-border bg-gray-50">
+                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Participant</th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Role</th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Position</th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Date</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-neos-border">
+              {% for record in ratifications %}
+              <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 font-semibold text-neos-text">{{ record.participant or '—' }}</td>
+                <td class="px-4 py-3 text-neos-muted">{{ record.role or '—' }}</td>
+                <td class="px-4 py-3">
+                  {% set pos = record.position | default('') %}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold
+                    {% if pos == 'consent' or pos == 'agree' %}bg-green-100 text-green-700
+                    {% elif pos == 'object' %}bg-red-100 text-red-700
+                    {% elif pos == 'abstain' %}bg-gray-100 text-gray-600
+                    {% else %}bg-gray-100 text-gray-600{% endif %}
+                  ">{{ pos or '—' }}</span>
+                </td>
+                <td class="px-4 py-3 text-neos-muted">{{ record.date or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+    {% endif %}
+    {# /show_history #}
+
+  </div>
+  {# /main column #}
+
+  {# ---- Sidebar (1/3) ---- #}
+  <aside class="space-y-4" aria-label="Agreement metadata">
+
+    {# Key Dates card #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+        <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Key Dates</h3>
+      </div>
+      <dl class="divide-y divide-neos-border">
+        <div class="px-4 py-2.5 flex justify-between items-center">
+          <dt class="text-xs font-medium text-neos-muted">Created</dt>
+          <dd class="text-xs text-neos-text">{{ agreement.created_date or agreement.created_at or '—' }}</dd>
+        </div>
+        <div class="px-4 py-2.5 flex justify-between items-center">
+          <dt class="text-xs font-medium text-neos-muted">Ratified</dt>
+          <dd class="text-xs text-neos-text">{{ agreement.ratification_date or '—' }}</dd>
+        </div>
+        <div class="px-4 py-2.5 flex justify-between items-center">
+          <dt class="text-xs font-medium text-neos-muted">Next Review</dt>
+          <dd class="text-xs text-neos-text">{{ agreement.review_date or '—' }}</dd>
+        </div>
+        {% if agreement.sunset_date %}
+        <div class="px-4 py-2.5 flex justify-between items-center">
+          <dt class="text-xs font-medium text-neos-muted">Sunset</dt>
+          <dd class="text-xs text-neos-text">{{ agreement.sunset_date }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+
+    {# Proposer card #}
+    {% if agreement.proposer %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+        <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Proposer</h3>
+      </div>
+      <div class="px-4 py-3">
+        <p class="text-sm font-semibold text-neos-text">{{ agreement.proposer }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Quick links #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+        <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Actions</h3>
+      </div>
+      <div class="px-4 py-3 space-y-2">
+        <a
+          href="/dashboard/agreements/{{ agreement.id }}/edit"
+          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <span aria-hidden="true">&#9998;</span> Edit Agreement
+        </a>
+        <a
+          href="/dashboard/agreements/{{ agreement.id }}/history"
+          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <span aria-hidden="true">&#128336;</span> Full History
+        </a>
+        <a
+          href="/dashboard/agreements"
+          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-muted hover:text-neos-text transition-colors"
+        >
+          &#8592; All Agreements
+        </a>
+      </div>
+    </div>
+
+  </aside>
+  {# /sidebar #}
+
+</div>
+{# /grid #}
+
+{% endif %}
+{# /error guard #}
+{% endblock %}

@@ -1,0 +1,29 @@
+{
+  "track_id": "global_packaging_20260302",
+  "title": "Global Packaging & Cross-Layer Integration",
+  "description": "Produce the global deliverables that wrap the NEOS skill stack into a distributable package: README.md, NEOS_PRINCIPLES.md, STRESS_TEST_PROTOCOL.md, package_zip.py, stress_test_report.py, cross-layer dependency verification, and full skill index.",
+  "status": "planned",
+  "priority": "P0",
+  "created_date": "2026-03-02",
+  "updated_date": "2026-03-02",
+  "layers": [],
+  "skills": [],
+  "deliverables": [
+    "README.md",
+    "NEOS_PRINCIPLES.md",
+    "STRESS_TEST_PROTOCOL.md",
+    "scripts/package_zip.py",
+    "scripts/stress_test_report.py",
+    "VERSION"
+  ],
+  "phases": 5,
+  "estimated_hours": "15-22",
+  "depends_on": [
+    "foundation_20260301",
+    "safeguard_capture_20260302",
+    "emergency_handling_20260302",
+    "exit_portability_20260302"
+  ],
+  "spec_path": "conductor/tracks/global_packaging_20260302/spec.md",
+  "plan_path": "conductor/tracks/global_packaging_20260302/plan.md"
+}

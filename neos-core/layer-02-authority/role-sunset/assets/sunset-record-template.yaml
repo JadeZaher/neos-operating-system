@@ -1,0 +1,23 @@
+sunset_id: ""
+domain_id: ""
+domain_contract_version: ""
+sunset_date: ""
+sunset_trigger: review_recommendation | purpose_achieved | responsibilities_transferred | vacancy_timeout | delegator_proposal
+rationale: ""
+disposition_plan:
+  responsibilities:
+    - responsibility: ""
+      disposition: transferred | ended | absorbed_by_delegator
+      destination_domain_id: ""
+  agreements:
+    - agreement_id: ""
+      disposition: transferred | sunset | archived
+      destination_domain_id: ""
+  dependent_domains:
+    - domain_id: ""
+      dependency_disposition: removed | redirected
+      redirected_to_domain_id: ""
+consent_record_id: ""
+reactivation_window_end: ""
+reactivation_used: false
+archived_domain_contract: {}

@@ -1,0 +1,88 @@
+# Coaching Plan and Outcome Template
+# Output artifact for the coaching-intervention skill
+
+coaching_plan:
+  id: ""                            # Unique ID, e.g. CI-SHUR-2026-001
+  date: ""                          # ISO 8601 date of plan creation
+  status: ""                        # proposed | active | completed | extended | closed-rerouted | closed-exited
+
+  participant:
+    name: ""
+    governance_role: ""             # TH, AE, OSC, steward, etc.
+    azpo: ""
+    experience_level: ""            # Relevant governance experience
+    self_assessment: ""             # Participant's own perspective on the skill gaps
+
+  coach:
+    name: ""
+    governance_role: ""
+    azpo: ""                        # Must differ from participant's direct authority
+    relevant_skills: ""             # Why this coach was selected
+    independence_verified: true     # Confirms no authority relationship with participant
+
+  coaching_facilitator:
+    name: ""                        # Person overseeing the coaching process
+    role: ""
+
+  triage_reference:
+    triage_id: ""                   # Escalation triage record that routed to coaching
+    root_cause_assessment: ""       # Summary of why coaching was recommended
+    routing_date: ""
+
+  skill_gaps:
+    - skill: ""                     # e.g. "collaborative decision-making"
+      current_level: ""             # Description of current capability
+      target_level: ""             # Description of expected capability
+      source: ""                    # triager | facilitator | self-identified | affected-parties
+      observable_indicators:
+        current: []                 # What the gap looks like in practice
+        target: []                  # What competence looks like in practice
+
+  coaching_plan:
+    timeline_weeks: 0               # Typically 4-12 weeks
+    start_date: ""
+    end_date: ""
+    methods: []                     # observation, practice, feedback, mentoring, co-facilitation
+    session_frequency: ""           # e.g. "bi-weekly" or "weekly"
+
+  affected_parties_input:
+    consulted: true
+    parties:
+      - name: ""
+        role: ""
+        feedback_on_skill_gap: ""   # What they observed and how it affected them
+        suggested_skill_targets: "" # Additional skills they recommend addressing
+    feedback_incorporated: ""       # How their input shaped the coaching plan
+
+  check_ins:
+    - date: ""
+      week: 0
+      progress_assessment: ""       # Against measurable indicators
+      challenges_noted: ""
+      adjustments_made: ""          # Modifications to the coaching plan
+      participant_reflection: ""
+      coach_notes: ""               # Private -- not shared beyond coach and participant
+
+  outcome_assessment:
+    date: ""
+    result: ""                      # skills-developed | partial-progress | not-developed
+    evidence:
+      behavioral_observations: ""   # Documented changes in governance interactions
+      affected_parties_feedback: "" # Do affected parties observe change?
+      participant_self_assessment: "" # Participant's own reflection
+    next_steps: ""                  # Case closed | coaching extended | rerouted to triage
+    repair_agreement_id: ""         # If ongoing commitments were formalized
+
+  linked_records:
+    triage_id: ""
+    repair_agreement_id: ""         # If a repair agreement resulted
+    community_impact_id: ""         # If coaching revealed systemic patterns
+    domain_reference: ""
+
+  privacy_note: >
+    Coaching session content is confidential between coach and participant.
+    This record documents skill targets, progress indicators, and outcomes
+    without disclosing private coaching conversation content.
+
+  created_at: ""                    # ISO 8601 timestamp
+  created_by: ""                    # Coaching facilitator who created the record

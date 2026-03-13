@@ -1,0 +1,76 @@
+report_id: ""
+reporting_period:
+  start: ""
+  end: ""
+monitor_roster:
+  - name: ""
+    role: ""
+    rotation_period: ""
+executive_summary: ""
+pools_monitored:
+  - pool_id: ""
+    pool_name: ""
+    pool_type: ""
+    balance_start: ""
+    balance_end: ""
+    total_inflows: ""
+    total_outflows: ""
+    dimensions:
+      flow_rate:
+        inflow_outflow_ratio: ""
+        trend: ""  # improving | stable | worsening
+        flag: false
+        flag_reason: ""
+      concentration:
+        top_recipient: ""
+        top_recipient_percentage: ""
+        flag: false
+        flag_reason: ""
+      reciprocity:
+        highest_receive_contribute_ratio: ""
+        circle: ""
+        flag: false
+        flag_reason: ""
+      sustainability:
+        projected_depletion_date: ""
+        quarters_remaining: ""
+        flag: false
+        flag_reason: ""
+      accessibility:
+        active_requesters_percentage: ""
+        trend: ""
+        flag: false
+        flag_reason: ""
+threshold_breaches:
+  - pool_id: ""
+    dimension: ""
+    measured_value: ""
+    threshold_value: ""
+    severity: ""  # advisory | warning | critical
+    trend: ""  # new | worsening | stable | improving
+    graduated_response_level: ""  # level_1_notification | level_2_review | level_3_restriction | level_4_investigation
+    recommended_action: ""
+community_observations:
+  - observer: ""
+    observation: ""
+    related_pool: ""
+comparison_with_previous:
+  previous_report_id: ""
+  key_changes: ""
+  trend_summary: ""
+recommended_actions:
+  - action: ""
+    target: ""  # pool_id or circle name
+    graduated_response_level: ""
+    timeline: ""
+    responsible_party: ""
+community_review_session:
+  date: ""
+  attendance_count: ""
+  attendance_percentage: ""
+  facilitator: ""
+  key_discussion_points: ""
+  decisions_made: ""
+next_report_date: ""
+version: "1.0.0"
+created_date: ""

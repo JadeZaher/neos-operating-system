@@ -1,0 +1,62 @@
+# Polycentric Conflict Resolution Record Template
+# Layer V -- Inter-Unit Coordination
+# Use for structural conflicts between AZPOs
+
+conflict_id: "PCN-[Ecosystem]-[YYYY]-[Seq]"
+
+affected_azpos:
+  - name: ""
+    representative: ""
+    representative_mandate: ""
+
+conflict:
+  type: ""  # authority-overlap | agreement-contradiction | resource-competition | boundary-dispute | protocol-divergence
+  description: ""
+  azpo_positions:
+    - azpo: ""
+      position: ""
+      supporting_documentation: []
+  date_identified: ""
+
+resolution_process:
+  tier_reached: ""  # tier-1 | tier-2 | tier-3 | concluded-without-resolution
+
+  tier_1:
+    start_date: ""
+    representatives: []
+    sessions_held: 0
+    outcome: ""  # resolved | escalated | concluded-without-resolution
+    end_date: ""
+
+  tier_2:
+    facilitator:
+      name: ""
+      home_azpo: ""
+      selection_method: ""  # overlap | random | mutual-agreement
+      disclosed_relationships: []
+    start_date: ""
+    sessions_held: 0
+    outcome: ""
+    end_date: ""
+
+  tier_3:
+    federation_agreement_reference: ""
+    amendment_or_new: ""  # amendment | new-agreement
+    start_date: ""
+    outcome: ""
+    end_date: ""
+
+resolution:
+  outcome_type: ""  # mutual-agreement | federation-amendment | agree-to-disagree | engagement-tier-reduction
+  outcome_description: ""
+  ratification_records:
+    - azpo: ""
+      ratification_date: ""
+      consent_record: ""
+  engagement_tier_change: ""  # if applicable
+
+review:
+  review_date: ""  # 6 months post-resolution for agreements, 12 months for agree-to-disagree
+  review_outcome: ""
+
+registry_entries: []  # list of registry IDs per AZPO

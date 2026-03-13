@@ -1,0 +1,53 @@
+resolution_id: ""              # Unique ID: BRES-{YEAR}-{SEQ}
+date: ""                       # ISO 8601 date negotiation completed
+facilitator: ""                # Member ID of neutral facilitator (not steward of any involved domain)
+status: ""                     # active | superseded | under_review
+
+involved_domains:
+  - domain_id: ""
+    domain_contract_version: ""
+    steward: ""                # Member ID
+    delegating_body: ""
+
+overlap_description: ""        # Precise statement using 11-element domain contract language
+
+structural_source: ""          # shared_responsibility | unclear_constraint | missing_dependency | scope_creep
+
+sessions_held: 0               # Number of negotiation sessions before resolution
+
+discussion_summary: ""         # Narrative summary of integrative discussion
+
+resolution_options_considered:
+  - option: ""
+    proposed_by: ""            # domain_id or "facilitator"
+    outcome: ""                # selected | rejected | modified-into-selected
+
+selected_resolution: ""        # Full description of agreed resolution
+
+domain_contract_amendments:
+  - domain_id: ""
+    domain_contract_version_before: ""
+    domain_contract_version_after: ""
+    elements_amended: []       # List of 11-element names that were modified
+    amendment_summary: ""
+
+consent_record_id: ""          # Links to ACT consent record from Step 6
+
+review_trigger: ""             # ISO 8601 date OR "on next domain-review of {domain_id}"
+
+escalation_history:
+  - date: ""
+    level: ""                  # GAIA Level 4 | GAIA Level 5 | delegating-body-joint
+    outcome: ""
+
+precedent_tags: []             # Semantic tags for registry lookup (e.g. "resource-allocation-approval")
+
+adjacent_domains_notified: []  # domain_ids notified at Step 8
+
+cross_azpo: false              # true if domains span multiple AZPOs
+azpos_involved: []             # List of AZPO identifiers if cross_azpo is true
+
+relapse_check:
+  prior_resolution_id: ""      # Set if this resolution addresses the same overlap as a prior one
+  relapse_within_6_months: false
+  structural_review_triggered: false

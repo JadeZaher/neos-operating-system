@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+
+{% block title %}Member — {{ member.display_name if member else 'Not Found' }}{% endblock %}
+
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <a href="/dashboard/members" class="hover:text-neos-primary transition-colors">Members</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">{{ member.display_name }}</span>
+</nav>
+
+{# Page Header #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text">{{ member.display_name }}</h1>
+    <p class="text-sm text-neos-muted mt-1">{{ member.member_id }}</p>
+  </div>
+  <a
+    href="/dashboard/members/{{ member.id }}/edit"
+    class="inline-flex items-center px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors shrink-0"
+  >
+    Edit Member
+  </a>
+</div>
+
+{# Metadata Bar #}
+<div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 mb-6 bg-neos-surface border border-neos-border rounded-xl text-sm">
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Status:</span>
+    {% set status = member.current_status | default('active') %}
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+      {%- if status == 'active' %} bg-green-100 text-green-700
+      {%- elif status == 'onboarding' %} bg-blue-100 text-blue-700
+      {%- elif status == 'inactive' %} bg-gray-100 text-gray-500
+      {%- elif status == 'suspended' %} bg-yellow-100 text-yellow-700
+      {%- elif status == 'exited' %} bg-red-100 text-red-700
+      {%- else %} bg-gray-100 text-gray-600
+      {%- endif %}">{{ status }}</span>
+  </div>
+  {% if member.profile %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Profile:</span>
+    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{{ member.profile | replace('_', ' ') }}</span>
+  </div>
+  {% endif %}
+  {% if member.kyc_status %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">KYC:</span>
+    <span class="text-neos-text">{{ member.kyc_status }}</span>
+  </div>
+  {% endif %}
+</div>
+
+{# Onboarding Stepper #}
+{% set onboarding_stages = ['orientation', 'discovery', 'integration', 'active'] %}
+{% set current_stage = member.onboarding_status | default('orientation') %}
+<div class="bg-neos-surface border border-neos-border rounded-xl mb-6">
+  <div class="px-6 py-4 border-b border-neos-border flex items-center justify-between">
+    <h2 class="text-base font-semibold text-neos-text">Onboarding Progress</h2>
+    {% if member.onboarding is defined and member.onboarding and member.onboarding.completion_percentage is defined %}
+    <span class="text-sm text-neos-muted">{{ member.onboarding.completion_percentage }}% complete</span>
+    {% endif %}
+  </div>
+  <div class="px-6 py-5">
+    <div class="flex items-center gap-0" role="list" aria-label="Onboarding stages">
+      {% for stage in onboarding_stages %}
+      {% set idx = loop.index0 %}
+      {% set current_idx = onboarding_stages.index(current_stage) if current_stage in onboarding_stages else 0 %}
+      <div class="flex items-center{% if not loop.last %} flex-1{% endif %}" role="listitem">
+        <div class="flex flex-col items-center">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+            {%- if idx < current_idx %} bg-neos-accent text-white
+            {%- elif idx == current_idx %} bg-neos-primary text-white ring-2 ring-neos-accent ring-offset-2
+            {%- else %} bg-gray-200 text-gray-500
+            {%- endif %}">
+            {% if idx < current_idx %}&#10003;{% else %}{{ loop.index }}{% endif %}
+          </div>
+          <span class="text-xs mt-1
+            {%- if idx <= current_idx %} text-neos-text font-medium
+            {%- else %} text-neos-muted
+            {%- endif %}">{{ stage | capitalize }}</span>
+        </div>
+        {% if not loop.last %}
+        <div class="flex-1 h-0.5 mx-2 mt-[-0.75rem]
+          {%- if idx < current_idx %} bg-neos-accent
+          {%- else %} bg-gray-200
+          {%- endif %}"></div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# Main Content + Sidebar #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  {# Primary Column #}
+  <div class="lg:col-span-2 space-y-6">
+    {# Member Information #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Member Information</h2>
+      </div>
+      <div class="px-6 py-5 space-y-3 text-sm">
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Display Name</span>
+          <span class="text-neos-text">{{ member.display_name }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Member ID</span>
+          <span class="text-neos-text font-mono text-xs">{{ member.member_id }}</span>
+        </div>
+        {% if member.phone %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Phone</span>
+          <span class="text-neos-text">{{ member.phone }}</span>
+        </div>
+        {% endif %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Profile Type</span>
+          <span class="text-neos-text">{{ member.profile | default('Not set') | replace('_', ' ') }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Last Governance Activity</span>
+          <span class="text-neos-text">{{ member.last_governance_activity_date | default('None recorded') }}</span>
+        </div>
+        {% if member.notes %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Notes</span>
+          <span class="text-neos-text">{{ member.notes }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Skills #}
+    {% if member.skills_offered or member.skills_needed %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      {% if member.skills_offered %}
+      <div class="bg-neos-surface border border-neos-border rounded-xl">
+        <div class="px-5 py-4 border-b border-neos-border">
+          <h3 class="text-sm font-semibold text-neos-text">Skills Offered</h3>
+        </div>
+        <div class="px-5 py-4">
+          <div class="flex flex-wrap gap-2">
+            {% for skill in member.skills_offered %}
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ skill }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      {% if member.skills_needed %}
+      <div class="bg-neos-surface border border-neos-border rounded-xl">
+        <div class="px-5 py-4 border-b border-neos-border">
+          <h3 class="text-sm font-semibold text-neos-text">Skills Needed</h3>
+        </div>
+        <div class="px-5 py-4">
+          <div class="flex flex-wrap gap-2">
+            {% for skill in member.skills_needed %}
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ skill }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# Role Assignments #}
+    {% if role_assignments is defined and role_assignments %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Role Assignments</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm" aria-label="Role assignments">
+          <thead>
+            <tr class="border-b border-neos-border bg-gray-50">
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Role</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Domain</th>
+              <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Since</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-neos-border">
+            {% for role in role_assignments %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-4 py-3 font-medium text-neos-text">{{ role.name }}</td>
+              <td class="px-4 py-3">
+                {% if role.domain_id %}
+                <a href="/dashboard/domains/{{ role.domain_id }}" class="text-neos-primary hover:underline">{{ role.domain_name | default(role.domain_id) }}</a>
+                {% else %}
+                <span class="text-neos-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3 text-neos-muted">{{ role.since | default('—') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {# AZPO Memberships #}
+    {% if azpo_memberships is defined and azpo_memberships %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">AZPO Memberships</h2>
+      </div>
+      <div class="px-6 py-4">
+        <div class="flex flex-wrap gap-2">
+          {% for azpo in azpo_memberships %}
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ azpo }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Participation History #}
+    {% if participation_history is defined and participation_history %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Participation History</h2>
+      </div>
+      <div class="px-6 py-5">
+        <div class="space-y-4">
+          {% for event in participation_history %}
+          <div class="flex gap-3">
+            <div class="flex flex-col items-center">
+              <div class="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0
+                {%- if event.type == 'success' %} bg-neos-accent
+                {%- elif event.type == 'warning' %} bg-amber-400
+                {%- elif event.type == 'error' %} bg-red-400
+                {%- else %} bg-neos-muted
+                {%- endif %}"></div>
+              {% if not loop.last %}
+              <div class="w-px flex-1 bg-neos-border mt-1"></div>
+              {% endif %}
+            </div>
+            <div class="pb-4">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-sm font-medium text-neos-text">{{ event.title }}</span>
+                <span class="text-xs text-neos-muted">{{ event.date | default('—') }}</span>
+              </div>
+              {% if event.description %}
+              <p class="text-sm text-neos-muted">{{ event.description }}</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Sidebar #}
+  <aside class="space-y-6" aria-label="Member details">
+    {# Lifecycle Status #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Lifecycle</h3>
+      </div>
+      <div class="px-5 py-4 space-y-3 text-sm">
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Current Status</span>
+          {% set status = member.current_status | default('active') %}
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+            {%- if status == 'active' %} bg-green-100 text-green-700
+            {%- elif status == 'onboarding' %} bg-blue-100 text-blue-700
+            {%- elif status == 'inactive' %} bg-gray-100 text-gray-500
+            {%- elif status == 'suspended' %} bg-yellow-100 text-yellow-700
+            {%- elif status == 'exited' %} bg-red-100 text-red-700
+            {%- else %} bg-gray-100 text-gray-600
+            {%- endif %}">{{ status }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Joined</span>
+          <span class="text-neos-text">{{ member.created_at | default('—') }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Updated</span>
+          <span class="text-neos-text">{{ member.updated_at | default('—') }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Status Transitions #}
+    {% if status_transitions is defined and status_transitions %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Status History</h3>
+      </div>
+      <div class="px-5 py-4 space-y-3 text-sm">
+        {% for t in status_transitions %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">{{ t.date }}</span>
+          <div class="text-right">
+            <span class="text-neos-text">{{ t.from_status }} &rarr; {{ t.to_status }}</span>
+            {% if t.trigger %}
+            <div class="text-xs text-neos-muted">{{ t.trigger }}</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Onboarding Details #}
+    {% if member.onboarding is defined and member.onboarding %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Onboarding</h3>
+      </div>
+      <div class="px-5 py-4 space-y-3 text-sm">
+        {% if member.onboarding.facilitator %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Facilitator</span>
+          <span class="text-neos-text">{{ member.onboarding.facilitator }}</span>
+        </div>
+        {% endif %}
+        {% if member.onboarding.consent_date %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">UAF Consent</span>
+          <span class="text-neos-text">{{ member.onboarding.consent_date }}</span>
+        </div>
+        {% endif %}
+        {% if member.onboarding.cooling_off_start %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Cooling Off</span>
+          <span class="text-neos-text">{{ member.onboarding.cooling_off_start }} — {{ member.onboarding.cooling_off_end | default('ongoing') }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

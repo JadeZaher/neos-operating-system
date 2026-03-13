@@ -1,0 +1,42 @@
+# Federation Agreement Template
+# Layer V -- Inter-Unit Coordination
+# Use for bilateral or multilateral agreements between AZPOs
+
+agreement_id: "FED-[Ecosystem]-[YYYY]-[Seq]"
+
+type: ""  # bilateral-cooperation | multilateral-protocol | service-level | mutual-recognition | graduated-engagement-compact
+
+participating_azpos:
+  - name: ""
+    negotiator: ""
+    negotiation_mandate_reference: ""
+    ratification_date: ""
+    ratification_record: ""
+
+engagement_tier: ""  # observe | cooperate | federate | integrate
+
+terms:
+  commitments:
+    - azpo: ""
+      commitment: ""
+      conditions: []
+  shared_protocols: []
+  dispute_resolution_path: ""  # direct-negotiation | facilitated-dialogue | polycentric-conflict-navigation
+
+review_schedule:
+  next_review_date: ""
+  review_interval: ""  # 6-months | 12-months | 18-months
+  review_process: "all-azpo-consent"
+
+amendment_procedures:
+  process: "same as original ratification"
+  simplified_for_minor_clarifications: true
+  requires_all_azpo_consent: true
+
+exit_terms:
+  notice_period: "90 days"
+  commitment_wind_down: "30 days after notice period"
+  no_retaliation: true
+  multilateral_impact: "remaining AZPOs convene review"
+
+registry_entries: []  # list of registry IDs per AZPO

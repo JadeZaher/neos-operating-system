@@ -1,0 +1,28 @@
+registry:
+  entries:
+    - agreement_id: ""
+      type: ""  # space | access | organizational | uaf
+      title: ""
+      current_version: ""
+      status: ""  # active | under_review | sunset | archived
+      domain: ""
+      created_date: ""
+      last_amended_date: ""
+      next_review_date: ""
+      sunset_date: ""
+      affected_parties: []
+      parent_agreement_id: ""  # null for root agreements
+      hierarchy_level: ""  # universal | ecosystem | access | stewardship | ethos | culture_code | personal
+      version_history:
+        - version: ""
+          date: ""
+          change_type: ""  # creation | amendment | review_renewal
+          record_id: ""
+      full_text_path: ""
+query_capabilities:
+  - by_type
+  - by_domain
+  - by_affected_party
+  - by_status
+  - by_date_range
+  - compound

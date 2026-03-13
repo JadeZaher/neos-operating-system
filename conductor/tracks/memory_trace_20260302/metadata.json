@@ -1,0 +1,20 @@
+{
+  "track_id": "memory_trace_20260302",
+  "title": "Memory & Traceability Layer (Layer IX)",
+  "status": "planned",
+  "priority": "P0",
+  "created": "2026-03-02",
+  "layers": [9],
+  "depends_on": ["foundation_20260301"],
+  "skills": [
+    "decision-record",
+    "precedent-search",
+    "semantic-tagging",
+    "agreement-versioning",
+    "precedent-challenge"
+  ],
+  "phases": 5,
+  "estimated_hours": "20-28",
+  "spec_path": "conductor/tracks/memory_trace_20260302/spec.md",
+  "plan_path": "conductor/tracks/memory_trace_20260302/plan.md"
+}

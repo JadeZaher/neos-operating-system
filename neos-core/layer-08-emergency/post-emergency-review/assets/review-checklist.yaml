@@ -1,0 +1,95 @@
+# Post-Emergency Review Checklist -- structured evaluation framework
+# The review body works through each section for every reviewed emergency.
+# Each check item produces a finding documented in the review report.
+
+checklist:
+
+  # Section 1: Review Body Independence
+  independence_verification:
+    - check: "All review body members confirmed they held no emergency role during the emergency"
+    - check: "No review body member made emergency decisions during the crisis"
+    - check: "No review body member has a direct financial interest in the review outcome"
+    - check: "The circle steward who confirmed the emergency declaration is not on the review body"
+    - check: "Review body includes at least three qualified members"
+    - check: "If local members insufficient, cross-AZPO members were appointed"
+
+  # Section 2: Emergency Declaration
+  declaration_review:
+    - check: "Entry criterion ID is documented in the Crisis Operations Log"
+    - check: "Data source confirmed the entry threshold crossing"
+    - check: "Declaration timestamp is recorded"
+    - check: "Circuit breaker Closed-to-Open transition is logged"
+    - check: "Auto-reversion timer start time is recorded"
+    - check: "All pre-authorized roles received activation notification"
+    - check: "Time between threshold crossing and declaration is documented"
+
+  # Section 3: Decision Evaluation (per decision)
+  per_decision_review:
+    - check: "Decision falls within the role holder's pre-authorized authority scope"
+    - check: "Decision is within the role holder's hard ceilings"
+    - check: "Decision is properly classified (immediate / short-cycle / deferred)"
+    - check: "For immediate decisions: reported to ecosystem within 24 hours"
+    - check: "For short-cycle decisions: 24-hour advice period observed"
+    - check: "For short-cycle decisions: 12-hour emergency consent period observed"
+    - check: "For short-cycle decisions: minimum 3 participants in consent"
+    - check: "Decision does not violate any irreducible constraint"
+    - check: "Decision is tagged 'emergency context' in the Crisis Operations Log"
+    - check: "Ceiling impact is documented for resource-related decisions"
+
+  # Section 4: Ceiling Utilization
+  ceiling_review:
+    - check: "Each role's total spending is documented against their ceiling"
+    - check: "80% warning notifications were issued when thresholds were crossed"
+    - check: "Any ceiling violations have stated justifications from the role holder"
+    - check: "Ceiling violations are assessed for proportionality to crisis need"
+    - check: "Recommendations for ceiling adjustments are documented if gaps identified"
+
+  # Section 5: Deferred Decision Queue
+  deferred_review:
+    - check: "Each deferred decision is confirmed as genuinely outside emergency scope"
+    - check: "No crisis-relevant decisions were improperly deferred"
+    - check: "No non-crisis decisions were processed under emergency authority"
+    - check: "Deferred decisions entered normal ACT process after emergency"
+
+  # Section 6: Communication Compliance
+  communication_review:
+    - check: "Status updates were issued at least every 24 hours"
+    - check: "Updates included current crisis status"
+    - check: "Updates included decisions made since last update"
+    - check: "Updates included ceiling utilization snapshot"
+    - check: "Updates included auto-reversion timer status"
+    - check: "Updates included deferred decision queue contents"
+
+  # Section 7: Reversion Compliance
+  reversion_review:
+    - check: "Reversion trigger is documented (exit criteria / timer / early consent)"
+    - check: "Authority cessation was immediate upon reversion trigger"
+    - check: "No decisions were made by role holders after authority ceased"
+    - check: "Any authority continuation attempts are documented"
+    - check: "Crisis decisions entered ratification queue within 30 days"
+    - check: "Unratified decisions auto-reverted at the 30-day deadline"
+    - check: "Deferred decisions entered normal ACT process"
+
+  # Section 8: Exit Criteria Application
+  exit_criteria_review:
+    - check: "Exit criteria were monitored continuously during the emergency"
+    - check: "Exit data is documented with source confirmation"
+    - check: "Reversion trigger fired promptly when exit criteria were met"
+    - check: "If timer expired before exit criteria met, adequacy of maximum duration is assessed"
+    - check: "Duration extensions (if any) were properly processed through emergency ACT consent"
+
+  # Section 9: Irreducible Constraints
+  constraint_review:
+    - check: "No UAF amendment was attempted or executed"
+    - check: "No AZPO dissolution was attempted or executed"
+    - check: "No member expulsion was attempted or executed"
+    - check: "No emergency criteria were modified during the active emergency"
+    - check: "No authority scope expansion was executed without emergency ACT consent"
+
+  # Section 10: Cross-Emergency Patterns (if applicable)
+  pattern_review:
+    - check: "If 3+ emergencies in 12 months, meta-review triggered"
+    - check: "Frequency of emergency declarations assessed for trend"
+    - check: "Scope creep patterns assessed across emergencies"
+    - check: "Same individuals holding emergency roles across multiple emergencies documented"
+    - check: "Emergency authority return timeliness compared across emergencies"

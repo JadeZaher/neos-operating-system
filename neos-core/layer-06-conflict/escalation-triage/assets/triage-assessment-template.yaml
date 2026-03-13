@@ -1,0 +1,77 @@
+# Escalation Triage Assessment Template
+# Output artifact for the escalation-triage skill
+
+triage_assessment:
+  id: ""                            # Unique ID, e.g. ET-SHUR-2026-001
+  date: ""                          # ISO 8601 date of assessment
+  status: ""                        # received | assessing | routed | closed
+
+  reporting_party:
+    name: ""
+    role: ""                        # TH, AE, OSC, facilitator, steward, etc.
+    relationship_to_conflict: ""    # person-harmed | witness | facilitator | steward
+
+  triager:
+    name: ""
+    role: ""
+    azpo_affiliation: ""
+    conflict_of_interest_check: ""  # none | disclosed (details)
+
+  situation_summary: ""             # Brief factual description of the reported conflict
+
+  prior_resolution_attempts:
+    - type: ""                      # direct-dialogue | informal-conversation | prior-triage
+      date: ""
+      outcome: ""                   # resolved | unresolved | escalated
+
+  assessment_dimensions:
+    severity:
+      rating: ""                    # low | moderate | high | critical
+      justification: ""            # Written rationale required
+    scope:
+      rating: ""                    # individual | circle | azpo | ecosystem
+      justification: ""
+    parties:
+      involved:
+        - name: ""
+          role: ""
+          authority_holder: false   # true if steward, OSC, etc.
+      power_dynamics_noted: ""     # Description of relevant power imbalances
+    root_cause_type:
+      primary: ""                   # values-conflict | skill-gap | agreement-breach | communication-breakdown | structural-deficiency
+      secondary: ""                 # Optional second root cause
+      justification: ""
+    urgency:
+      rating: ""                    # low | moderate | high | immediate
+      justification: ""
+    safety:
+      flag: false                   # true if safety concern exists
+      details: ""                   # Nature of safety concern
+      interim_measures: ""          # Measures taken before routing
+
+  routing_decision:
+    tier: ""                        # tier-1-direct-dialogue | tier-2-coaching | tier-3-harm-circle | tier-4-community-assessment
+    secondary_route: ""             # Optional parallel routing (e.g., harm-circle + community-assessment)
+    rationale: ""                   # Why this tier was selected
+    recommended_facilitator: ""     # Name or pool reference
+    nvc_support_recommended: false  # true for Tier 1 with NVC support
+
+  party_consultation:
+    parties_consulted: true
+    agreement_with_routing: ""      # agreed | disagreed (details) | partial
+    party_preferred_alternative: "" # What the parties wanted if different
+    triager_response: ""            # How triager addressed disagreement
+
+  handoff:
+    target_skill: ""                # harm-circle | coaching-intervention | nvc-dialogue | community-impact-assessment
+    target_facilitator: ""
+    handoff_date: ""
+    activation_deadline: ""         # 14 days from routing decision
+
+  linked_records:
+    prior_triage_ids: []            # Previous triage records for this situation
+    downstream_process_id: ""       # Harm circle, coaching plan, etc.
+    domain_reference: ""            # AZPO and circle context
+
+  created_at: ""                    # ISO 8601 timestamp
+  created_by: ""                    # Triager who finalized the record

@@ -1,0 +1,77 @@
+# Dissolution Record Template -- output artifact of azpo-dissolution
+# One record per AZPO dissolution. Filed in governance memory (Layer IX).
+
+dissolution:
+  dissolution_id: ""              # e.g. DISS-LG-2026-001
+  azpo_name: ""                   # name of the dissolving AZPO
+  azpo_id: ""                     # ecosystem identifier
+  ecosystem: ""                   # parent ecosystem name
+  effective_date: ""              # ISO date -- when dissolution becomes final
+  coordinator_id: ""              # identity of the dissolution coordinator
+  coordinator_affiliation: ""     # coordinator's home AZPO (must differ from dissolving AZPO)
+
+trigger:
+  trigger_type: ""                # supermajority-consent | governance-incapacity | ecosystem-intervention | zero-membership
+  evidence_summary: ""            # brief description of triggering evidence
+  evidence_references: []         # list of document/record IDs supporting the trigger
+  trigger_date: ""                # ISO date when trigger condition was confirmed
+
+consent_round:
+  proposal_date: ""               # ISO date -- when dissolution proposal was submitted
+  advice_period_days: 0           # minimum 21 days for dissolution
+  consent_window_days: 0          # minimum 14 days
+  total_eligible: 0               # active members eligible to participate
+  consented: 0
+  objected: 0
+  stood_aside: 0
+  not_participating: 0
+  threshold_met: false            # true if consented >= 2/3 of (consented + objected)
+  objections_integrated: []       # list of objections raised and how they were addressed
+
+asset_disposition:
+  debts_settled:
+    - creditor: ""
+      amount: ""
+      settlement_method: ""       # paid | transferred | negotiated
+      date_settled: ""            # ISO date
+  stewarded_resources_returned:
+    - resource_description: ""
+      returned_to: ""             # original source or designated receiver
+      date_returned: ""           # ISO date
+  remaining_assets_distributed:
+    - asset_description: ""
+      distributed_to: ""          # receiving body or common pool
+      distribution_method: ""     # consent-round decision | default-to-pool
+      date_distributed: ""        # ISO date
+  total_debts_settled: 0
+  total_resources_returned: 0
+  total_assets_distributed: 0
+
+member_transitions:
+  total_members_at_dissolution: 0
+  transferred_to_existing_azpo: 0
+  forming_new_azpo: 0
+  departed_ecosystem: 0
+  unreachable: 0
+  transitions:
+    - member_id: ""
+      transition_type: ""         # transfer | new-azpo | departure | unreachable
+      receiving_azpo: ""          # if transfer
+      portable_record_id: ""      # reference to generated portable record
+      departure_record_id: ""     # if departing ecosystem
+      notes: ""
+
+affected_agreements:
+  - agreement_id: ""
+    agreement_name: ""
+    action_taken: ""              # amended | terminated | escalated
+    amendment_reference: ""       # reference to agreement amendment record
+    notes: ""
+
+archive:
+  governance_history_archived: false
+  archive_location: ""            # reference to Layer IX storage
+  records_included: []            # list of record types archived (decision-logs, agreements, roles, audits, etc.)
+  accessible_to: ""               # "all ecosystem members and former AZPO members"
+
+notes: ""                         # additional context (e.g., emergency conditions, informal commitments noted)

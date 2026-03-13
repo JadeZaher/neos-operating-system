@@ -1,0 +1,63 @@
+# Starter Emergency Criteria -- default categories for new AZPO setup
+# Customize thresholds per ecosystem context through ACT process.
+
+starter_criteria:
+
+  # Physical Safety
+  - criterion_id: ECR-STARTER-PS-01
+    category: physical_safety
+    criterion_name: Natural Disaster (Seismic/Volcanic/Flooding)
+    entry_threshold: "Government meteorological/geological agency issues Level 3+ alert for the AZPO's region OR physical damage renders any SHUR residential/common space unsafe as confirmed by two independent assessments"
+    exit_threshold: "Alert downgraded below Level 3 for 48 consecutive hours AND facility safety inspection passed by qualified assessor AND all displaced members confirmed safe"
+    data_source: "National meteorological/geological agency; facility safety assessors"
+    maximum_duration_days: 14
+    review_date: "annual"
+
+  - criterion_id: ECR-STARTER-PS-02
+    category: physical_safety
+    criterion_name: Health Emergency (Pandemic/Outbreak)
+    entry_threshold: "Government health authority declares quarantine or lockdown affecting the AZPO's operational area OR 30%+ of AZPO members report illness preventing governance participation for 7+ consecutive days"
+    exit_threshold: "Government quarantine/lockdown lifted for AZPO's area for 14 consecutive days AND member illness rate below 10% for 7 consecutive days"
+    data_source: "Government health authority; AZPO participation records"
+    maximum_duration_days: 30
+    review_date: "annual"
+
+  # Resource Crisis
+  - criterion_id: ECR-STARTER-RC-01
+    category: resource_crisis
+    criterion_name: Sudden Funding Loss
+    entry_threshold: "Confirmed loss of funding constituting 25%+ of quarterly operating budget with less than 60 days notice AND no replacement funding source identified"
+    exit_threshold: "Replacement funding secured covering 75%+ of shortfall OR operating costs reduced through consented restructuring to match available resources"
+    data_source: "Financial records; funding agreements"
+    maximum_duration_days: 30
+    review_date: "annual"
+
+  # Governance Incapacity
+  - criterion_id: ECR-STARTER-GI-01
+    category: governance_incapacity
+    criterion_name: Sustained Quorum Failure
+    entry_threshold: "Inability to achieve decision-making quorum for 14 consecutive days despite documented delegation attempts"
+    exit_threshold: "Quorum achieved for 3 consecutive scheduled decision sessions"
+    data_source: "Decision logs; attendance records"
+    maximum_duration_days: 30
+    review_date: "annual"
+
+  # External Legal Threat
+  - criterion_id: ECR-STARTER-EL-01
+    category: external_legal_threat
+    criterion_name: Regulatory Enforcement Action
+    entry_threshold: "Government agency issues formal enforcement action (cease-and-desist, compliance order, asset freeze) against the AZPO or its legal entity with compliance deadline under 30 days"
+    exit_threshold: "Enforcement action resolved through compliance, legal challenge, or agency withdrawal AND no pending deadlines under 60 days"
+    data_source: "Legal counsel; government correspondence"
+    maximum_duration_days: 30
+    review_date: "annual"
+
+  # Infrastructure Failure
+  - criterion_id: ECR-STARTER-IF-01
+    category: infrastructure_failure
+    criterion_name: Critical Infrastructure Failure
+    entry_threshold: "Sustained failure (48+ hours) of critical infrastructure (water, power, sanitation, communications) with no redundant system available AND failure affects 50%+ of AZPO members' basic needs"
+    exit_threshold: "Primary or replacement infrastructure operational for 24 consecutive hours AND independent verification of system stability"
+    data_source: "Infrastructure monitoring; facility steward report"
+    maximum_duration_days: 14
+    review_date: "annual"

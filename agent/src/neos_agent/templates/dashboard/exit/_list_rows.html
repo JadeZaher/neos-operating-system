@@ -1,0 +1,39 @@
+{# Partial: exit list rows for htmx filter updates #}
+<div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm" aria-label="Exit records">
+      <thead>
+        <tr class="border-b border-neos-border bg-gray-50">
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Exit ID</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Type</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Initiated</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Cooling Off Ends</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-neos-border">
+        {% for exit in exits %}
+        <tr class="hover:bg-gray-50 cursor-pointer transition-colors"
+            onclick="window.location.href='/dashboard/exit/{{ exit.id }}'">
+          <td class="px-4 py-3 font-mono text-xs font-semibold">{{ exit.id | string | truncate(13, true, '') }}</td>
+          <td class="px-4 py-3 capitalize text-neos-muted">{{ exit.exit_type }}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
+              {% if exit.status == 'completed' %}bg-green-100 text-green-700
+              {% elif exit.status == 'unwinding' %}bg-orange-100 text-orange-700
+              {% elif exit.status == 'cooling_off' %}bg-yellow-100 text-yellow-700
+              {% else %}bg-blue-100 text-blue-700{% endif %}">{{ exit.status | replace('_', ' ') }}</span>
+          </td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ exit.declared_date.strftime('%Y-%m-%d') if exit.declared_date else '—' }}</td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ exit.target_completion_date.strftime('%Y-%m-%d') if exit.target_completion_date else '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not exits %}
+        <tr>
+          <td colspan="5" class="px-4 py-12 text-center text-neos-muted">No exit records match your filters.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>

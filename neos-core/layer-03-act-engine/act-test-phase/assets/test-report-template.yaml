@@ -1,0 +1,18 @@
+proposal_id: ""
+test_start_date: ""
+test_end_date: ""
+midpoint_checkin_date: ""
+revert_procedure: ""
+success_criteria:
+  - criterion: ""
+    met: false
+    evidence: ""
+review_body: []
+review_date: ""
+observations: ""
+midpoint_findings: ""
+outcome: ""  # adopt | extend | modify_retest | revert
+extension_end_date: ""
+modifications: ""
+next_action: ""
+agreement_registry_id: ""

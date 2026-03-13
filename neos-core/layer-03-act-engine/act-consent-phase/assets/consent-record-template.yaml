@@ -1,0 +1,25 @@
+proposal_id: ""
+consent_mode: consent  # consent | consensus
+weighting_model: equal  # equal | configurable
+facilitator: ""
+date: ""
+quorum_required: ""
+quorum_met: false
+participants:
+  - name: ""
+    role: ""
+    azpo: ""
+    position: ""  # consent | stand_aside | objection
+    reason: ""
+    round: 1
+integration_rounds:
+  - round_number: 1
+    objections_addressed:
+      - objector: ""
+        objection: ""
+        resolution: ""
+    modifications_made: ""
+    outcome: ""  # resolved | unresolved
+outcome: ""  # consented | consensus_reached | escalated
+escalation_level: ""
+final_proposal_version: ""

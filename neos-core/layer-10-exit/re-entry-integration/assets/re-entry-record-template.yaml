@@ -1,0 +1,58 @@
+# Re-Entry Record Template -- output artifact of re-entry-integration
+# One record per returning member. Filed in governance memory (Layer IX).
+
+re_entry:
+  re_entry_id: ""                 # e.g. RER-SHUR-2027-008
+  member_identity: ""             # returning member's ecosystem identity
+  re_entry_scope: ""              # "azpo" or "ecosystem"
+  receiving_azpo: ""              # AZPO the member is joining
+  ecosystem: ""                   # ecosystem name
+  request_date: ""                # ISO date -- when member expressed intent to return
+  effective_re_entry_date: ""     # ISO date -- when membership becomes active
+
+coordinator:
+  coordinator_id: ""              # identity of the re-entry coordinator
+  coordinator_circle: ""          # coordinator's circle within receiving AZPO
+  assignment_date: ""             # ISO date
+
+departure_context:
+  departure_record_ref: ""        # reference to original Departure Record ID
+  original_departure_date: ""     # ISO date
+  departure_scope: ""             # scope of original departure
+  absence_duration_months: 0      # months between departure and re-entry request
+  re_entry_eligibility: ""        # from departure record: "indefinite" | specific window
+  unresolved_matters: ""          # any unresolved items from original departure
+
+portable_record_verification:
+  portable_record_ref: ""         # reference to Portable Governance Record ID
+  record_presented: false         # whether the member presented a portable record
+  verification_hash_valid: false  # whether the hash verified against archived data
+  verification_date: ""           # ISO date
+  previous_tenure_months: 0       # total months of previous membership
+  previous_roles: []              # list of roles held during prior membership
+  notes: ""                       # e.g. "hash valid" or "record unverifiable -- informational only"
+
+agreement_consent:
+  change_summary_provided_date: ""  # ISO date
+  changes_since_departure: []     # list of significant changes the member reviewed
+  agreements_consented_to:
+    - agreement_name: ""
+      agreement_id: ""
+      version: ""                 # current version number
+      consent_date: ""            # ISO date
+  objections_raised: []           # any objections and their resolution status
+
+integration_pathway:
+  receiving_circle: ""            # circle the member is joining
+  orientation_start_date: ""      # ISO date
+  orientation_end_date: ""        # ISO date (start + 30 days)
+  role_consideration: ""          # "eligible after orientation" -- no automatic reinstatement
+  previous_experience_noted: ""   # summary of relevant prior experience for context
+  notes: ""
+
+communication:
+  re_entry_notice_published: false
+  notice_date: ""                 # ISO date
+  notice_scope: ""                # e.g. "SHUR Bali members"
+
+notes: ""                         # additional context

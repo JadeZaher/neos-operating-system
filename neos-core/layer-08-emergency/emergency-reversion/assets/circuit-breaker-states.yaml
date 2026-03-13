@@ -1,0 +1,65 @@
+# Circuit Breaker State Definitions -- formal state model for emergency governance
+# The circuit breaker analogy: Closed = normal current flow, Open = circuit interrupted,
+# Half-Open = testing whether normal flow can resume.
+
+states:
+
+  closed:
+    name: "Closed (Normal Operations)"
+    description: "Normal governance processes are active. All decisions flow through standard ACT timelines. No emergency authority is active."
+    governance_mode: "Standard ACT process (advice + consent with normal timelines)"
+    emergency_roles: "Standby -- pre-authorized but not active"
+    decision_authority: "Normal role assignments per Layer II"
+    monitoring: "Independent monitoring and safeguard triggers active (Layer VII)"
+    transition_to_open:
+      trigger: "Emergency criterion entry threshold crossed (per emergency-criteria-design)"
+      verification: "Data source and measurement method confirm threshold crossing"
+      action: "Declare emergency, activate pre-authorized roles, start auto-reversion timer"
+
+  open:
+    name: "Open (Emergency Active)"
+    description: "Emergency governance is active. Compressed decision timelines replace normal ACT. Pre-authorized roles exercise bounded authority. Auto-reversion timer is running."
+    governance_mode: "Compressed ACT timelines (immediate, short-cycle, deferred)"
+    emergency_roles: "Active -- exercising pre-authorized authority within scope and ceilings"
+    decision_authority: "Pre-authorized role holders within defined scope; short-cycle ACT for beyond-scope"
+    monitoring: "Crisis operations log maintained in real time. Layer VII safeguard triggers remain active."
+    constraints:
+      - "All decisions tagged 'emergency context' -- no precedent for normal operations"
+      - "Irreducible constraints in force at all times"
+      - "Auto-reversion timer cannot be paused or reset (only extended through emergency ACT consent)"
+      - "Deferred decisions cannot use emergency authority"
+    transition_to_half_open:
+      trigger: "Exit criteria met OR auto-reversion timer expired OR early reversion consent"
+      verification: "Data source confirms exit threshold OR timer confirmed expired OR ACT decision ID recorded"
+      action: "Cease all emergency authority immediately. Begin recovery process."
+
+  half_open:
+    name: "Half-Open (Recovery)"
+    description: "Recovery state. Normal governance processes resumed. Emergency authority ceased. Crisis decisions under review for ratification. This state CANNOT be skipped."
+    governance_mode: "Standard ACT process restored. Crisis decisions queued for ratification."
+    emergency_roles: "Deactivated -- role holders return to normal governance roles"
+    decision_authority: "Normal role assignments restored. No emergency authority exists."
+    duration_days: 30
+    mandatory_activities:
+      - "Inventory all emergency decisions from crisis operations log"
+      - "Queue decisions for ratification through normal ACT process"
+      - "Process deferred decision queue"
+      - "Schedule post-emergency review (within 14 days)"
+      - "Auto-revert unratified decisions at 30-day deadline"
+    constraints:
+      - "Cannot be skipped -- direct Open-to-Closed transition is structurally prevented"
+      - "Former emergency role holders have no special authority"
+      - "Unratified decisions auto-revert at 30-day deadline"
+    transition_to_closed:
+      trigger: "Post-emergency review complete AND all ratification decisions processed (or auto-reverted at 30 days)"
+      verification: "Post-emergency review report published AND ratification queue empty"
+      action: "Circuit breaker returns to Closed. Normal operations fully restored."
+
+# State transition rules
+transition_rules:
+  - "Closed -> Open: ONLY when a registered emergency criterion's entry threshold is crossed"
+  - "Open -> Half-Open: MANDATORY when any reversion trigger fires"
+  - "Half-Open -> Closed: ONLY after recovery activities complete"
+  - "Open -> Closed: PROHIBITED -- Half-Open state cannot be skipped"
+  - "Half-Open -> Open: ONLY if a NEW emergency criterion triggers during recovery (separate emergency, separate circuit breaker instance)"
+  - "Closed -> Half-Open: PROHIBITED -- recovery state only follows an emergency"

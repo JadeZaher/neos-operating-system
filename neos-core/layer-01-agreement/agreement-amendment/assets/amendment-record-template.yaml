@@ -1,0 +1,15 @@
+amendment_id: ""
+parent_agreement_id: ""
+parent_agreement_version: ""
+amendment_type: ""  # minor_clarification | substantive_change | scope_expansion | scope_reduction
+proposed_by: ""
+date: ""
+changes:
+  - section: ""
+    was: ""
+    now: ""
+rationale: ""
+act_level_used: ""
+consent_record_id: ""
+new_agreement_version: ""
+status: proposed  # proposed | in_process | ratified | rejected

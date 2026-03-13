@@ -1,0 +1,25 @@
+proposal_id: ""
+type: ""  # ecoplan | genplan | amendment | resource_request | policy_change
+decision_type: ""  # preference | solution
+title: ""
+version: "1.0.0"
+status: draft  # draft | synergy_check | advice | consent | test | adopted | reverted | withdrawn | archived
+proposer: ""
+co_sponsors: []
+affected_domain: ""
+impacted_parties: []
+urgency: normal  # normal | elevated | emergency
+proposed_change: ""
+rationale: ""
+created_date: ""
+advice_deadline: ""
+consent_deadline: ""
+test_duration: ""
+related_proposals: []
+synergy_check:
+  existing_conflicts: []
+  existing_related: []
+  resolution: ""
+advice_log: []
+consent_record: []
+test_report: {}

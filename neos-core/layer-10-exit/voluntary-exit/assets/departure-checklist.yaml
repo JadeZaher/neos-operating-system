@@ -1,0 +1,94 @@
+# Departure Checklist -- self-service guide for when a coordinator is unavailable
+# The departing member or any steward can use this to ensure a complete exit.
+
+checklist:
+  - step: 1
+    action: "Declare departure to any steward or governance facilitator"
+    responsible: "departing member"
+    deadline: "day 0"
+    completed: false
+    notes: "No approval required. Written or verbal declaration accepted."
+
+  - step: 2
+    action: "Request departure coordinator assignment"
+    responsible: "any steward"
+    deadline: "within 48 hours of declaration"
+    completed: false
+    notes: "Coordinator must be from outside the member's primary circle."
+
+  - step: 3
+    action: "Generate commitment inventory from agreement-registry and role-assignment records"
+    responsible: "coordinator or self"
+    deadline: "within 5 days of declaration"
+    completed: false
+    notes: "Cross-reference roles, agreements, resource allocations, proposals, conflict resolutions."
+
+  - step: 4
+    action: "Verify commitment inventory with departing member"
+    responsible: "departing member"
+    deadline: "within 7 days of declaration"
+    completed: false
+    notes: "Member confirms inventory is complete or flags missing items."
+
+  - step: 5
+    action: "Agree on departure timeline (standard 30-day or urgent 7-day)"
+    responsible: "departing member + coordinator"
+    deadline: "within 7 days of declaration"
+    completed: false
+    notes: "Member chooses. Ecosystem cannot extend beyond 30 days."
+
+  - step: 6
+    action: "Initiate commitment-unwinding skill for each commitment category"
+    responsible: "coordinator"
+    deadline: "immediately after timeline agreement"
+    completed: false
+    notes: "See commitment-unwinding skill for detailed process."
+
+  - step: 7
+    action: "Transfer or redistribute all roles to receiving parties"
+    responsible: "coordinator + circle stewards"
+    deadline: "before departure date"
+    completed: false
+    notes: "Unresolved roles enter emergency-transfer queue."
+
+  - step: 8
+    action: "Resolve or amend all agreements (remove departing member as party)"
+    responsible: "coordinator + agreement parties"
+    deadline: "before departure date"
+    completed: false
+    notes: "Requires consent from remaining parties per agreement-creation skill."
+
+  - step: 9
+    action: "Settle economic commitments (return, transfer, or close out)"
+    responsible: "coordinator + resource steward"
+    deadline: "before departure date"
+    completed: false
+    notes: "Unspent allocations return to source pool."
+
+  - step: 10
+    action: "Generate portable governance record per member's export preferences"
+    responsible: "coordinator or self"
+    deadline: "before departure date"
+    completed: false
+    notes: "Member controls detail level. Mandatory minimum: identity + departure status."
+
+  - step: 11
+    action: "Confirm member received portable record and data export"
+    responsible: "coordinator"
+    deadline: "before departure date"
+    completed: false
+    notes: ""
+
+  - step: 12
+    action: "File Departure Record using departure-record-template.yaml"
+    responsible: "coordinator or any steward"
+    deadline: "on departure date"
+    completed: false
+    notes: "Record filed in governance memory (Layer IX). Copy to departing member."
+
+  - step: 13
+    action: "Publish neutral departure notice to affected circles"
+    responsible: "coordinator or circle steward"
+    deadline: "within 48 hours of effective departure"
+    completed: false
+    notes: "Name, date, and roles to fill only. No editorial unless member requests."

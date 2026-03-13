@@ -1,0 +1,31 @@
+pool_id: ""
+pool_name: ""
+pool_type: ""  # circle_operational | ecosystem_strategic | cross_azpo_shared | project_specific | emergency_reserve
+governing_circle: ""
+domain: ""
+stewards:
+  - name: ""
+    role: ""
+    appointed_date: ""
+    authority_scope: ""  # discretionary threshold percentage
+    rotation_date: ""
+inflow_sources:
+  - source: ""
+    type: ""  # contribution | allocation | grant | transfer
+    frequency: ""
+    conditions: ""
+outflow_rules:
+  steward_discretion_threshold: "5%"
+  circle_consent_threshold: "25%"
+  ecosystem_consent_threshold: "above 25%"
+  prohibited_uses: []
+transparency_schedule:
+  balance_reporting: ""  # weekly | monthly | quarterly
+  transaction_log_access: "all_participants"
+  audit_cycle: ""
+review_date: ""
+sunset_conditions: ""
+status: ""  # proposed | active | under_review | sunset
+created_date: ""
+version: "1.0.0"
+parent_agreement_id: ""

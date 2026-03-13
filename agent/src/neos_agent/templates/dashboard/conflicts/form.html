@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}{% if conflict %}Edit Conflict{% else %}Report Conflict{% endif %}{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/conflicts" class="hover:text-neos-primary transition-colors">Conflicts</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">{% if conflict %}Edit{% else %}Report{% endif %}</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-bold text-neos-text mb-2">{% if conflict %}Edit Conflict{% else %}Escalation Triage{% endif %}</h1>
+  <p class="text-sm text-neos-muted mb-6">Describe the conflict. The AI governance agent will help assess the appropriate escalation tier.</p>
+
+  <form method="POST" action="/dashboard/conflicts" class="bg-neos-surface border border-neos-border rounded-xl p-6 space-y-5">
+    <input type="hidden" name="ecosystem_id" value="{{ conflict.ecosystem_id if conflict else '' }}">
+
+    <div>
+      <label for="scope" class="block text-sm font-medium text-neos-text mb-1">Scope</label>
+      <select id="scope" name="scope" required
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+        <option value="interpersonal" {% if conflict and conflict.scope == 'interpersonal' %}selected{% endif %}>Interpersonal — Between individuals</option>
+        <option value="role" {% if conflict and conflict.scope == 'role' %}selected{% endif %}>Role — Related to stewardship roles</option>
+        <option value="domain" {% if conflict and conflict.scope == 'domain' %}selected{% endif %}>Domain — Between circles or domains</option>
+        <option value="structural" {% if conflict and conflict.scope == 'structural' %}selected{% endif %}>Structural — Systemic or governance-level</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="severity" class="block text-sm font-medium text-neos-text mb-1">Initial Severity Assessment</label>
+      <select id="severity" name="severity" required
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+        <option value="low" {% if conflict and conflict.severity == 'low' %}selected{% endif %}>Low — Minor disagreement, no urgency</option>
+        <option value="medium" {% if conflict and conflict.severity == 'medium' %}selected{% endif %}>Medium — Persistent issue needing attention</option>
+        <option value="high" {% if conflict and conflict.severity == 'high' %}selected{% endif %}>High — Impacting governance operations</option>
+        <option value="critical" {% if conflict and conflict.severity == 'critical' %}selected{% endif %}>Critical — Safety concern or imminent harm</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="tier" class="block text-sm font-medium text-neos-text mb-1">Escalation Tier</label>
+      <select id="tier" name="tier" required
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+        <option value="1" {% if conflict and conflict.tier == 1 %}selected{% endif %}>Tier 1 — NVC Direct Dialogue</option>
+        <option value="2" {% if conflict and conflict.tier == 2 %}selected{% endif %}>Tier 2 — Facilitated Coaching</option>
+        <option value="3" {% if conflict and conflict.tier == 3 %}selected{% endif %}>Tier 3 — Harm Circle (restorative)</option>
+        <option value="4" {% if conflict and conflict.tier == 4 %}selected{% endif %}>Tier 4 — Community Impact Review</option>
+      </select>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <input type="checkbox" id="safety_flag" name="safety_flag"
+             class="rounded border-neos-border text-neos-primary focus:ring-neos-accent"
+             {% if conflict and conflict.safety_flag %}checked{% endif %}>
+      <label for="safety_flag" class="text-sm text-neos-text">
+        <span class="font-medium">Safety flag</span>
+        <span class="text-neos-muted"> — Check if there is a safety concern (physical, emotional, or psychological)</span>
+      </label>
+    </div>
+
+    <div>
+      <label for="triage_notes" class="block text-sm font-medium text-neos-text mb-1">Triage Notes</label>
+      <textarea id="triage_notes" name="triage_notes" rows="5"
+                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+                placeholder="Describe the conflict situation, parties involved, and any relevant context...">{{ conflict.triage_notes if conflict else '' }}</textarea>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-6 py-2.5 bg-neos-primary text-white text-sm font-medium rounded-lg hover:bg-neos-secondary transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2">
+        {% if conflict %}Update{% else %}Submit Triage{% endif %}
+      </button>
+      <a href="/dashboard/conflicts" class="px-4 py-2.5 text-sm text-neos-muted hover:text-neos-text transition-colors">Cancel</a>
+    </div>
+  </form>
+
+  {# AI triage assistance #}
+  <div class="mt-6 bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-4">
+    <h3 class="text-sm font-semibold text-neos-primary mb-2">Need help with triage?</h3>
+    <p class="text-xs text-neos-muted mb-3">The AI governance agent can help assess the appropriate escalation tier and guide you through the intake process.</p>
+    <button type="button"
+            class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Help me perform an escalation triage assessment for a new conflict'; document.querySelector('#chat-send-form').requestSubmit()">
+      Start AI-Guided Triage
+    </button>
+  </div>
+</div>
+{% endblock %}

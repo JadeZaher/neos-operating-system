@@ -1,0 +1,155 @@
+# Dissolution Checklist -- step-by-step guide for dissolution coordinators
+# Follow this checklist to ensure a complete, orderly dissolution.
+
+checklist:
+  - phase: "trigger-verification"
+    steps:
+      - step: 1
+        action: "Confirm which dissolution trigger has been met"
+        responsible: "dissolution initiator"
+        completed: false
+        notes: "Supermajority consent, governance incapacity, ecosystem intervention, or zero membership."
+
+      - step: 2
+        action: "Gather and document trigger evidence"
+        responsible: "dissolution initiator"
+        completed: false
+        notes: "Consent records, quorum failure logs, ACT decision, or empty membership roster."
+
+      - step: 3
+        action: "Appoint dissolution coordinator from outside the dissolving AZPO"
+        responsible: "OSC or ecosystem governance facilitator"
+        completed: false
+        notes: "Coordinator must have no stake in the AZPO's assets."
+
+  - phase: "impact-assessment"
+    steps:
+      - step: 4
+        action: "Inventory all AZPO assets (resources, property, equipment)"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Include both formal and informal assets."
+
+      - step: 5
+        action: "List all active agreements involving the AZPO"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Both AZPO-internal and ecosystem-level agreements."
+
+      - step: 6
+        action: "Compile current member roster with commitment inventories"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Cross-reference agreement-registry, role-assignment, resource ledger."
+
+      - step: 7
+        action: "Identify all cross-AZPO and external relationships affected"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Include informal community relationships for documentation."
+
+      - step: 8
+        action: "Publish impact assessment to all ecosystem members"
+        responsible: "dissolution coordinator"
+        deadline: "within 14 days of coordinator appointment"
+        completed: false
+
+  - phase: "consent-round"
+    steps:
+      - step: 9
+        action: "Submit formal dissolution proposal (extended advice period: 21+ days)"
+        responsible: "dissolution initiator"
+        completed: false
+        notes: "Only for supermajority-triggered dissolutions."
+
+      - step: 10
+        action: "Conduct consent round (14-day window)"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Record consent, objections, and stand-asides. Integrate objections."
+
+      - step: 11
+        action: "Verify 2/3 threshold met (excluding stand-asides)"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "If threshold not met, archive proposal. Re-submittable after 90 days."
+
+  - phase: "asset-disposition"
+    steps:
+      - step: 12
+        action: "Settle all outstanding debts and obligations"
+        responsible: "dissolution coordinator + resource steward"
+        completed: false
+        notes: "Debts take priority over all other disposition."
+
+      - step: 13
+        action: "Return all stewarded resources to source or designated receiver"
+        responsible: "dissolution coordinator"
+        completed: false
+
+      - step: 14
+        action: "Distribute remaining assets per consent round preferences"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Default: remaining assets to ecosystem common resource pool."
+
+  - phase: "member-transition"
+    steps:
+      - step: 15
+        action: "Present three transition options to each member"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Transfer to existing AZPO, form new AZPO, or depart ecosystem."
+
+      - step: 16
+        action: "Process each member's transition choice"
+        responsible: "dissolution coordinator"
+        deadline: "within 30 days of consent round"
+        completed: false
+
+      - step: 17
+        action: "Generate portable records for all transitioning members"
+        responsible: "dissolution coordinator"
+        completed: false
+
+      - step: 18
+        action: "Contact unreachable members individually (14-day outreach)"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "If still unreachable, process as ecosystem departure."
+
+  - phase: "agreement-amendment"
+    steps:
+      - step: 19
+        action: "Amend all ecosystem-level agreements referencing the dissolving AZPO"
+        responsible: "dissolution coordinator + agreement stewards"
+        completed: false
+
+      - step: 20
+        action: "Escalate critical agreements that cannot be amended to OSC"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "OSC provides emergency stewardship until restructured."
+
+  - phase: "archival-and-closure"
+    steps:
+      - step: 21
+        action: "Archive complete governance history in Layer IX memory"
+        responsible: "dissolution coordinator"
+        completed: false
+        notes: "Decision logs, agreements, roles, audits, dissolution record."
+
+      - step: 22
+        action: "File Dissolution Record using dissolution-record-template.yaml"
+        responsible: "dissolution coordinator"
+        completed: false
+
+      - step: 23
+        action: "Publish Dissolution Record to all ecosystem members"
+        responsible: "dissolution coordinator"
+        completed: false
+
+      - step: 24
+        action: "Confirm all former members have received portable records"
+        responsible: "dissolution coordinator"
+        completed: false

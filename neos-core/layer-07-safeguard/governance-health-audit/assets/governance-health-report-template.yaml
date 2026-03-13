@@ -1,0 +1,39 @@
+# Governance Health Report Template -- output artifact of governance-health-audit
+# Fill one report per audit cycle. Publish to all ecosystem members.
+
+report:
+  report_id: ""            # e.g. GHR-SHUR-2026-Q1
+  audit_scope: ""          # AZPO name or "ecosystem"
+  audit_period:
+    start: ""              # ISO date
+    end: ""                # ISO date
+  auditor_ids: []          # list of participant IDs who interpreted data
+  data_source_ids: []      # reference to independent-monitoring data reports used
+  date_produced: ""        # ISO date
+
+indicators:
+  - indicator_id: ""       # e.g. GHI-01
+    indicator_name: ""
+    measured_value: ""
+    status: ""             # healthy | warning | critical
+    prior_value: ""        # from previous audit, for trend
+    trend: ""              # improving | stable | degrading
+    notes: ""
+
+overall_health: ""         # healthy | mixed | degrading | critical
+
+triggered_safeguards:
+  - trigger_id: ""         # reference to safeguard-trigger-design registry
+    indicator_id: ""
+    threshold_crossed: ""
+    recommended_action: ""
+
+recommendations: []        # free-text list of structural recommendations
+
+publication:
+  published_date: ""
+  published_to: ""         # "all ecosystem members" or specific scope
+  suppression_attempted: false
+  suppression_notes: ""
+
+next_audit_due: ""         # ISO date

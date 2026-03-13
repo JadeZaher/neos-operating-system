@@ -1,0 +1,22 @@
+{
+  "track_id": "emergency_handling_20260302",
+  "title": "Emergency Handling (Layer VIII)",
+  "description": "Build the 5 governance skills for Layer VIII: emergency-criteria-design, pre-authorization-protocol, crisis-coordination, emergency-reversion, and post-emergency-review. Implements Agamben-resistant emergency governance with circuit breaker states and mandatory auto-reversion.",
+  "status": "planned",
+  "priority": "P0",
+  "created_date": "2026-03-02",
+  "updated_date": "2026-03-02",
+  "layers": [8],
+  "skills": [
+    "emergency-criteria-design",
+    "pre-authorization-protocol",
+    "crisis-coordination",
+    "emergency-reversion",
+    "post-emergency-review"
+  ],
+  "phases": 4,
+  "estimated_hours": "20-28",
+  "depends_on": ["foundation_20260301", "safeguard_capture_20260302"],
+  "spec_path": "conductor/tracks/emergency_handling_20260302/spec.md",
+  "plan_path": "conductor/tracks/emergency_handling_20260302/plan.md"
+}

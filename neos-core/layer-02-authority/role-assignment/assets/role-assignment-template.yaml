@@ -1,0 +1,35 @@
+assignment_id: ""              # Unique ID: ASGN-{DOMAIN_CODE}-{YEAR}-{SEQ}
+domain_id: ""                  # Links to domain contract (domain-mapping output)
+domain_contract_version: ""    # Version of domain contract at time of assignment
+assignee_member_id: ""         # Links to member-lifecycle record
+assigning_body: ""             # The delegating body that created the domain
+assignment_date: ""            # ISO 8601 date
+review_date: ""                # ISO 8601 date -- must be set; default: 6 months
+assignment_duration: ""        # e.g. "6 months", "until next domain-review", "12 months"
+status: active                 # active | under_review | transferred | ended
+
+competency_verification:
+  verified_by: ""              # Assigning body or named representative
+  date: ""                     # ISO 8601 date
+  competencies_met: []         # List of domain contract competency elements met
+  competencies_partial: []     # List of elements met partially
+  gap_closure_plan: ""         # Required if any competencies_partial entries exist
+  notes: ""
+
+conflict_of_interest:
+  other_roles_held: []         # List of other active assignment_ids held by assignee
+  overlaps_identified: []      # Domain elements that overlap with other held roles
+  mitigation: ""               # Agreed mitigation (e.g. boundary negotiation scheduled)
+  boundary_negotiation_due: "" # ISO 8601 date -- required if overlaps_identified is non-empty
+
+consent_record_id: ""          # Links to ACT consent record
+candidate_acceptance_date: "" # ISO 8601 date when candidate formally accepted domain contract
+candidate_negotiated_terms: [] # Any metric targets or deliverables negotiated in Step 4
+
+adjacent_domains_notified: []  # domain_ids notified at Step 8
+assignment_version: "1"        # Increments on each renewal
+
+amendment_history:
+  - date: ""
+    amended_by: ""
+    change: ""

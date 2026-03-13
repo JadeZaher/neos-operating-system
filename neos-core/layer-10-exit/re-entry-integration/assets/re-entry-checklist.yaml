@@ -1,0 +1,81 @@
+# Re-Entry Checklist -- step-by-step guide for re-entry coordinators
+# Follow this checklist to ensure a complete, equitable return process.
+
+checklist:
+  - step: 1
+    action: "Receive and acknowledge re-entry request within 48 hours"
+    responsible: "any steward or governance facilitator"
+    completed: false
+    notes: "Former member contacts any steward. No approval needed to start the process."
+
+  - step: 2
+    action: "Assign re-entry coordinator from the receiving AZPO"
+    responsible: "AZPO governance facilitator"
+    completed: false
+    notes: "Coordinator should not have a prior close relationship with the returning member."
+
+  - step: 3
+    action: "Retrieve Departure Record from governance memory (Layer IX)"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Confirm: voluntary departure, re-entry eligibility, no unresolved matters."
+
+  - step: 4
+    action: "Verify portable governance record (if presented)"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Check verification hash against archived registry data. Note if unverifiable."
+
+  - step: 5
+    action: "Prepare change summary covering period since departure"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Include: agreement amendments, structural changes, new/dissolved AZPOs, policy updates."
+
+  - step: 6
+    action: "Present current foundational agreements and change summary to returning member"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Allow the member to review at their own pace. No pressure on timeline."
+
+  - step: 7
+    action: "Answer questions and connect member with relevant context holders"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "If member wants to understand specific changes, connect them with original proposers."
+
+  - step: 8
+    action: "Obtain explicit consent to all current foundational agreements"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Consent to CURRENT versions only. Member cannot rejoin under old terms."
+
+  - step: 9
+    action: "Agree on integration pathway (AZPO, circle, orientation period)"
+    responsible: "re-entry coordinator + returning member"
+    completed: false
+    notes: "Previous role experience informs but does not determine placement."
+
+  - step: 10
+    action: "Begin 30-day orientation period"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Member participates in governance, attends TH sessions, reviews recent decisions."
+
+  - step: 11
+    action: "File Re-Entry Record using re-entry-record-template.yaml"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Record filed in governance memory. Copy to returning member."
+
+  - step: 12
+    action: "Publish factual re-entry notice to receiving AZPO and relevant circles"
+    responsible: "re-entry coordinator"
+    completed: false
+    notes: "Name, return date, assigned circle, previous experience noted. No editorial."
+
+  - step: 13
+    action: "After orientation, member is eligible for role nomination through standard process"
+    responsible: "circle stewards"
+    completed: false
+    notes: "Previous tenure acknowledged but does not guarantee any specific role."

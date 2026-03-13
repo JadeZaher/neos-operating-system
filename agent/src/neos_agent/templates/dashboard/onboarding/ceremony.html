@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}UAF Consent Ceremony{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/onboarding" class="hover:text-neos-primary transition-colors">Onboarding</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Consent Ceremony</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+{% if onboarding %}
+<div class="max-w-3xl mx-auto">
+  <div class="text-center mb-8">
+    <h1 class="text-2xl font-bold text-neos-text">Universal Agreement Field</h1>
+    <p class="text-sm text-neos-muted mt-2">Consent Ceremony — Review and consent to each section at your own pace</p>
+    {% if member %}
+    <p class="text-sm text-neos-primary mt-1 font-medium">Member: {{ member.display_name }}</p>
+    {% endif %}
+  </div>
+
+  {# Progress indicator #}
+  {% set consent_data = onboarding.section_consents if onboarding.section_consents is mapping else {} %}
+
+  <div class="flex items-center justify-center gap-2 mb-8">
+    {% for section in uaf_sections %}
+    {% set is_consented = consent_data.get(section.key, {}).get('consented', false) if consent_data is mapping else false %}
+    <div class="flex items-center gap-2">
+      <button type="button"
+              class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors
+                {% if is_consented %}bg-green-500 text-white
+                {% else %}bg-gray-200 text-gray-600 step-nav-btn hover:bg-neos-primary hover:text-white{% endif %}"
+              onclick="showStep({{ section.step }})">
+        {% if is_consented %}&#10003;{% else %}{{ section.step }}{% endif %}
+      </button>
+      {% if not loop.last %}
+      <div class="w-6 h-0.5 {% if is_consented %}bg-green-500{% else %}bg-gray-200{% endif %}"></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Section cards #}
+  {% for section in uaf_sections %}
+  {% set is_consented = consent_data.get(section.key, {}).get('consented', false) if consent_data is mapping else false %}
+  <div class="mb-4 ceremony-step" id="step-{{ section.step }}" {% if section.step != 1 %}style="display:none"{% endif %}>
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-6 {% if is_consented %}border-green-300 bg-green-50/30{% endif %}">
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-neos-text">{{ section.title }}</h2>
+          <p class="text-sm text-neos-muted mt-1">{{ section.description }}</p>
+        </div>
+        {% if is_consented %}
+        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">&#10003; Consented</span>
+        {% endif %}
+      </div>
+
+      {# AI explanation area #}
+      <div class="bg-neos-bg rounded-lg p-4 mb-4">
+        <p class="text-sm text-neos-muted">
+          Ask the governance agent to explain this section in detail before providing your consent.
+        </p>
+        <button type="button"
+                class="mt-3 px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+                onclick="document.getElementById('chat-message-input').value='Explain {{ section.title }} of the Universal Agreement Field in detail. What am I consenting to?'; document.querySelector('#chat-send-form').requestSubmit()">
+          Explain This Section
+        </button>
+      </div>
+
+      {# Consent action #}
+      {% if not is_consented %}
+      <form method="POST" action="/dashboard/onboarding/ceremony/{{ onboarding.id }}/consent" class="flex items-center gap-3">
+        <input type="hidden" name="section_key" value="{{ section.key }}">
+        <button type="submit"
+                class="px-4 py-2 bg-neos-primary text-white text-sm font-medium rounded-lg hover:bg-neos-secondary transition-colors">
+          I Consent to {{ section.title }}
+        </button>
+        <span class="text-xs text-neos-muted">This records your informed consent for this section.</span>
+      </form>
+      {% endif %}
+
+      {# Navigation #}
+      <div class="flex justify-between mt-6 pt-4 border-t border-neos-border">
+        {% if section.step > 1 %}
+        <button type="button"
+                class="px-3 py-2 text-sm text-neos-muted hover:text-neos-text transition-colors"
+                onclick="showStep({{ section.step - 1 }})">
+          &larr; Previous
+        </button>
+        {% else %}
+        <div></div>
+        {% endif %}
+
+        {% if section.step < 6 %}
+        <button type="button"
+                class="px-3 py-2 text-sm font-medium text-neos-primary hover:text-neos-secondary transition-colors"
+                onclick="showStep({{ section.step + 1 }})">
+          Next &rarr;
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+    function showStep(step) {
+      document.querySelectorAll('.ceremony-step').forEach(function(el) {
+        el.style.display = 'none';
+      });
+      var target = document.getElementById('step-' + step);
+      if (target) target.style.display = 'block';
+    }
+  </script>
+
+  {# Cooling off and finalization #}
+  {% set all_consented = true %}
+  {% for section in uaf_sections %}
+    {% if not (consent_data.get(section.key, {}).get('consented', false) if consent_data is mapping else false) %}
+      {% set all_consented = false %}
+    {% endif %}
+  {% endfor %}
+
+  {% if onboarding.cooling_off_end %}
+  <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-6 mt-6 text-center">
+    <h3 class="text-lg font-bold text-yellow-800 mb-2">48-Hour Cooling Off Period</h3>
+    <p class="text-sm text-yellow-700 mb-3">All sections consented. The cooling-off period ensures you have time to reflect on your decision.</p>
+    <p class="text-sm font-medium text-yellow-800">Ends: {{ onboarding.cooling_off_end.strftime('%Y-%m-%d') if onboarding.cooling_off_end else '—' }}</p>
+
+    <form method="POST" action="/dashboard/onboarding/ceremony/{{ onboarding.id }}/finalize" class="mt-4">
+      <button type="submit"
+              class="px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        Finalize Onboarding
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="mt-6">
+    <a href="/dashboard/onboarding" class="text-sm text-neos-muted hover:text-neos-text transition-colors">&larr; Back to Onboarding</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

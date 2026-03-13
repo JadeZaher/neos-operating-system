@@ -1,0 +1,83 @@
+# Governance Data Report Template -- output artifact of independent-monitoring
+# Fill one report per collection cycle. Publish to all ecosystem members.
+# This report contains RAW DATA ONLY -- no interpretation, trend analysis, or recommendations.
+
+report:
+  report_id: ""              # e.g. GDR-SHUR-2026-03
+  collection_scope: ""       # AZPO name or "ecosystem"
+  collection_period:
+    start: ""                # ISO date
+    end: ""                  # ISO date
+  monitor_id: ""             # participant ID of the independent monitor
+  collection_date: ""        # ISO date -- when data was extracted
+  publication_date: ""       # ISO date -- when report was published
+
+indicators:
+
+  - indicator_id: GHI-01
+    indicator_name: Proposal Authorship Diversity
+    raw_value: ""            # e.g. "12 unique authors / 28 proposals = 43%"
+    measurement_formula: "(unique_authors / total_proposals) * 100"
+    data_source: ""          # e.g. "proposal registry, records 2026-01-01 to 2026-03-31"
+    verification_status: ""  # verified | unverified | gap
+    gap_explanation: ""      # if status is gap, explain why
+
+  - indicator_id: GHI-02
+    indicator_name: Approval Rate by Author Role
+    raw_value: ""            # e.g. "non-leadership 72%, leadership 88%, ratio 0.82"
+    measurement_formula: "approval_rate_non_leadership / approval_rate_leadership"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-03
+    indicator_name: Resource Concentration Index
+    raw_value: ""            # e.g. "largest source: GEV at 35%"
+    measurement_formula: "largest_source_amount / total_resources * 100"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-04
+    indicator_name: Participation Trend
+    raw_value: ""            # e.g. "current avg 82%, prior avg 85%, change -3%"
+    measurement_formula: "(current_avg - prior_avg) / prior_avg * 100"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-05
+    indicator_name: Leadership Tenure
+    raw_value: ""            # e.g. "circle steward Ketut: 3 consecutive cycles"
+    measurement_formula: "consecutive_cycles_in_role"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-06
+    indicator_name: Objection Integration Rate
+    raw_value: ""            # e.g. "8 of 11 objections integrated = 73%"
+    measurement_formula: "(objections_integrated / total_objections) * 100"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-07
+    indicator_name: Review Compliance Rate
+    raw_value: ""            # e.g. "14 of 18 reviews on time = 78%"
+    measurement_formula: "(timely_reviews / due_reviews) * 100"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+  - indicator_id: GHI-08
+    indicator_name: Cross-Unit Engagement Frequency
+    raw_value: ""            # e.g. "5 cross-circle interactions"
+    measurement_formula: "cross_unit_interactions_per_quarter"
+    data_source: ""
+    verification_status: ""
+    gap_explanation: ""
+
+data_gaps_summary: ""        # brief list of any indicators with gaps and reasons
+suppression_attempted: false
+suppression_notes: ""

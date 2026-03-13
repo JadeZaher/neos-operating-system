@@ -1,0 +1,60 @@
+# Shared Resource Governance Agreement Template
+# Layer V -- Inter-Unit Coordination
+# Use this template for jointly-held resources across AZPOs
+
+agreement_id: "SRS-[Ecosystem]-[YYYY]-[Seq]"
+
+resource:
+  name: ""
+  description: ""
+  type: ""  # shared-pool | shared-infrastructure | shared-repository | shared-service
+  current_state: ""
+
+participating_azpos:
+  - name: ""
+    contact_person: ""
+    ratification_date: ""
+    ratification_record: ""
+
+governance_structure:
+  stewardship_model: "rotating"  # rotating | shared-panel
+  steward_term_length: "12 months"
+  current_steward:
+    name: ""
+    home_azpo: ""
+    term_start: ""
+    term_end: ""
+  succession_schedule: []  # ordered list of AZPO names for rotation
+
+access_rules:
+  tiers:
+    - tier_name: ""
+      description: ""
+      eligible_roles: []
+      permissions: []  # read | edit | admin
+  special_conditions: []
+
+contribution_commitments:
+  - azpo: ""
+    commitment: ""
+    frequency: ""
+    consequence_for_non_compliance: ""
+
+reporting:
+  cadence: "monthly"  # monthly | quarterly
+  report_recipients: []  # all participating AZPOs
+  report_contents: []
+
+review:
+  next_review_date: ""
+  review_interval: "12 months"
+  review_process: "all-azpo-consent"
+
+exit_terms:
+  notice_period: "90 days"
+  contribution_wind_down: ""
+  access_cessation: "end of notice period"
+  content_retention: "contributed content remains under resource governance"
+  original_works: "revert to creator per UAF"
+
+registry_entries: []  # list of registry IDs per AZPO

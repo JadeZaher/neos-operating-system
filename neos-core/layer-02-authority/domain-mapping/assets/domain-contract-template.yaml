@@ -1,0 +1,149 @@
+# NEOS Domain Contract Template
+# Layer II: Authority & Role — domain-mapping skill
+# Version this template: 1.0.0
+#
+# Usage: Copy this file, rename to <domain_id>.yaml, fill all fields.
+# Fields marked REQUIRED must be completed before status can be "active".
+# Fields marked OPTIONAL may be omitted at creation but are recommended.
+#
+# Status values:
+#   draft        — being drafted, not yet in consent process
+#   provisional  — passed consent with one or more elements incomplete; 30-day window to complete
+#   active       — fully consented, all elements complete
+#   under_review — evaluation date passed or review triggered; domain remains operative
+#   vacant       — steward has exited; delegating body holds temporary stewardship (30-day window)
+#   sunset       — formally dissolved; responsibilities transferred; archived, not deleted
+#   archived     — historical record only; no operational authority
+
+domain_id: ""                     # REQUIRED — kebab-case unique ID, e.g. "dom-ae-economics-001"
+version: "1.0.0"                  # REQUIRED — semver; increment on every amendment
+status: draft                     # REQUIRED — see status values above
+created_date: ""                  # REQUIRED — ISO 8601, e.g. "2026-03-03"
+created_by: ""                    # REQUIRED — delegating body name or ID
+last_amended_date: ""             # Updated on every amendment; null at creation
+provisional_deadline: ""          # Required if status is "provisional"; ISO 8601 date
+
+elements:
+  # Element 1 — REQUIRED
+  purpose: ""
+  # Why this domain exists. The governance function it performs.
+  # One to three sentences. Must be specific enough that two people
+  # reading it independently would agree on whether a given action
+  # falls inside or outside this domain.
+
+  # Element 2 — REQUIRED
+  key_responsibilities: []
+  # List of strings. What the domain must do; the actions it is accountable for.
+  # Each item should be a discrete, observable action or output category.
+  # Example:
+  #   - "Manage all funding requests from AZPOs and circles"
+  #   - "Publish monthly economic transparency report"
+
+  # Element 3 — REQUIRED
+  customers: []
+  # List of strings. Who the domain serves; participants or bodies that depend on its outputs.
+  # Example:
+  #   - "All participants submitting funding requests"
+  #   - "OSC — receives economic policy proposals"
+
+  # Element 4 — REQUIRED
+  deliverables: []
+  # List of strings. Concrete outputs others can expect and hold the domain accountable for.
+  # Example:
+  #   - "Funding request decision within 14 days of submission"
+  #   - "Monthly economic transparency report"
+
+  # Element 5 — REQUIRED
+  dependencies: []
+  # List of strings. Other domains, skills, or resources this domain requires to function.
+  # If there are no cross-AZPO dependencies, state "none" explicitly — do not omit.
+  # Example:
+  #   - "DOM-OSC-POLICY-001 — requires OSC approval for allocations above 10% of pool"
+  #   - "layer-01 agreement-registry — for tracking economic agreements"
+
+  # Element 6 — REQUIRED (vague constraints block "active" status)
+  constraints: []
+  # List of strings. What this domain explicitly CANNOT do, even within its scope.
+  # Each constraint must name a specific excluded action.
+  # "Act in the ecosystem's interest" is NOT a constraint — it is the absence of one.
+  # Example:
+  #   - "Cannot approve funding above 10% of total resource pool without OSC consent"
+  #   - "Cannot grant Current-See advantages to any role"
+  #   - "Cannot negotiate with external funders without AE awareness"
+
+  # Element 7 — REQUIRED
+  challenges: []
+  # List of strings. Known risks, tensions, or structural difficulties the domain faces.
+  # Example:
+  #   - "Balancing rapid resource access with accountability"
+  #   - "Preventing capital capture during high-growth phases"
+
+  # Element 8 — REQUIRED
+  resources: []
+  # List of strings. What the domain can draw on: budget, time, information, tools.
+  # Example:
+  #   - "Access to ecosystem financial records"
+  #   - "One weekly meeting slot in AE calendar"
+  #   - "5% of annual pool for operational costs"
+
+  # Element 9 — REQUIRED
+  delegator_responsibilities: []
+  # List of strings. What the delegating body OWES this domain.
+  # This is the reciprocal side of the authority grant.
+  # Example:
+  #   - "Provide timely information on ecosystem-level economic decisions"
+  #   - "Do not intervene in decisions below the 10% threshold"
+  #   - "Convene the 6-month evaluation promptly"
+
+  # Element 10 — REQUIRED
+  competencies: []
+  # List of strings. What the steward must understand or be able to do.
+  # Used as verification criteria in role-assignment.
+  # Example:
+  #   - "Understanding of commons-based economics"
+  #   - "Facilitation of financial transparency processes"
+  #   - "Familiarity with ACT Engine decision protocol"
+
+  # Element 11 — REQUIRED (missing evaluation schedule blocks "active" status)
+  metrics:
+    - metric: ""                  # Name of the metric
+      target: ""                  # Quantified or qualitative target
+      measurement_method: ""      # How it is measured and by whom
+  # Add additional metric entries as needed.
+
+  evaluation_schedule:
+    cadence: "6 months"           # Default; configurable. Minimum: 3 months.
+    next_evaluation_date: ""      # REQUIRED — ISO 8601 date
+    review_body: []               # Who conducts the review (delegating body + adjacent stewards recommended)
+    # Example:
+    #   review_body:
+    #     - "AE (delegating body)"
+    #     - "Economics circle steward"
+    #     - "Adjacent domain stewards"
+
+current_steward: ""               # Member ID or name; null if domain is vacant
+# When vacant, delegating body holds temporary stewardship.
+# 30-day window to assign new steward via role-assignment or trigger role-sunset.
+
+assignment_history: []
+# Append an entry each time stewardship changes.
+# Structure:
+#   - steward: ""
+#     start_date: ""
+#     end_date: ""              # null if current
+#     transition_type: ""       # assigned | transferred | vacant | sunset
+#     notes: ""
+
+amendment_history: []
+# Append an entry each time the domain contract is amended.
+# Minor amendments (metrics, resources): circle-level consent.
+# Structural amendments (purpose, key_responsibilities, constraints): full ACT process.
+# Structure:
+#   - amendment_id: ""          # Increment from AMN-001
+#     date: ""                  # ISO 8601
+#     version_before: ""        # e.g. "1.0.0"
+#     version_after: ""         # e.g. "1.1.0"
+#     elements_amended: []      # List of element names changed
+#     rationale: ""
+#     consent_record_id: ""     # Reference to ACT consent record
+#     amended_by: ""            # Delegating body or circle that ran the consent process

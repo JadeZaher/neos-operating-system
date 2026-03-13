@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Steward Directory{% endblock %}
+
+
+{% block content %}
+{# ----------------------------------------------------------------
+   Breadcrumb
+   ---------------------------------------------------------------- #}
+<nav class="flex items-center gap-1.5 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Members</span>
+</nav>
+
+{# ----------------------------------------------------------------
+   Page Header
+   ---------------------------------------------------------------- #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text">Steward Directory</h1>
+    <p class="mt-1 text-sm text-neos-muted">Ecosystem member directory and lifecycle tracking</p>
+  </div>
+  <div class="flex-shrink-0">
+    <a
+      href="/dashboard/members/new"
+      class="inline-flex items-center gap-2 px-4 py-2 bg-neos-primary hover:bg-neos-secondary text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+    >
+      &#43; New Member
+    </a>
+  </div>
+</div>
+
+{# ----------------------------------------------------------------
+   Filter Bar
+   ---------------------------------------------------------------- #}
+<form
+  method="get"
+  action="/dashboard/members"
+  class="flex flex-wrap items-end gap-3 p-4 bg-neos-surface border border-neos-border rounded-xl mb-6"
+>
+  {# Search #}
+  <div class="flex-1 min-w-[200px]">
+    <label for="search" class="block text-xs font-medium text-neos-muted mb-1">Search</label>
+    <div class="relative">
+      <span class="absolute inset-y-0 left-3 flex items-center text-neos-muted pointer-events-none text-sm" aria-hidden="true">&#128269;</span>
+      <input
+        id="search"
+        type="search"
+        name="search"
+        value="{{ filters.search | default('') }}"
+        placeholder="Search members..."
+        aria-label="Search members"
+        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+      >
+    </div>
+  </div>
+
+  {# Status filter #}
+  <div class="min-w-[150px]">
+    <label for="filter-status" class="block text-xs font-medium text-neos-muted mb-1">Status</label>
+    <select
+      id="filter-status"
+      name="status"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+    >
+      <option value="">All Statuses</option>
+      <option value="prospective" {% if filters.status == 'prospective' %}selected{% endif %}>Prospective</option>
+      <option value="onboarding" {% if filters.status == 'onboarding' %}selected{% endif %}>Onboarding</option>
+      <option value="active" {% if filters.status == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if filters.status == 'inactive' %}selected{% endif %}>Inactive</option>
+      <option value="exiting" {% if filters.status == 'exiting' %}selected{% endif %}>Exiting</option>
+      <option value="exited" {% if filters.status == 'exited' %}selected{% endif %}>Exited</option>
+    </select>
+  </div>
+
+  {# Profile filter #}
+  <div class="min-w-[140px]">
+    <label for="filter-profile" class="block text-xs font-medium text-neos-muted mb-1">Profile</label>
+    <select
+      id="filter-profile"
+      name="profile"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+    >
+      <option value="">All Profiles</option>
+      <option value="co_creator" {% if filters.profile == 'co_creator' %}selected{% endif %}>Co-Creator</option>
+      <option value="builder" {% if filters.profile == 'builder' %}selected{% endif %}>Builder</option>
+      <option value="townhall" {% if filters.profile == 'townhall' %}selected{% endif %}>Town Hall</option>
+    </select>
+  </div>
+
+  {# Actions #}
+  <div class="flex items-end gap-2">
+    <button
+      type="submit"
+      class="px-4 py-2 bg-neos-primary hover:bg-neos-secondary text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+    >
+      Filter
+    </button>
+    <a
+      href="/dashboard/members"
+      class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+    >
+      Clear
+    </a>
+  </div>
+</form>
+
+{# ----------------------------------------------------------------
+   Member Card Grid
+   ---------------------------------------------------------------- #}
+{% if members %}
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+  {% for member in members %}
+  <a
+    href="/dashboard/members/{{ member.id }}"
+    class="group block bg-neos-surface border border-neos-border rounded-xl hover:border-neos-accent hover:shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+    aria-label="View member {{ member.display_name }}"
+  >
+    <div class="flex items-start justify-between p-4 border-b border-neos-border">
+      <div class="min-w-0">
+        <h3 class="font-semibold text-neos-text group-hover:text-neos-primary transition-colors truncate">
+          {{ member.display_name }}
+        </h3>
+        <p class="text-xs text-neos-muted mt-0.5 truncate">{{ member.member_id }}</p>
+      </div>
+      {# Status badge #}
+      {% if member.current_status == 'active' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">Active</span>
+      {% elif member.current_status == 'onboarding' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">Onboarding</span>
+      {% elif member.current_status == 'prospective' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">Prospective</span>
+      {% elif member.current_status == 'inactive' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">Inactive</span>
+      {% elif member.current_status == 'exiting' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 text-orange-800">Exiting</span>
+      {% elif member.current_status == 'exited' %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">Exited</span>
+      {% else %}
+        <span class="flex-shrink-0 ml-2 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">{{ member.current_status }}</span>
+      {% endif %}
+    </div>
+
+    <div class="p-4">
+      <div class="flex items-center justify-between text-sm">
+        <span class="text-neos-muted">Profile</span>
+        {% if member.profile %}
+          <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-neos-bg text-neos-primary border border-neos-border">
+            {{ member.profile | replace('_', ' ') | title }}
+          </span>
+        {% else %}
+          <span class="text-neos-muted">—</span>
+        {% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{# Pagination #}
+{% include "partials/pagination.html" %}
+
+{% else %}
+{# ----------------------------------------------------------------
+   Empty State
+   ---------------------------------------------------------------- #}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+  <div class="w-16 h-16 rounded-full bg-neos-bg border-2 border-neos-border flex items-center justify-center text-2xl mb-4" aria-hidden="true">&#9823;</div>
+  <h2 class="text-lg font-semibold text-neos-text mb-1">No members found</h2>
+  <p class="text-sm text-neos-muted mb-6 max-w-xs">
+    {% if filters.search or filters.status or filters.profile %}
+      No members match your current filters. Try adjusting your search.
+    {% else %}
+      Add members to start tracking the steward lifecycle in your ecosystem.
+    {% endif %}
+  </p>
+  {% if filters.search or filters.status or filters.profile %}
+    <a href="/dashboard/members" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">
+      Clear filters
+    </a>
+  {% else %}
+    <a
+      href="/dashboard/members/new"
+      class="inline-flex items-center gap-2 px-4 py-2 bg-neos-primary hover:bg-neos-secondary text-white text-sm font-medium rounded-lg transition-colors"
+    >
+      &#43; New Member
+    </a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

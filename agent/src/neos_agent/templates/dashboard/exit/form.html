@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Initiate Exit{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/exit" class="hover:text-neos-primary transition-colors">Exit</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Initiate</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-bold text-neos-text mb-2">Initiate Exit Process</h1>
+  <p class="text-sm text-neos-muted mb-6">NEOS guarantees the right to exit. This process ensures all commitments are properly unwound and your portable record is prepared.</p>
+
+  <form method="POST" action="/dashboard/exit" class="bg-neos-surface border border-neos-border rounded-xl p-6 space-y-5">
+    <input type="hidden" name="ecosystem_id" value="">
+    <input type="hidden" name="member_id" value="">
+
+    <div>
+      <label for="exit_type" class="block text-sm font-medium text-neos-text mb-1">Exit Type</label>
+      <select id="exit_type" name="exit_type" required
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+        <option value="standard">Standard — 30-day cooling-off period</option>
+        <option value="urgent">Urgent — 7-day accelerated (safety circumstances)</option>
+      </select>
+      <p class="text-xs text-neos-muted mt-1">Standard exits have a 30-day period for commitment unwinding. Urgent exits are for safety circumstances.</p>
+    </div>
+
+    <div>
+      <label for="reason" class="block text-sm font-medium text-neos-text mb-1">Reason (optional)</label>
+      <textarea id="reason" name="reason" rows="4"
+                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+                placeholder="You are not required to provide a reason, but it can help improve the ecosystem..."></textarea>
+      <p class="text-xs text-neos-muted mt-1">Providing a reason is entirely voluntary and will be kept confidential.</p>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-6 py-2.5 bg-neos-primary text-white text-sm font-medium rounded-lg hover:bg-neos-secondary transition-colors">
+        Begin Exit Process
+      </button>
+      <a href="/dashboard/exit" class="px-4 py-2.5 text-sm text-neos-muted hover:text-neos-text transition-colors">Cancel</a>
+    </div>
+  </form>
+
+  {# AI guidance #}
+  <div class="mt-6 bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-4">
+    <h3 class="text-sm font-semibold text-neos-primary mb-2">Questions about the exit process?</h3>
+    <p class="text-xs text-neos-muted mb-3">The governance agent can explain your exit rights, the commitment unwinding process, and data portability options.</p>
+    <button type="button"
+            class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Explain my exit rights and what happens during the exit process'; document.querySelector('#chat-send-form').requestSubmit()">
+      Ask About Exit Rights
+    </button>
+  </div>
+</div>
+{% endblock %}

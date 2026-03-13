@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Audit — {{ audit.audit_date.strftime('%Y-%m-%d') if audit else 'Not Found' }}{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/safeguards" class="hover:text-neos-primary transition-colors">Safeguards</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Audit {{ audit.audit_date.strftime('%Y-%m-%d') if audit else '' }}</span>
+</nav>
+
+{% if audit %}
+<div class="max-w-4xl space-y-6">
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <h1 class="text-2xl font-bold text-neos-text">Governance Health Audit</h1>
+        <p class="text-sm text-neos-muted mt-1">{{ audit.audit_date.strftime('%B %d, %Y') if audit.audit_date else '—' }} — Auditor: {{ audit.auditor }}</p>
+      </div>
+      {% if audit.overall_health_score is not none %}
+      <div class="text-4xl font-bold
+        {% if audit.overall_health_score >= 80 %}text-green-600
+        {% elif audit.overall_health_score >= 60 %}text-yellow-600
+        {% else %}text-red-600{% endif %}">{{ audit.overall_health_score }}<span class="text-sm text-neos-muted font-normal">/100</span></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+    <h2 class="font-semibold text-base text-neos-text mb-3">Findings</h2>
+    <div class="text-sm text-neos-text whitespace-pre-wrap">{{ audit.findings or 'No findings.' }}</div>
+  </div>
+
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+    <h2 class="font-semibold text-base text-neos-text mb-3">Recommendations</h2>
+    <div class="text-sm text-neos-text whitespace-pre-wrap">{{ audit.recommendations or 'No recommendations.' }}</div>
+  </div>
+
+  <div class="flex gap-3">
+    <a href="/dashboard/safeguards" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">Back to Safeguards</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

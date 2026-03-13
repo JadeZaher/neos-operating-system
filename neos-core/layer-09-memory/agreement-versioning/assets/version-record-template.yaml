@@ -1,0 +1,43 @@
+# NEOS Agreement Version Record Template
+# Appended to the agreement's version history each time the agreement
+# is created, amended, or reviewed. Immutable after creation.
+
+version_record:
+  # --- Version Identification ---
+  agreement_id: ""             # Agreement registry ID (e.g., AGR-OMNI-2025-007)
+  version: ""                  # Semver version number (e.g., 1.1.0)
+  version_reference: ""        # Full reference: agreement_id + version (e.g., AGR-OMNI-2025-007-v1.1.0)
+
+  # --- Version Classification ---
+  change_type: ""              # major | minor | patch
+  change_type_rationale: ""    # Why this classification was chosen
+  # major: structural change altering scope, parties, or governance mechanism
+  # minor: substantive amendment adding, removing, or modifying clauses
+  # patch: clarification, typo correction, or formatting change
+
+  # --- Snapshot ---
+  snapshot: ""                 # Full text of the agreement at this version (immutable)
+  snapshot_format: ""          # plaintext | markdown | structured-yaml
+
+  # --- Diff ---
+  diff_from_previous: ""       # Human-readable description of changes from the prior version
+  diff_type: ""                # initial (v1.0.0) | incremental (subsequent versions)
+  sections_affected: []        # List of agreement sections or clauses that changed
+
+  # --- Provenance ---
+  author: ""                   # Participant who authored or facilitated the change
+  date: ""                     # ISO 8601 date of version creation
+  source_skill: ""             # agreement-creation | agreement-amendment | agreement-review
+  rationale: ""                # Why this change was made (from the amendment/review process)
+  approval_record: ""          # Consent or consensus record ID authorizing this change (e.g., CR-OMNI-2025-047)
+
+  # --- Rollback Metadata (if applicable) ---
+  is_rollback: false           # Whether this version is a rollback to a previous version's content
+  rollback_target_version: ""  # If rollback, which version's content was restored
+  rollback_rationale: ""       # If rollback, why the current version was problematic
+
+  # --- Annotations (appended post-creation, never edits) ---
+  annotations:
+    - annotator: ""
+      date: ""
+      annotation: ""           # Corrections, clarifications, or notes added after creation

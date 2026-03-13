@@ -1,0 +1,65 @@
+# Transfer Record Template
+# Produced by the role-transfer skill when a role changes stewards.
+# One record per transfer event. Link to both outgoing and incoming assignment records.
+
+transfer_id: ""                     # e.g., TRF-OSC-FACIL-2026-001
+domain_id: ""                       # e.g., DOM-OSC-FACIL-001
+domain_contract_version: ""         # e.g., 1.2.0 — version at time of transfer
+outgoing_steward: ""                # member_id of departing steward
+incoming_steward: ""                # member_id of incoming steward (from role-assignment)
+transfer_trigger: ""                # voluntary | rotation | reassignment | inactivity | sunset_successor
+
+handover_document:
+  pending_commitments:
+    - commitment: ""
+      status: ""                    # in_progress | blocked | awaiting_decision
+      deadline: ""
+      notes: ""
+  active_agreements_held:
+    - agreement_id: ""
+      agreement_title: ""
+      role_in_agreement: ""         # steward | party | responsible_party
+      notes: ""
+  decision_context: ""              # narrative: why current practices exist, background on ongoing situations
+  relationship_map:
+    - domain: ""
+      contact: ""                   # name of the steward at that domain
+      relationship_notes: ""        # what this relationship involves, current dynamics
+  known_challenges:
+    - challenge: ""
+      context: ""
+  upcoming_deadlines:
+    - description: ""
+      date: ""
+      domain_or_agreement: ""
+  handover_checklist_complete: false  # set to true only when all checklist items are verified
+  system_access_items:
+    - system: ""
+      access_type: ""               # admin | edit | read
+      transfer_status: ""           # transferred | revoked | pending
+
+overlap_period:
+  start_date: ""
+  end_date: ""
+  sessions_attended_together: 0
+  session_log:
+    - date: ""
+      session_type: ""              # governance_session | advisory_meeting | cross-domain_introduction
+      notes: ""
+
+incoming_steward_acceptance_date: ""
+consent_record_id: ""               # ID of the assigning body's consent record
+transfer_date: ""                   # date Step 5 consent was achieved; authority transfers as of this date
+
+post_transfer_checkin:
+  scheduled_date: ""                # transfer_date + 30 days
+  completed_date: ""
+  status: ""                        # complete | issues_identified | pending
+  issues:
+    - issue: ""
+      resolution: ""
+
+outgoing_assignment_record_id: ""   # link to outgoing steward's role-assignment record (status: transferred)
+incoming_assignment_record_id: ""   # link to incoming steward's role-assignment record (status: active)
+
+notes: ""                           # any additional context, e.g., "emergency handover — outgoing steward unavailable"

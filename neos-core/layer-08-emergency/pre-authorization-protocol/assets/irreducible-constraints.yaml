@@ -1,0 +1,34 @@
+# Irreducible Constraints -- boundaries that NO emergency authority can cross
+# These constraints are absolute. They cannot be waived, suspended, or overridden
+# during any emergency, regardless of severity or duration.
+#
+# Rationale: These constraints exist because violating them during an emergency
+# would cause structural damage that outlasts the crisis itself. Emergency authority
+# is temporary; these boundaries protect permanent governance architecture.
+
+irreducible_constraints:
+
+  - constraint_id: IC-01
+    constraint: "No amendment to the Universal Agreement Field (UAF)"
+    rationale: "The UAF is the foundational agreement of the ecosystem. Amending it under emergency conditions -- when deliberation is compressed and participation may be reduced -- risks permanent structural damage to the governance foundation. UAF amendments require full, uncompressed ACT process."
+    violation_response: "Immediate notification to all ecosystem members and OSC. Attempted amendment is void. Role holder's pre-authorization suspended pending post-emergency review."
+
+  - constraint_id: IC-02
+    constraint: "No dissolution of any AZPO"
+    rationale: "AZPO dissolution is an irreversible structural change that affects all members of the unit. Emergency conditions do not provide sufficient deliberative space for such a decision. AZPO restructuring requires normal ACT process with full participation."
+    violation_response: "Dissolution attempt is void. All AZPO governance structures remain intact. Role holder's pre-authorization suspended pending post-emergency review."
+
+  - constraint_id: IC-03
+    constraint: "No expulsion of any ecosystem member"
+    rationale: "Member expulsion is a fundamental rights decision that requires due process, including the member's right to respond, present context, and object. Emergency conditions cannot provide this process. Members may be temporarily reassigned or their access adjusted for safety, but membership itself is protected."
+    violation_response: "Expulsion attempt is void. Member retains full membership status. Safety-related access adjustments remain valid but are reviewed within 72 hours."
+
+  - constraint_id: IC-04
+    constraint: "No modification of emergency criteria during an active emergency"
+    rationale: "If those operating under emergency authority can modify the criteria that define when their authority ends, the emergency becomes self-perpetuating. This is the structural mechanism of emergency capture as documented by Agamben. Criteria modification requires normal ACT process after the emergency concludes."
+    violation_response: "Criteria modification attempt is void. Existing criteria remain in force. Attempt is logged as a critical governance event for post-emergency review."
+
+  - constraint_id: IC-05
+    constraint: "No expansion of pre-authorized authority scopes during an active emergency"
+    rationale: "Authority scopes were consented to during calm conditions with full deliberation. Expanding them during an emergency -- when social pressure to defer to authority is highest -- undermines the advance consent principle. If the scope proves insufficient, unaddressable situations go to the deferred decision queue."
+    violation_response: "Scope expansion attempt is void unless processed through emergency ACT consent (compressed timeline per crisis-coordination). Unilateral expansion is logged as a governance event."

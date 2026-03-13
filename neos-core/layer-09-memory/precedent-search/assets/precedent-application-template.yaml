@@ -1,0 +1,57 @@
+# NEOS Precedent Application Report Template
+# Produced by the precedent-search skill when a participant searches
+# governance memory and documents how found precedents inform a current decision.
+
+precedent_application_report:
+  # --- Report Metadata ---
+  report_id: ""                # Unique ID, e.g., PAR-OMNI-2026-015
+  searcher: ""                 # Name of the participant who conducted the search
+  search_date: ""              # ISO 8601 date
+  governance_context: ""       # Brief description of the current governance situation motivating the search
+
+  # --- Search Parameters ---
+  query:
+    keywords: []               # Free-text search terms
+    domain_filter: []          # Domain names to filter by
+    layer_filter: []           # Layer numbers to filter by
+    skill_filter: []           # Skill names to filter by
+    date_range:
+      from: ""                 # ISO 8601 date (inclusive)
+      to: ""                   # ISO 8601 date (inclusive)
+    precedent_level_filter: [] # routine | governance | constitutional
+    affected_parties_filter: []# Specific individuals, circles, or roles
+    semantic_tag_filter: {}    # Any tags from the taxonomy
+    compound_logic: ""         # Description of AND/OR logic combining parameters
+
+  # --- Search Results ---
+  total_results: 0             # Total number of records returned
+  relevant_results:            # Precedents assessed as relevant to the current situation
+    - record_id: ""            # Decision record ID (e.g., DR-OMNI-2025-019)
+      holding: ""              # The precedent's holding (single-statement summary)
+      date: ""                 # When the precedent was established
+      domain: ""               # Domain that produced the precedent
+      precedent_level: ""      # routine | governance | constitutional
+
+      # --- Applicability Assessment ---
+      classification: ""       # binding | persuasive | informative
+      classification_rationale: "" # Why this classification was chosen
+      similarity_of_facts: ""  # How similar the precedent's context is to the current situation
+      similarity_of_question: "" # Whether the same type of governance question is at issue
+      currency: ""             # Whether anything has changed since the precedent was established
+      scope_match: ""          # Whether the precedent's domain and scope match the current situation
+
+      # --- Application Analysis ---
+      how_it_informs: ""       # How this precedent informs the current decision
+      recommended_action: ""   # Follow, adapt, distinguish, or challenge
+
+  # --- Omitted Results ---
+  non_relevant_results_count: 0  # Number of results assessed as not relevant
+  filtering_rationale: ""        # Why non-relevant results were excluded from detailed analysis
+
+  # --- Challenge Recommendations ---
+  precedents_to_challenge: []    # Record IDs of precedents the searcher recommends challenging
+  challenge_rationale: ""        # Why a challenge is recommended
+
+  # --- Report Status ---
+  attached_to: ""              # ID of the governance process this report informs
+  reviewed_by: []              # Participants who reviewed the report during the advice phase

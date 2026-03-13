@@ -1,0 +1,732 @@
+// NEOS Governance Database Schema
+// Generated from SQLAlchemy 2.0 models
+// 36 tables across 9 sections
+
+Project neos_governance {
+  database_type: 'PostgreSQL'
+  Note: '''
+    New Earth Operating System — Governance Database
+    Multi-ecosystem coordination platform.
+    All governance objects are scoped to a specific ecosystem.
+  '''
+}
+
+// ========================
+// CORE
+// ========================
+
+Table ecosystems {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  name varchar(255) [not null, unique]
+  description text
+  uaf_agreement_id uuid
+  status varchar(50) [not null, default: 'active']
+
+  // Directory fields
+  location varchar(255)
+  website varchar(500)
+  logo_url varchar(500)
+  founded_date date
+  tags json
+  contact_email varchar(255)
+  governance_summary text
+  visibility varchar(20) [not null, default: 'public']
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: 'Root organizational container. Every governance object belongs to exactly one ecosystem.'
+}
+
+Table members {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  member_id varchar(100) [not null, note: 'business key']
+  did varchar(500) [unique]
+  display_name varchar(255) [not null]
+  current_status varchar(50) [not null, default: 'prospective']
+  profile varchar(50) [note: 'co_creator, builder, townhall']
+  phone varchar(50)
+  profile_picture varchar(500)
+  skills_offered json
+  skills_needed json
+  onboarding_status varchar(50)
+  kyc_status varchar(50)
+  last_governance_activity_date date
+  notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_members_ecosystem_id']
+  }
+}
+
+Table member_onboarding {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  member_id uuid [not null, ref: > members.id]
+  facilitator varchar(255)
+  mentor_id uuid [ref: > members.id]
+  uaf_version_consented varchar(20)
+  consent_date date
+  cooling_off_start date
+  cooling_off_end date
+  section_consents json
+  checklist_items json
+  completion_percentage integer [default: 0]
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    member_id [name: 'ix_member_onboarding_member_id']
+  }
+}
+
+Table member_status_transitions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  member_id uuid [not null, ref: > members.id]
+  from_status varchar(50) [not null]
+  to_status varchar(50) [not null]
+  date date [not null]
+  trigger varchar(255)
+  notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    member_id [name: 'ix_member_status_transitions_member_id']
+  }
+}
+
+Table domains {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  domain_id varchar(100) [not null, note: 'business key']
+  version varchar(20) [not null, default: '1.0']
+  status varchar(50) [not null, default: 'active']
+  purpose text
+  current_steward varchar(255)
+  steward_id uuid [ref: > members.id]
+  parent_domain_id uuid [ref: > domains.id]
+  created_by varchar(255)
+  metric_definitions json
+  elements json [note: 'JSONB for complex elements']
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_domains_ecosystem_id']
+  }
+}
+
+Table domain_elements {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  domain_id uuid [not null, ref: > domains.id]
+  element_name varchar(100) [not null]
+  element_value json
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    domain_id [name: 'ix_domain_elements_domain_id']
+  }
+}
+
+Table domain_metrics {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  domain_id uuid [not null, ref: > domains.id]
+  metric varchar(255) [not null]
+  target varchar(255)
+  measurement_method text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    domain_id [name: 'ix_domain_metrics_domain_id']
+  }
+}
+
+// ========================
+// AGREEMENTS
+// ========================
+
+Table agreements {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  agreement_id varchar(100) [not null, note: 'business key']
+  type varchar(50) [not null]
+  title varchar(500) [not null]
+  version varchar(20) [not null, default: '1.0']
+  status varchar(50) [not null, default: 'draft']
+  proposer varchar(255)
+  affected_parties json
+  domain varchar(255)
+  text text
+  hierarchy_level varchar(50) [not null, default: 'domain']
+  parent_agreement_id uuid [ref: > agreements.id]
+  review_date date
+  sunset_date date
+  ratification_date date
+  created_date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_agreements_ecosystem_id']
+  }
+}
+
+Table agreement_ratification_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  agreement_id uuid [not null, ref: > agreements.id]
+  participant varchar(255) [not null]
+  role varchar(100)
+  position varchar(50)
+  date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    agreement_id [name: 'ix_agreement_ratification_records_agreement_id']
+  }
+}
+
+Table amendment_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  amendment_id varchar(100) [not null]
+  parent_agreement_id uuid [not null, ref: > agreements.id]
+  parent_agreement_version varchar(20)
+  amendment_type varchar(50) [not null]
+  proposed_by varchar(255)
+  date date
+  changes json
+  rationale text
+  act_level_used varchar(50)
+  consent_record_id uuid
+  new_agreement_version varchar(20)
+  status varchar(50) [not null, default: 'proposed']
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_amendment_records_ecosystem_id']
+  }
+}
+
+Table review_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  review_id varchar(100) [not null]
+  agreement_id uuid [not null, ref: > agreements.id]
+  agreement_version varchar(20)
+  review_type varchar(50) [not null]
+  trigger varchar(255)
+  review_body json
+  date date
+  evaluation json
+  outcome varchar(100)
+  next_review_date date
+  follow_up_actions json
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_review_records_ecosystem_id']
+  }
+}
+
+// ========================
+// ACT PROCESS
+// ========================
+
+Table proposals {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  proposal_id varchar(100) [not null, note: 'business key']
+  type varchar(50) [not null]
+  decision_type varchar(50)
+  title varchar(500) [not null]
+  version varchar(20) [not null, default: '1.0']
+  status varchar(50) [not null, default: 'draft']
+  proposer varchar(255)
+  co_sponsors json
+  affected_domain varchar(255)
+  impacted_parties json
+  urgency varchar(50)
+  proposed_change text
+  rationale text
+  created_date date
+  advice_deadline date
+  consent_deadline date
+  test_duration varchar(50)
+  related_proposals json
+  synergy_check json
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_proposals_ecosystem_id']
+  }
+}
+
+Table advice_logs {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  proposal_id uuid [not null, ref: > proposals.id]
+  advice_window_start date
+  advice_window_end date
+  urgency varchar(50)
+  summary text
+  proposer_modifications text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    proposal_id [name: 'ix_advice_logs_proposal_id']
+  }
+}
+
+Table advice_entries {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  advice_log_id uuid [not null, ref: > advice_logs.id]
+  advisor varchar(255) [not null]
+  role varchar(100)
+  azpo varchar(100)
+  date date
+  advice_text text
+  proposer_response text
+  integration_status varchar(50)
+  rationale text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    advice_log_id [name: 'ix_advice_entries_advice_log_id']
+  }
+}
+
+Table advice_non_respondents {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  advice_log_id uuid [not null, ref: > advice_logs.id]
+  name varchar(255) [not null]
+  notified_date date
+  follow_up_sent boolean [not null, default: false]
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    advice_log_id [name: 'ix_advice_non_respondents_advice_log_id']
+  }
+}
+
+Table consent_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  proposal_id uuid [not null, ref: > proposals.id]
+  consent_mode varchar(50) [not null]
+  weighting_model varchar(100)
+  facilitator varchar(255)
+  date date
+  quorum_required varchar(50)
+  quorum_met boolean [not null, default: false]
+  outcome varchar(100)
+  escalation_level varchar(50)
+  final_proposal_version varchar(20)
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    proposal_id [name: 'ix_consent_records_proposal_id']
+  }
+}
+
+Table consent_participants {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  consent_record_id uuid [not null, ref: > consent_records.id]
+  name varchar(255) [not null]
+  role varchar(100)
+  azpo varchar(100)
+  position varchar(50)
+  reason text
+  round integer
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    consent_record_id [name: 'ix_consent_participants_consent_record_id']
+  }
+}
+
+Table consent_integration_rounds {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  consent_record_id uuid [not null, ref: > consent_records.id]
+  round_number integer [not null]
+  modifications_made text
+  outcome varchar(100)
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    consent_record_id [name: 'ix_consent_integration_rounds_consent_record_id']
+  }
+}
+
+Table consent_objections_addressed {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  integration_round_id uuid [not null, ref: > consent_integration_rounds.id]
+  objector varchar(255) [not null]
+  objection text
+  resolution text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    integration_round_id [name: 'ix_consent_objections_addressed_integration_round_id']
+  }
+}
+
+Table test_reports {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  proposal_id uuid [not null, ref: > proposals.id]
+  test_start_date date
+  test_end_date date
+  midpoint_checkin_date date
+  revert_procedure text
+  observations text
+  midpoint_findings text
+  outcome varchar(100)
+  extension_end_date date
+  modifications text
+  next_action varchar(255)
+  agreement_registry_id varchar(100)
+  success_criteria_summary text
+  reviewer_notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    proposal_id [name: 'ix_test_reports_proposal_id']
+  }
+}
+
+Table test_success_criteria {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  test_report_id uuid [not null, ref: > test_reports.id]
+  criterion varchar(500) [not null]
+  met boolean [not null, default: false]
+  evidence text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    test_report_id [name: 'ix_test_success_criteria_test_report_id']
+  }
+}
+
+// ========================
+// MEMORY
+// ========================
+
+Table decision_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  record_id varchar(100) [not null, note: 'business key']
+  date date
+  holding text
+  ratio_decidendi text
+  obiter_dicta text
+  deliberation_summary text
+  source_skill varchar(100)
+  source_layer integer
+  artifact_type varchar(50)
+  artifact_reference varchar(255)
+  domain varchar(255)
+  precedent_level varchar(50)
+  status varchar(50) [not null, default: 'active']
+  overruled_by varchar(100)
+  superseded_by varchar(100)
+  related_records json
+  review_date date
+  recorder varchar(255)
+  recorder_role varchar(100)
+  verification_by varchar(255)
+  verification_date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_decision_records_ecosystem_id']
+  }
+
+  Note: 'Permanent precedent log with overruled_by/superseded_by tracking.'
+}
+
+Table decision_dissent_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  decision_record_id uuid [not null, ref: > decision_records.id]
+  objector varchar(255) [not null]
+  objection text
+  resolution text
+  notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    decision_record_id [name: 'ix_decision_dissent_records_decision_record_id']
+  }
+}
+
+Table decision_participants {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  decision_record_id uuid [not null, ref: > decision_records.id]
+  name varchar(255) [not null]
+  role varchar(100)
+  position varchar(50)
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    decision_record_id [name: 'ix_decision_participants_decision_record_id']
+  }
+}
+
+Table decision_semantic_tags {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  decision_record_id uuid [not null, ref: > decision_records.id]
+  topic json
+  affected_parties json
+  ecosystem_scope varchar(100)
+  urgency_at_time varchar(50)
+  related_precedents json
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    decision_record_id [name: 'ix_decision_semantic_tags_decision_record_id']
+  }
+}
+
+// ========================
+// CONFLICT & REPAIR
+// ========================
+
+Table conflict_cases {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  case_id varchar(100) [not null, note: 'business key']
+  title varchar(500) [not null]
+  description text
+  reporter_id uuid [ref: > members.id]
+  status varchar(50) [not null, default: 'reported']
+  severity varchar(50)
+  scope varchar(50)
+  tier integer
+  root_cause_category varchar(100)
+  urgency varchar(50)
+  safety_flag boolean [not null, default: false]
+  parties json
+  facilitator_id uuid [ref: > members.id]
+  domain varchar(255)
+  triage_notes text
+  resolution_summary text
+  resolved_date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_conflict_cases_ecosystem_id']
+  }
+
+  Note: 'A reported conflict or harm requiring governance process.'
+}
+
+Table repair_agreement_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  conflict_case_id uuid [not null, ref: > conflict_cases.id]
+  title varchar(500) [not null]
+  commitments json
+  responsible_party varchar(255)
+  status varchar(50) [not null, default: 'active']
+  checkin_30_date date
+  checkin_30_notes text
+  checkin_60_date date
+  checkin_60_notes text
+  checkin_90_date date
+  checkin_90_notes text
+  completed_date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    conflict_case_id [name: 'ix_repair_agreements_conflict_case_id']
+  }
+
+  Note: 'Binding repair commitment arising from conflict resolution.'
+}
+
+Table governance_health_audits {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  audit_id varchar(100) [not null, note: 'business key']
+  audit_date date
+  auditor varchar(255)
+  capture_risk_indicators json
+  overall_health_score integer
+  findings text
+  recommendations json
+  status varchar(50) [not null, default: 'draft']
+  next_audit_date date
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_governance_health_audits_ecosystem_id']
+  }
+
+  Note: 'Periodic governance health assessment (Layer VII).'
+}
+
+// ========================
+// EMERGENCY
+// ========================
+
+Table emergency_states {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  state varchar(50) [not null, default: 'closed']
+  declared_at timestamp
+  declared_by varchar(255)
+  criteria_met json
+  auto_revert_at timestamp
+  recovery_entered_at timestamp
+  closed_at timestamp
+  pre_authorized_roles json
+  actions_log json
+  post_review_status varchar(50)
+  notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_emergency_states_ecosystem_id']
+  }
+
+  Note: 'Circuit breaker state tracking for an ecosystem (Layer VIII).'
+}
+
+// ========================
+// EXIT & PORTABILITY
+// ========================
+
+Table exit_records {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  member_id uuid [not null, ref: > members.id]
+  exit_type varchar(50) [not null, default: 'standard']
+  status varchar(50) [not null, default: 'declared']
+  declared_date date
+  target_completion_date date
+  coordinator_id uuid [ref: > members.id]
+  commitment_inventory json
+  unwinding_status json
+  data_export_requested boolean [not null, default: false]
+  data_export_completed date
+  departure_notice text
+  re_entry_eligible boolean [not null, default: true]
+  completed_date date
+  notes text
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_exit_records_ecosystem_id']
+  }
+
+  Note: 'Voluntary departure tracking (Layer X).'
+}
+
+// ========================
+// SESSIONS
+// ========================
+
+Table agent_sessions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  ecosystem_id uuid [not null, ref: > ecosystems.id]
+  member_id uuid [ref: > members.id]
+  skill_name varchar(100)
+  started_at timestamp [not null, default: `now()`]
+  ended_at timestamp
+  status varchar(50) [not null, default: 'active']
+  context json
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    ecosystem_id [name: 'ix_agent_sessions_ecosystem_id']
+  }
+}
+
+// ========================
+// AUTH
+// ========================
+
+Table auth_sessions {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  member_id uuid [not null, ref: > members.id]
+  did varchar(500) [not null]
+  expires_at timestamp [not null]
+  user_agent varchar(500)
+  ip_address varchar(50)
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    member_id [name: 'ix_auth_sessions_member_id']
+    expires_at [name: 'ix_auth_sessions_expires_at']
+  }
+
+  Note: 'Server-side authentication sessions tied to a DID identity.'
+}
+
+Table auth_challenges {
+  id uuid [pk, default: `uuid_generate_v4()`]
+  did varchar(500) [not null]
+  challenge varchar(128) [not null]
+  expires_at timestamp [not null]
+  used boolean [not null, default: false]
+
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  Note: 'Short-lived challenges for DID authentication.'
+}

@@ -1,0 +1,61 @@
+# Cross-AZPO Request Template
+# Layer V -- Inter-Unit Coordination
+# Use this template for any request crossing AZPO boundaries
+
+request_id: "XAZR-[OriginAZPO]-[TargetAZPO]-[YYYY]-[Seq]"
+
+originating_azpo:
+  name: ""
+  contact_person: ""
+  contact_role: ""
+
+target_azpo:
+  name: ""
+  inbound_contact: ""
+
+requester:
+  name: ""
+  role: ""
+  circle: ""
+
+request_type: ""  # resource | information | collaboration | service | member-transfer
+
+content:
+  summary: ""
+  detailed_description: ""
+  specific_deliverables: []
+
+rationale: ""
+
+desired_timeline:
+  response_by: ""  # date
+  fulfillment_by: ""  # date
+
+authority_basis: ""  # what gives the requester standing
+
+outbound_authorization:
+  method: ""  # circle-consent | steward-authorization | azpo-consent
+  date: ""
+  participants: []
+  positions: []  # consent | stand-aside | objection
+  record_reference: ""
+
+status: ""  # submitted | acknowledged | processing | responded | completed | withdrawn | stale
+
+response:
+  type: ""  # fulfilled | fulfilled-with-conditions | counter-proposal | declined | deferred
+  content: ""
+  conditions: []
+  counter_proposal: ""
+  rationale: ""
+  internal_consent_record: ""
+
+resolution:
+  date: ""
+  outcome: ""
+  ongoing_commitments: []
+  review_date: ""  # required if ongoing commitments exist
+
+registry_entries:
+  originating_azpo_registry_id: ""
+  target_azpo_registry_id: ""

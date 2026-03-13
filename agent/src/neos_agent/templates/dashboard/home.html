@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+{# ----------------------------------------------------------------
+   Page Header
+   ---------------------------------------------------------------- #}
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text tracking-tight">Dashboard</h1>
+    <p class="mt-1 text-sm text-neos-muted">Ecosystem governance overview</p>
+  </div>
+</div>
+
+{# ----------------------------------------------------------------
+   Quick Actions
+   ---------------------------------------------------------------- #}
+<div class="flex flex-wrap gap-3 mb-8">
+  <a
+    href="/dashboard/agreements/new"
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-neos-primary text-white text-sm font-semibold hover:bg-neos-secondary focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2 transition-colors"
+  >
+    &#43; New Agreement
+  </a>
+  <a
+    href="/dashboard/proposals/new"
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-neos-accent text-neos-primary text-sm font-semibold hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2 transition-colors"
+  >
+    &#43; New Proposal
+  </a>
+  <a
+    href="/dashboard/decisions/search"
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-neos-surface border border-neos-border text-neos-text text-sm font-semibold hover:bg-neos-bg focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2 transition-colors"
+  >
+    &#128269; Search Precedents
+  </a>
+</div>
+
+{# ----------------------------------------------------------------
+   Summary Cards — htmx-loaded on page load, replaces this div
+   ---------------------------------------------------------------- #}
+<div
+  id="dashboard-stats"
+  class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8"
+  hx-get="/dashboard/data"
+  hx-trigger="load"
+  hx-swap="outerHTML"
+>
+  {# Skeleton placeholders shown while loading #}
+  {% for _ in range(6) %}
+  <div class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 animate-pulse">
+    <div class="flex items-center justify-between">
+      <div class="w-6 h-6 rounded bg-neos-border"></div>
+      <div class="w-20 h-3 rounded bg-neos-border"></div>
+    </div>
+    <div class="w-16 h-8 rounded bg-neos-border"></div>
+    <div class="w-32 h-3 rounded bg-neos-border"></div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ----------------------------------------------------------------
+   Recent Activity Feed — htmx-loaded on page load, auto-refreshes every 30s
+   ---------------------------------------------------------------- #}
+<div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+  <div class="flex items-center justify-between px-5 py-4 border-b border-neos-border">
+    <h2 class="text-base font-semibold text-neos-text">Recent Activity</h2>
+    <span class="text-xs text-neos-muted">Last 10 governance actions</span>
+  </div>
+
+  <div
+    id="activity-feed"
+    class="p-5"
+    hx-get="/dashboard/activity"
+    hx-trigger="load, every 30s"
+    hx-swap="outerHTML"
+  >
+    {# Loading skeleton shown while activity is fetching #}
+    <div class="flex items-center justify-center gap-3 py-10 text-neos-muted">
+      <div class="w-4 h-4 rounded-full border-2 border-neos-accent border-t-transparent animate-spin"></div>
+      <span class="text-sm">Loading recent activity...</span>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

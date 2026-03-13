@@ -1,0 +1,63 @@
+# Liaison Mandate Template
+# Layer V -- Inter-Unit Coordination
+# Use this template for cross-AZPO liaison role agreements
+
+role_id: "LIA-[Domain]-[YYYY]-[Seq]"
+
+liaison:
+  name: ""
+  home_azpo: ""
+  role_in_home_azpo: ""
+
+participating_azpos:
+  - name: ""
+    contact_person: ""
+
+liaison_type: ""  # bilateral | multilateral | domain-specific
+
+mandate_scope:
+  can_communicate_freely:
+    description: "Information the liaison can share without seeking approval"
+    items: []
+
+  can_explore_and_discuss:
+    description: "Topics the liaison can discuss and explore with counterparts"
+    items: []
+
+  can_recommend:
+    description: "Areas where the liaison can make recommendations to their home AZPO"
+    items: []
+
+  requires_azpo_consent:
+    description: "Actions that require explicit home AZPO consent before proceeding"
+    items: []
+
+reporting:
+  cadence: "monthly"  # monthly | bi-weekly | quarterly
+  report_to: ""  # home AZPO circle name
+  shared_with: []  # participating AZPOs receiving reports
+  report_contents:
+    - "Topics discussed"
+    - "Items explored"
+    - "Recommendations made"
+    - "Items escalated for AZPO consent"
+    - "Mandate boundary questions encountered"
+
+term:
+  start_date: ""
+  end_date: ""
+  maximum_term_date: ""  # start + 24 months
+  extension_available: true  # one 12-month extension
+  mid_term_check_date: ""  # recommended at 6 months
+
+rotation:
+  mandatory_after: "24 months"
+  cooldown_period: "12 months"  # before same person can hold same role
+  successor_process: "role-assignment with fresh mandate review"
+
+review_schedule:
+  term_end_review: true
+  mid_term_review: false  # recommended but optional
+  review_process: "role-assignment review"
+
+registry_entries: []  # list of registry IDs per AZPO

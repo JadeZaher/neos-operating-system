@@ -1,0 +1,22 @@
+{
+  "track_id": "safeguard_capture_20260302",
+  "title": "Safeguard & Capture Detection (Layer VII)",
+  "description": "Build the 5 governance skills for Layer VII: governance-health-audit, capture-pattern-recognition, safeguard-trigger-design, independent-monitoring, and structural-diversity-maintenance. Provides continuous governance health monitoring and structural capture resistance.",
+  "status": "planned",
+  "priority": "P0",
+  "created_date": "2026-03-02",
+  "updated_date": "2026-03-02",
+  "layers": [7],
+  "skills": [
+    "governance-health-audit",
+    "capture-pattern-recognition",
+    "safeguard-trigger-design",
+    "independent-monitoring",
+    "structural-diversity-maintenance"
+  ],
+  "phases": 4,
+  "estimated_hours": "20-28",
+  "depends_on": ["foundation_20260301"],
+  "spec_path": "conductor/tracks/safeguard_capture_20260302/spec.md",
+  "plan_path": "conductor/tracks/safeguard_capture_20260302/plan.md"
+}

@@ -1,0 +1,89 @@
+# Structural Diversity Report Template -- output artifact of structural-diversity-maintenance
+# Fill one report per review cycle. Publish to all ecosystem members.
+
+report:
+  report_id: ""              # e.g. SDR-SHUR-2026-H1
+  review_scope: ""           # AZPO name or "ecosystem"
+  review_period:
+    start: ""                # ISO date
+    end: ""                  # ISO date
+  review_team_ids: []        # list of participant IDs who conducted the review
+  source_audit_ids: []       # Governance Health Report IDs used as input
+  date_produced: ""          # ISO date
+
+diversity_dimensions:
+
+  - dimension: proposal_authorship_distribution
+    description: "Percentage of unique authors among all proposals; concentration analysis."
+    related_indicator: GHI-01
+    current_metric: ""       # e.g. "12 unique authors / 28 proposals = 43%; top 3 authors = 79%"
+    trend: ""                # improving | stable | degrading
+    proximity_to_warning: "" # e.g. "3 percentage points above warning threshold"
+    erosion_patterns: []     # list of structural conditions causing erosion
+    active_interventions: [] # references to intervention registry entries
+    recommended_interventions: []
+
+  - dimension: approval_rate_equity
+    description: "Ratio of approval rates across author roles and groups."
+    related_indicator: GHI-02
+    current_metric: ""       # e.g. "ratio 0.82 (non-leadership 72% / leadership 88%)"
+    trend: ""
+    proximity_to_warning: ""
+    erosion_patterns: []
+    active_interventions: []
+    recommended_interventions: []
+
+  - dimension: funding_source_diversification
+    description: "Number and concentration of independent funding sources."
+    related_indicator: GHI-03
+    current_metric: ""       # e.g. "3 sources; largest at 35%"
+    trend: ""
+    proximity_to_warning: ""
+    erosion_patterns: []
+    active_interventions: []
+    recommended_interventions: []
+
+  - dimension: leadership_rotation_compliance
+    description: "Adherence to rotation schedules; detection of multi-role cycling."
+    related_indicator: GHI-05
+    current_metric: ""       # e.g. "1 of 4 leaders at 3+ cycles"
+    trend: ""
+    proximity_to_warning: ""
+    erosion_patterns: []
+    active_interventions: []
+    recommended_interventions: []
+
+  - dimension: participation_breadth
+    description: "Percentage of eligible members actively participating in governance beyond attendance."
+    related_indicator: GHI-04
+    current_metric: ""       # e.g. "attendance 82%, proposal participation 32%"
+    trend: ""
+    proximity_to_warning: ""
+    erosion_patterns: []
+    active_interventions: []
+    recommended_interventions: []
+
+intervention_registry:
+  - intervention_id: ""      # e.g. SDI-SHUR-001
+    target_dimension: ""     # which diversity dimension this addresses
+    action_description: ""   # what the intervention does
+    responsible_steward: ""  # who is stewarding implementation
+    start_date: ""           # ISO date
+    sunset_date: ""          # ISO date -- mandatory expiry
+    success_criteria: ""     # measurable criteria for effectiveness
+    effectiveness_data: ""   # current measured progress toward criteria
+    status: ""               # active | sunset_review | retired | renewed
+
+sunset_reviews:
+  - intervention_id: ""
+    review_date: ""          # ISO date
+    outcome: ""              # renewed | modified | retired
+    rationale: ""
+
+overall_diversity_health: "" # healthy | mixed | degrading | critical
+
+publication:
+  published_date: ""
+  published_to: ""           # "all ecosystem members" or specific scope
+
+next_review_due: ""          # ISO date

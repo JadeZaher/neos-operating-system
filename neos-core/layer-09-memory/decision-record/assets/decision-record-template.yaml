@@ -1,0 +1,50 @@
+# NEOS Decision Record Template
+# Generic wrapper for any governance artifact from any layer.
+# The envelope is universal; the wrapped artifact is type-agnostic.
+
+decision_record:
+  # --- Envelope (universal to all decision records) ---
+  record_id: ""                # Unique ID, e.g., DR-OMNI-2026-042
+  date: ""                     # ISO 8601 date of decision finalization
+  holding: ""                  # Single-statement summary of what was decided
+  ratio_decidendi: ""          # The reasoning that produced the holding
+  obiter_dicta: ""             # Contextual observations -- informative, not binding
+  dissent_record:              # Objections raised and how each was addressed
+    - objector: ""
+      objection: ""
+      resolution: ""           # integrated | stood-aside | escalated
+      notes: ""
+  deliberation_summary: ""     # Reference to advice logs, discussion records
+
+  # --- Wrapped Artifact (type-agnostic) ---
+  source_skill: ""             # Which skill produced this decision (e.g., agreement-creation)
+  source_layer: 0              # Which NEOS layer (integer)
+  artifact_type: ""            # agreement | domain_contract | consent_record | boundary_resolution | sunset_record | amendment | review_record | other
+  artifact_reference: ""       # ID or path to the full artifact document
+
+  # --- Metadata ---
+  participants:                # All participants in the governance process
+    - name: ""
+      role: ""
+      position: ""             # consent | stand-aside | objection
+  domain: ""                   # Domain where the decision was made
+  precedent_level: ""          # routine | governance | constitutional
+  semantic_tags:
+    topic: []                  # Free-text keyword tags
+    affected_parties: []       # Who is impacted
+    ecosystem_scope: ""        # single-azpo | cross-azpo | ecosystem-wide
+    urgency_at_time: ""        # normal | elevated | emergency
+    related_precedents: []     # Decision record IDs of related precedents
+
+  # --- Lifecycle ---
+  status: ""                   # active | superseded | overruled
+  overruled_by: ""             # Decision record ID, if overruled
+  superseded_by: ""            # Decision record ID, if superseded
+  related_records: []          # IDs of decision records with relevant connections
+  review_date: ""              # When this record should be reviewed for continued relevance
+
+  # --- Authorship ---
+  recorder: ""                 # Person who wrote this record
+  recorder_role: ""            # Their role in the governance process
+  verification_by: ""          # Participant who verified factual accuracy
+  verification_date: ""        # Date of verification

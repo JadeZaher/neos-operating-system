@@ -1,0 +1,53 @@
+assembly_id: ""
+pool_id: ""
+pool_name: ""
+allocation_date: ""
+total_available:
+  currency_amount: ""
+  current_see_amount: ""
+  current_see_type: ""
+facilitator: ""
+participant_roster:
+  - name: ""
+    role: ""
+    attendance: ""  # present | absent | delegated
+    conflict_of_interest: ""
+proposals:
+  - proposal_id: ""
+    proposer: ""
+    title: ""
+    resource_type: ""  # financial | physical_asset | time_allocation | access_permission | expertise
+    amount_requested: ""
+    amount_allocated: ""
+    rationale_summary: ""
+    deliberation_notes: ""
+    consent_positions:
+      consent: []
+      stand_aside: []
+      objections:
+        - objector: ""
+          reason: ""
+          integration_result: ""
+    status: ""  # consented | withdrawn | denied | modified_via_third_solution
+    stewardship_commitment: ""
+    timeline:
+      start: ""
+      end: ""
+    review_date: ""
+oversubscription_resolution:
+  applied: false
+  method: ""  # proportional_reduction | priority_ranking | partial_funding
+  details: ""
+total_allocated:
+  currency_amount: ""
+  current_see_amount: ""
+remaining_in_pool:
+  currency_amount: ""
+  current_see_amount: ""
+dissenting_positions:
+  - participant: ""
+    position: ""  # stand_aside reason
+facilitator_notes: ""
+next_assembly_date: ""
+version: "1.0.0"
+created_date: ""

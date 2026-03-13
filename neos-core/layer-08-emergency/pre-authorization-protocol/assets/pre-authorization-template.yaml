@@ -1,0 +1,40 @@
+# Pre-Authorization Registry Template -- output artifact of pre-authorization-protocol
+# One entry per emergency role. Maintain as a living registry for each AZPO.
+
+pre_authorizations:
+
+  - role_id: ""                  # e.g. PAR-SHUR-001
+    role_name: ""                # e.g. Safety Coordinator
+    associated_criteria: []      # list of criterion IDs from emergency-criteria-design
+    authority_scope:
+      decisions: ""              # what decisions the role holder can make
+      resources: ""              # what resources the role holder can access
+      communications: ""         # what communications the role holder can issue
+      contracts: ""              # what contracts the role holder can execute
+    hard_ceilings:
+      max_spending_per_decision: ""  # e.g. "$5,000"
+      max_total_spending: ""         # e.g. "50% of quarterly reserves"
+      max_contract_duration_days: 0  # e.g. 30
+      scope_boundary: ""             # e.g. "physical safety decisions only"
+    auto_expiration:
+      trigger: ""                # e.g. "exit criteria met OR maximum duration reached"
+      maximum_duration_days: 0   # aligned with associated criteria's maximum duration
+      extension_process: ""      # e.g. "emergency ACT consent required"
+    irreducible_constraints_acknowledged: true  # must be true -- see irreducible-constraints.yaml
+    primary_holder: ""           # ecosystem member name/ID
+    alternate_holders: []        # list of alternate holders in priority order
+    installed_by: ""             # ACT decision ID that authorized installation
+    installation_date: ""        # ISO date
+    review_date: ""              # ISO date -- annual review minimum
+    status: ""                   # standby | active | expired | vacant
+    activation_history:
+      - activation_date: ""     # ISO date
+        triggering_criterion_id: ""  # which criterion fired
+        decisions_made: []       # list of decisions made under this authority
+        ceiling_utilization: ""  # how much of the ceiling was used
+        expiration_date: ""      # when authority ceased
+        post_review_id: ""       # link to post-emergency review
+    modification_history:
+      - modification_date: ""   # ISO date
+        modified_by: ""         # ACT decision ID
+        change_description: ""

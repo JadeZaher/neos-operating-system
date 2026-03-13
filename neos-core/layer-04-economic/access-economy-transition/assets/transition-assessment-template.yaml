@@ -1,0 +1,62 @@
+assessment_id: ""
+circle_or_azpo: ""
+current_stage: ""  # stage_1_currency_dependent | stage_2_hybrid | stage_3_current_see_primary | stage_4_access_economy
+target_stage: ""
+assessment_date: ""
+assessment_team:
+  - name: ""
+    role: ""
+    perspective: ""  # advocate | neutral | skeptic
+readiness_criteria:
+  - criterion: ""
+    threshold: ""
+    measured_value: ""
+    met: false
+    evidence: ""
+    gap_description: ""
+overall_readiness: ""  # ready | not_ready | conditionally_ready
+participant_survey:
+  response_rate: ""
+  confidence_in_advancement: ""
+  top_concerns:
+    - concern: ""
+      frequency: ""
+  unmet_needs:
+    - need: ""
+      description: ""
+commons_health_summary:
+  current_see_transaction_percentage: ""
+  flow_rate_status: ""
+  concentration_flags: ""
+  sustainability_projection: ""
+external_dependency_analysis:
+  currency_required_obligations:
+    - obligation: ""
+      amount: ""
+      frequency: ""
+      alternative_available: false
+  total_currency_requirement: ""
+  interface_mechanism_status: ""  # not_established | partial | established
+recommended_actions:
+  - action: ""
+    priority: ""  # immediate | short_term | long_term
+    responsible_party: ""
+    timeline: ""
+pilot_proposal:
+  scope: ""
+  timeline:
+    start: ""
+    end: ""
+  success_criteria:
+    - criterion: ""
+      measurement: ""
+      threshold: ""
+  rollback_triggers:
+    - trigger: ""
+      condition: ""
+      automatic: true
+  resource_requirements: ""
+next_assessment_date: ""
+status: ""  # completed | in_progress | scheduled
+version: "1.0.0"
+created_date: ""

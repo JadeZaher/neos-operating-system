@@ -1,0 +1,67 @@
+# Repair Agreement Template
+# Output artifact for the repair-agreement skill
+
+repair_agreement:
+  id: ""                            # Unique ID, e.g. RPR-SHUR-2026-001
+  date: ""                          # ISO 8601 date of agreement finalization
+  status: ""                        # draft | active | completed | renewed | escalated
+
+  originating_process:
+    type: ""                        # harm-circle | coaching-intervention | nvc-dialogue | community-impact-assessment | mediated-dialogue
+    record_id: ""                   # ID of the originating process record
+    date: ""                        # Date of the originating process
+
+  parties:
+    - name: ""
+      role: ""                      # Role in originating conflict (person-harmed, person-who-caused-harm, affected-member)
+      governance_role: ""           # TH, AE, OSC, steward, etc.
+      consent_given: false          # Must be true for agreement to be valid
+      consent_date: ""
+
+  agreement_type:
+    primary: ""                     # behavioral-commitment | structural-change | resource-restitution | role-adjustment | relationship-boundary | community-practice-change
+    secondary: ""                   # Optional second type
+
+  commitments:
+    - id: ""                        # e.g. RPR-SHUR-2026-001-C1
+      party: ""                     # Name of person making the commitment
+      type: ""                      # behavioral | structural | restitution | role | boundary | practice
+      statement: ""                 # Verbatim "I agree to..." language
+      observable_indicators: []     # How fulfillment will be observed
+      timeline:
+        start_date: ""
+        milestones: []              # Intermediate dates and targets
+        completion_date: ""
+      completion_criteria: ""       # Specific, measurable criteria for this commitment
+
+  follow_up:
+    facilitator:
+      name: ""
+      role: ""
+    schedule:
+      - date: ""
+        type: ""                    # 30-day | 60-day | 90-day | supplementary | completion
+        status: ""                  # scheduled | completed | rescheduled
+        findings: ""                # Documented at check-in
+        criteria_assessment: ""     # Met | partially-met | not-met (per commitment)
+
+  completion:
+    all_criteria_met: false
+    confirmed_by_parties: false     # Both/all parties confirm completion
+    completion_date: ""
+    completion_notes: ""
+
+  linked_records:
+    originating_process_id: ""      # Harm circle, coaching plan, etc.
+    agreement_registry_id: ""       # Registration in agreement registry
+    escalation_triage_id: ""        # If escalation was needed
+    supplementary_agreements: []    # IDs of any supplementary repair agreements
+    domain_reference: ""            # AZPO and circle context
+
+  privacy_note: >
+    This agreement documents commitments and completion criteria.
+    Private disclosures from the originating process are not included
+    unless the disclosing party explicitly consented.
+
+  created_at: ""                    # ISO 8601 timestamp
+  created_by: ""                    # Drafter who finalized the agreement

@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Domain — {{ domain.domain_id }}{% endblock %}
+
+
+{% block content %}
+{# ----------------------------------------------------------------
+   Breadcrumb
+   ---------------------------------------------------------------- #}
+<nav class="flex items-center gap-1.5 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <a href="/dashboard/domains" class="hover:text-neos-primary transition-colors">Domains</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">{{ domain.domain_id }}</span>
+</nav>
+
+{# ----------------------------------------------------------------
+   Error Banner
+   ---------------------------------------------------------------- #}
+{% if error %}
+<div class="flex items-start gap-3 p-4 mb-6 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800" role="alert">
+  <span class="flex-shrink-0 mt-0.5" aria-hidden="true">&#9888;</span>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------
+   Page Header
+   ---------------------------------------------------------------- #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div class="flex items-center gap-3 min-w-0">
+    <div class="min-w-0">
+      <div class="flex items-center gap-3 flex-wrap">
+        <h1 class="text-2xl font-bold text-neos-text">{{ domain.domain_id }}</h1>
+        {# Status badge #}
+        {% if domain.status == 'active' %}
+          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">Active</span>
+        {% elif domain.status == 'inactive' %}
+          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">Inactive</span>
+        {% elif domain.status == 'archived' %}
+          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">Archived</span>
+        {% else %}
+          <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">{{ domain.status }}</span>
+        {% endif %}
+      </div>
+      {% if domain.purpose %}
+        <p class="mt-1 text-sm text-neos-muted">{{ domain.purpose | truncate(100) }}</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="flex-shrink-0">
+    <a
+      href="/dashboard/domains/{{ domain.id }}/edit"
+      class="inline-flex items-center gap-2 px-4 py-2 border border-neos-border bg-neos-surface hover:bg-gray-50 text-neos-text text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+    >
+      Edit Domain
+    </a>
+  </div>
+</div>
+
+{# ----------------------------------------------------------------
+   Main Layout — 2-column on large screens
+   ---------------------------------------------------------------- #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  {# ---- LEFT / MAIN COLUMN ---- #}
+  <div class="lg:col-span-2 space-y-6">
+
+    {# Detail Card — purpose, steward, version, parent #}
+    <section class="bg-neos-surface border border-neos-border rounded-xl" aria-label="Domain details">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Details</h2>
+      </div>
+      <div class="divide-y divide-neos-border">
+        <div class="flex items-start justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Purpose</span>
+          <span class="text-neos-text text-right">{{ domain.purpose or '—' }}</span>
+        </div>
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Steward</span>
+          <span class="text-neos-text font-medium">{{ domain.current_steward or 'Unassigned' }}</span>
+        </div>
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Version</span>
+          <span class="text-neos-text">v{{ domain.version | default('1') }}</span>
+        </div>
+        {% if domain.parent_domain_id %}
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Parent Domain</span>
+          <a href="/dashboard/domains/{{ domain.parent_domain_id }}" class="text-neos-primary hover:underline font-medium">
+            {{ domain.parent_domain_id }}
+          </a>
+        </div>
+        {% endif %}
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Delegated by</span>
+          <span class="text-neos-text">{{ domain.created_by or '—' }}</span>
+        </div>
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Created</span>
+          <span class="text-neos-text">{{ domain.created_at or '—' }}</span>
+        </div>
+        <div class="flex items-center justify-between px-5 py-3 text-sm">
+          <span class="text-neos-muted w-36 flex-shrink-0">Updated</span>
+          <span class="text-neos-text">{{ domain.updated_at or '—' }}</span>
+        </div>
+      </div>
+    </section>
+
+    {# ---- S3 Domain Elements ---- #}
+    <section class="bg-neos-surface border border-neos-border rounded-xl" aria-label="S3 Domain Elements">
+      <div class="px-5 py-4 border-b border-neos-border flex items-center justify-between">
+        <h2 class="text-base font-semibold text-neos-text">S3 Domain Elements</h2>
+        {% if elements %}
+          <span class="text-xs text-neos-muted">{{ elements | length }} element{{ 's' if elements | length != 1 }}</span>
+        {% endif %}
+      </div>
+
+      {% if elements %}
+      <div class="divide-y divide-neos-border">
+        {% for element in elements %}
+        <div class="px-5 py-4">
+          <div class="text-xs font-semibold text-neos-muted uppercase tracking-wider mb-1">
+            {{ element.element_name | replace('_', ' ') | title }}
+          </div>
+          <div class="text-sm text-neos-text whitespace-pre-wrap">{{ element.element_value or '—' }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="flex flex-col items-center justify-center py-12 text-center px-6">
+        <div class="w-12 h-12 rounded-full bg-neos-bg border border-neos-border flex items-center justify-center text-xl mb-3" aria-hidden="true">&#9673;</div>
+        <p class="text-sm font-medium text-neos-text mb-1">No elements defined</p>
+        <p class="text-xs text-neos-muted">Edit this domain to add S3 contract elements.</p>
+      </div>
+      {% endif %}
+    </section>
+
+    {# ---- Domain Metrics ---- #}
+    {% if metrics %}
+    <section class="bg-neos-surface border border-neos-border rounded-xl" aria-label="Domain Metrics">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Domain Metrics</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm" aria-label="Domain metrics table">
+          <thead>
+            <tr class="bg-gray-50 text-left">
+              <th scope="col" class="px-5 py-3 text-xs font-semibold text-neos-muted uppercase tracking-wider">Metric</th>
+              <th scope="col" class="px-5 py-3 text-xs font-semibold text-neos-muted uppercase tracking-wider">Value</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-neos-border">
+            {% for metric in metrics %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-5 py-3 font-medium text-neos-text">{{ metric.metric_name | default(metric.element_name) | replace('_', ' ') | title }}</td>
+              <td class="px-5 py-3 text-neos-text">{{ metric.metric_value | default(metric.element_value) or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+  </div>
+
+  {# ---- RIGHT / SIDEBAR COLUMN ---- #}
+  <div class="space-y-4">
+
+    {# Quick metadata card #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-neos-text mb-3">Quick Info</h3>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Status</span>
+          {% if domain.status == 'active' %}
+            <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">Active</span>
+          {% elif domain.status == 'inactive' %}
+            <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">Inactive</span>
+          {% else %}
+            <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">{{ domain.status }}</span>
+          {% endif %}
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Version</span>
+          <span class="font-medium">v{{ domain.version | default('1') }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Steward</span>
+          <span class="font-medium truncate max-w-[60%] text-right">{{ domain.current_steward or '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Edit action #}
+    <a
+      href="/dashboard/domains/{{ domain.id }}/edit"
+      class="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-neos-primary hover:bg-neos-secondary text-white text-sm font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+    >
+      Edit Domain
+    </a>
+
+    <a
+      href="/dashboard/domains"
+      class="flex items-center justify-center gap-2 w-full px-4 py-2.5 border border-neos-border hover:bg-gray-50 text-neos-text text-sm font-medium rounded-lg transition-colors"
+    >
+      &#8592; All Domains
+    </a>
+
+  </div>
+</div>
+{% endblock %}

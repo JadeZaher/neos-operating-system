@@ -1,0 +1,26 @@
+{
+  "track_id": "inter_unit_20260302",
+  "title": "Layer V -- Inter-Unit Coordination",
+  "description": "Build 5 governance skills for NEOS Layer V: cross-azpo-request, shared-resource-stewardship, federation-agreement, inter-unit-liaison, and polycentric-conflict-navigation. Grounded in Ostrom's polycentric governance with the millet system structural pattern (minus the Sultan) and Holochain agent-centric architecture as theoretical foundations.",
+  "status": "planned",
+  "priority": "P1",
+  "created_date": "2026-03-02",
+  "updated_date": "2026-03-02",
+  "layers": [5],
+  "skills": [
+    "cross-azpo-request",
+    "shared-resource-stewardship",
+    "federation-agreement",
+    "inter-unit-liaison",
+    "polycentric-conflict-navigation"
+  ],
+  "depends_on": [
+    "foundation_20260301",
+    "authority_role_20260302",
+    "economic_coord_20260302"
+  ],
+  "phases": 4,
+  "estimated_hours": "20-30",
+  "spec_path": "conductor/tracks/inter_unit_20260302/spec.md",
+  "plan_path": "conductor/tracks/inter_unit_20260302/plan.md"
+}

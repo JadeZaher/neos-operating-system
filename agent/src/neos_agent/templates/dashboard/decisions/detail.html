@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}Decision — {{ decision.record_id if decision else 'Not Found' }}{% endblock %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <a href="/dashboard/decisions" class="hover:text-neos-primary transition-colors">Decision Records</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">{{ decision.record_id if decision else 'Not Found' }}</span>
+</nav>
+
+{% if error is defined and error %}
+<div class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">
+  <span class="mt-0.5 shrink-0 text-base" aria-hidden="true">&#9888;</span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{% if decision %}
+{# Page Header #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text">{{ decision.record_id }}</h1>
+    <p class="text-sm text-neos-muted mt-1">Decision record — Layer IX institutional memory</p>
+  </div>
+  <a
+    href="/dashboard/decisions"
+    class="inline-flex items-center gap-2 px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors shrink-0"
+  >
+    &#8592; Back to Records
+  </a>
+</div>
+
+{# Metadata Bar #}
+<div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 mb-6 bg-neos-surface border border-neos-border rounded-xl text-sm">
+  {% if decision.status %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Status:</span>
+    {% set s = decision.status %}
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+      {%- if s == 'active' %} bg-green-100 text-green-700
+      {%- elif s == 'superseded' %} bg-yellow-100 text-yellow-700
+      {%- elif s == 'archived' %} bg-gray-100 text-gray-500
+      {%- else %} bg-gray-100 text-gray-600
+      {%- endif %}">{{ s }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.precedent_level %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Precedent:</span>
+    {% set pl = decision.precedent_level %}
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+      {%- if pl == 'binding' %} bg-red-100 text-red-700
+      {%- elif pl == 'persuasive' %} bg-yellow-100 text-yellow-700
+      {%- elif pl == 'informational' %} bg-blue-100 text-blue-700
+      {%- else %} bg-gray-100 text-gray-600
+      {%- endif %}">{{ pl }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.domain %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Domain:</span>
+    <span class="text-neos-text">{{ decision.domain }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.source_layer %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Source Layer:</span>
+    <span class="text-neos-text">{{ decision.source_layer }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.source_skill %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Source Skill:</span>
+    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{{ decision.source_skill }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.date %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Date:</span>
+    <span class="text-neos-text">{{ decision.date }}</span>
+  </div>
+  {% endif %}
+
+  {% if decision.artifact_type %}
+  <div class="flex items-center gap-2">
+    <span class="text-neos-muted">Artifact:</span>
+    <span class="text-neos-text">{{ decision.artifact_type }}</span>
+  </div>
+  {% endif %}
+</div>
+
+{# Main Content #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  {# Primary Column #}
+  <div class="lg:col-span-2 space-y-6">
+    {# Holding #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Holding</h2>
+      </div>
+      <div class="px-6 py-5 text-sm text-neos-text leading-relaxed">
+        {{ decision.holding | default('No holding recorded.') }}
+      </div>
+    </div>
+
+    {# Ratio Decidendi #}
+    {% if decision.ratio_decidendi %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Ratio Decidendi</h2>
+      </div>
+      <div class="px-6 py-5 text-sm text-neos-text leading-relaxed">
+        {{ decision.ratio_decidendi }}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Dissent Records #}
+    {% if dissents is defined and dissents %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-6 py-4 border-b border-neos-border">
+        <h2 class="text-base font-semibold text-neos-text">Dissent Records</h2>
+      </div>
+      <div class="divide-y divide-neos-border">
+        {% for dissent in dissents %}
+        <div class="px-6 py-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium text-sm text-neos-text">{{ dissent.dissenter | default('Anonymous') }}</span>
+            {% if dissent.dissent_type %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+              {%- if dissent.dissent_type == 'reasoned_objection' %} bg-red-100 text-red-700
+              {%- elif dissent.dissent_type == 'concern' %} bg-yellow-100 text-yellow-700
+              {%- else %} bg-gray-100 text-gray-600
+              {%- endif %}">{{ dissent.dissent_type | replace('_', ' ') }}</span>
+            {% endif %}
+          </div>
+          {% if dissent.dissent_text %}
+          <p class="text-sm text-neos-muted">{{ dissent.dissent_text }}</p>
+          {% endif %}
+          {% if dissent.resolution %}
+          <div class="mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+            <span class="font-medium">Resolution:</span> {{ dissent.resolution }}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Sidebar #}
+  <aside class="space-y-6" aria-label="Decision metadata">
+    {# Participants #}
+    {% if participants is defined and participants %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Participants ({{ participants | length }})</h3>
+      </div>
+      <div class="px-5 py-4">
+        <div class="space-y-3">
+          {% for p in participants %}
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-sm font-medium text-neos-text">{{ p.name | default('Unknown') }}</span>
+              {% if p.role %}
+              <span class="text-xs text-neos-muted ml-1">({{ p.role }})</span>
+              {% endif %}
+            </div>
+            {% if p.position %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+              {%- if p.position == 'consent' %} bg-green-100 text-green-700
+              {%- elif p.position == 'objection' %} bg-red-100 text-red-700
+              {%- elif p.position == 'stand_aside' %} bg-yellow-100 text-yellow-700
+              {%- else %} bg-gray-100 text-gray-600
+              {%- endif %}">{{ p.position | replace('_', ' ') }}</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Semantic Tags #}
+    {% if semantic_tags is defined and semantic_tags %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Semantic Tags</h3>
+      </div>
+      <div class="px-5 py-4">
+        <div class="flex flex-wrap gap-2">
+          {% for tag in semantic_tags %}
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">
+            {{ tag.tag | default(tag) }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Metadata #}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Record Info</h3>
+      </div>
+      <div class="px-5 py-4 space-y-3 text-sm">
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Record ID</span>
+          <span class="text-neos-text font-mono text-xs">{{ decision.record_id }}</span>
+        </div>
+        {% if decision.created_at %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Created</span>
+          <span class="text-neos-text">{{ decision.created_at }}</span>
+        </div>
+        {% endif %}
+        {% if decision.updated_at %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Updated</span>
+          <span class="text-neos-text">{{ decision.updated_at }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

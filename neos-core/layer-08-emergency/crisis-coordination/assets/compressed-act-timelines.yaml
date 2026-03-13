@@ -1,0 +1,62 @@
+# Compressed ACT Timelines -- decision timelines for emergency conditions
+# These timelines replace normal ACT durations during active emergencies only.
+# Installed through ACT consent alongside emergency criteria.
+
+timelines:
+
+  immediate:
+    name: "Immediate Action"
+    description: "Decisions within a role holder's pre-authorized scope that directly address the active crisis"
+    decision_authority: "Pre-authorized role holder acting within defined scope and ceilings"
+    advice_period: "None -- act immediately"
+    consent_requirement: "None -- pre-consented through pre-authorization-protocol"
+    reporting_deadline_hours: 24
+    reporting_recipients: "All ecosystem members within scope"
+    conditions:
+      - "Decision falls within role holder's defined authority scope"
+      - "Decision directly addresses the active emergency"
+      - "Decision is within role holder's hard ceilings"
+      - "Decision does not violate any irreducible constraint"
+    examples:
+      - "Safety Coordinator orders evacuation"
+      - "Resource Coordinator releases emergency reserves for shelter"
+      - "Communications Coordinator issues member safety update"
+
+  short_cycle:
+    name: "Short-Cycle Emergency ACT"
+    description: "Decisions that exceed one role holder's scope, approach a ceiling, or require collective input"
+    decision_authority: "Collective -- emergency ACT consent from available members"
+    advice_period_hours: 24
+    consent_period_hours: 12
+    minimum_participants: 3
+    consent_standard: "No reasoned objection within consent period = consent"
+    conditions:
+      - "Decision exceeds a single role holder's authority scope"
+      - "Decision approaches or exceeds a role holder's hard ceiling"
+      - "Decision affects multiple emergency response tracks"
+      - "Duration extension requested"
+    examples:
+      - "Resource Coordinator needs to exceed $5,000 ceiling for emergency lodging"
+      - "Safety Coordinator and Resource Coordinator disagree on resource allocation"
+      - "Auto-reversion timer approaching and extension needed"
+
+  deferred:
+    name: "Deferred Decision"
+    description: "Decisions that do not address the active crisis -- held for normal ACT process"
+    decision_authority: "None during emergency -- queued for normal process"
+    processing: "After emergency concludes, enters normal ACT Advice-Consent cycle"
+    conditions:
+      - "Decision does not directly address the active emergency"
+      - "Decision involves programmatic or strategic changes"
+      - "Decision involves long-term commitments beyond emergency scope"
+      - "Decision involves partnership or external relationship changes"
+    examples:
+      - "Vendor proposes long-term facility repair contract"
+      - "Funder requests governance changes in exchange for emergency aid"
+      - "Member proposes restructuring AZPO boundaries"
+
+# Ceiling monitoring thresholds
+ceiling_monitoring:
+  warning_threshold_percent: 80
+  warning_notification: "All ecosystem members notified when role holder reaches 80% of any ceiling"
+  ceiling_reached_action: "Further decisions in that category require short-cycle emergency ACT consent"

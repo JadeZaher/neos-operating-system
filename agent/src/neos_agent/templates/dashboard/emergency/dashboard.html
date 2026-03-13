@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Emergency Handling{% endblock %}
+
+{% block ai_actions %}
+<div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+  <div class="flex items-center gap-2 shrink-0">
+    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+    <span class="text-sm font-semibold text-red-700">AI Emergency Assessment</span>
+  </div>
+  <div class="flex flex-wrap gap-2 flex-1">
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Assess whether current conditions meet the emergency criteria defined in NEOS Principle #10'; document.querySelector('#chat-send-form').requestSubmit()">
+      Assess Emergency Criteria
+    </button>
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Explain the circuit breaker pattern and auto-reversion timer for emergencies'; document.querySelector('#chat-send-form').requestSubmit()">
+      Circuit Breaker Info
+    </button>
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors"
+            onclick="document.getElementById('chat-message-input').value='What are the pre-authorized emergency roles and their powers?'; document.querySelector('#chat-send-form').requestSubmit()">
+      Emergency Roles
+    </button>
+  </div>
+  <button type="button" class="text-xs text-red-600 hover:text-red-700 font-medium shrink-0 transition-colors"
+          onclick="document.getElementById('chat-panel').classList.remove('hidden')">
+    Open Chat &rarr;
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Emergency</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text tracking-tight">Emergency Handling</h1>
+    <p class="text-sm text-neos-muted mt-1">Circuit breaker state, emergency declarations, and auto-reversion tracking</p>
+  </div>
+</div>
+
+{# Circuit breaker status #}
+<div class="mb-6">
+  {% if current_state and current_state.state == 'open' %}
+  <div class="bg-red-50 border-2 border-red-300 rounded-xl p-6">
+    <div class="flex items-start gap-4">
+      <div class="text-4xl" aria-hidden="true">&#9888;</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold text-red-800">CIRCUIT BREAKER OPEN</h2>
+        <p class="text-sm text-red-700 mt-1">Emergency state is active. Temporary authority expansion in effect.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 text-sm">
+          <div>
+            <span class="text-red-600 text-xs font-medium uppercase block">Declared</span>
+            <span class="font-medium text-red-800">{{ current_state.declared_at.strftime('%Y-%m-%d %H:%M UTC') if current_state.declared_at else '—' }}</span>
+          </div>
+          <div>
+            <span class="text-red-600 text-xs font-medium uppercase block">Auto-Revert</span>
+            <span class="font-medium text-red-800">{{ current_state.auto_revert_at.strftime('%Y-%m-%d %H:%M UTC') if current_state.auto_revert_at else '—' }}</span>
+          </div>
+          <div>
+            <span class="text-red-600 text-xs font-medium uppercase block">Declared By</span>
+            <span class="font-medium text-red-800">{{ current_state.declared_by or '—' }}</span>
+          </div>
+        </div>
+        {% if current_state.notes %}
+        <div class="mt-3 text-sm text-red-700">
+          <span class="font-medium">Reason:</span> {{ current_state.notes }}
+        </div>
+        {% endif %}
+        <div class="mt-4 flex gap-3">
+          <a href="/dashboard/emergency/{{ current_state.id }}" class="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">View Details</a>
+          <form method="POST" action="/dashboard/emergency/{{ current_state.id }}/resolve" class="inline">
+            <button type="submit" class="px-4 py-2 text-sm font-medium bg-white text-red-700 border border-red-300 rounded-lg hover:bg-red-50 transition-colors">Resolve Emergency</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% elif current_state and current_state.state == 'half_open' %}
+  <div class="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-6">
+    <div class="flex items-start gap-4">
+      <div class="text-4xl" aria-hidden="true">&#9889;</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold text-yellow-800">CIRCUIT BREAKER HALF-OPEN</h2>
+        <p class="text-sm text-yellow-700 mt-1">Transitioning back to normal. Monitoring for stability.</p>
+        <div class="mt-4">
+          <a href="/dashboard/emergency/{{ current_state.id }}" class="px-4 py-2 text-sm font-medium bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors">View Details</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-green-50 border border-green-200 rounded-xl p-6">
+    <div class="flex items-center gap-4">
+      <div class="text-4xl" aria-hidden="true">&#10003;</div>
+      <div>
+        <h2 class="text-xl font-bold text-green-800">CIRCUIT BREAKER CLOSED</h2>
+        <p class="text-sm text-green-700 mt-1">Normal governance operations. No active emergencies.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# NEOS Emergency Principles reminder #}
+<div class="bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-6 mb-6">
+  <h2 class="text-sm font-semibold text-neos-primary mb-3">NEOS Principle #10: Emergency Contraction</h2>
+  <div class="text-sm text-neos-text space-y-2">
+    <p>Temporary authority expansion <strong>must auto-expire</strong>. Emergency powers cannot be made permanent.</p>
+    <ul class="list-disc list-inside text-neos-muted space-y-1 ml-2">
+      <li>Maximum emergency duration: 30 days (renewable once with full consent)</li>
+      <li>All emergency actions are logged and auditable</li>
+      <li>Pre-authorized roles defined before emergency declaration</li>
+      <li>Post-emergency review mandatory within 7 days of resolution</li>
+    </ul>
+  </div>
+  <div class="mt-3">
+    <button type="button"
+            class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+            onclick="document.getElementById('chat-message-input').value='Assess current emergency criteria and check the circuit breaker state'; document.querySelector('#chat-send-form').requestSubmit()">
+      AI Emergency Assessment
+    </button>
+  </div>
+</div>
+
+{# Emergency history #}
+<div class="bg-neos-surface border border-neos-border rounded-xl p-6">
+  <h2 class="text-sm font-semibold text-neos-muted uppercase tracking-wider mb-4">Emergency History</h2>
+  {% if history %}
+  <div class="space-y-3">
+    {% for event in history %}
+    <a href="/dashboard/emergency/{{ event.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors border border-neos-border">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
+          {% if event.state == 'open' %}bg-red-100 text-red-700
+          {% elif event.state == 'half_open' %}bg-yellow-100 text-yellow-700
+          {% else %}bg-green-100 text-green-700{% endif %}">{{ event.state | replace('_', ' ') }}</span>
+        <span class="text-sm text-neos-text">{{ event.notes[:60] if event.notes else 'No reason specified' }}{% if event.notes and event.notes|length > 60 %}...{% endif %}</span>
+      </div>
+      <span class="text-xs text-neos-muted">{{ event.declared_at.strftime('%Y-%m-%d') if event.declared_at else '—' }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-neos-muted text-center py-4">No emergency events recorded.</p>
+  {% endif %}
+</div>
+{% endblock %}

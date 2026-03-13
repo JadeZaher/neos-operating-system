@@ -1,0 +1,14 @@
+check_id: ""
+mode: consent  # consent | consensus
+question: ""
+date: ""
+quorum_required: ""
+quorum_met: false
+participants:
+  - name: ""
+    role: ""
+    present: true
+    position: ""  # consent | stand_aside | objection | agree | disagree | absent_with_notice | absent_without_notice
+    reason: ""
+result: ""  # consent_achieved | consensus_achieved | not_achieved | quorum_not_met
+notes: ""

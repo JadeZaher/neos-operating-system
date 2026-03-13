@@ -1,0 +1,19 @@
+proposal_id: ""
+advice_window_start: ""
+advice_window_end: ""
+urgency: normal  # normal | elevated | emergency
+entries:
+  - advisor: ""
+    role: ""
+    azpo: ""
+    date: ""
+    advice_text: ""
+    proposer_response: ""
+    integration_status: ""  # integrated | partially_integrated | not_integrated
+    rationale: ""
+non_respondents:
+  - name: ""
+    notified_date: ""
+    follow_up_sent: false
+summary: ""
+proposer_modifications: ""

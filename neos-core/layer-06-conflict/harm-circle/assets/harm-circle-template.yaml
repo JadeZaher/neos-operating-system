@@ -1,0 +1,57 @@
+# Harm Circle Record Template
+# Output artifact for the harm-circle skill
+
+harm_circle:
+  id: ""                          # Unique ID, e.g. HC-SHUR-2026-001
+  date: ""                        # ISO 8601 date of circle
+  location: ""                    # Physical or virtual location
+  status: ""                      # scheduled | in-progress | completed | paused
+
+  convener:
+    name: ""
+    role: ""                      # Facilitation role and AZPO affiliation
+    authority_scope: ""           # Domain-mapping reference
+
+  participants:
+    person_harmed:
+      name: ""
+      role: ""
+      participated: true          # false if declined
+    person_who_caused_harm:
+      name: ""
+      role: ""
+      participated: true          # false if declined or absent
+    affected_community_members:
+      - name: ""
+        role: ""
+    observers: []                 # Optional silent witnesses
+
+  safety_assessment:
+    conducted: true
+    accommodations: ""            # Separate seating, virtual option, support person, etc.
+
+  process_record:
+    preparation_conversations_completed: true
+    rounds_completed: []          # [what-happened, impact-and-needs, repair-actions]
+    modifications: ""             # Any deviations from standard process
+    duration_minutes: 0
+
+  repair_agreement:
+    id: ""                        # Links to repair-agreement artifact, e.g. RPR-SHUR-2026-007
+    summary: ""                   # Brief description of agreed repair actions
+    follow_up_schedule:
+      - date: ""
+        type: ""                  # 30-day | 60-day | 90-day | completion
+
+  privacy_note: >
+    This record documents the process, not private disclosures.
+    Individual statements are included only with the explicit consent
+    of the person who made them.
+
+  linked_records:
+    escalation_triage_id: ""      # Triage record that routed to this circle
+    community_impact_id: ""       # If a CIA was triggered
+    domain_reference: ""          # AZPO and circle context
+
+  created_at: ""                  # ISO 8601 timestamp
+  created_by: ""                  # Convener who finalized the record

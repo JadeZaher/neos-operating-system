@@ -1,0 +1,89 @@
+# NEOS Semantic Tagging Taxonomy
+# Defines the required and optional tag categories for decision records.
+# Maintained by the governance memory steward; evolved through ACT consent.
+
+taxonomy:
+  version: 1.0.0
+  effective_date: ""           # ISO 8601 date when this taxonomy version took effect
+  approved_by: ""              # Decision record ID approving this taxonomy version
+
+  # --- Required Tags (must be present on every decision record) ---
+  required:
+    domain:
+      description: "The domain that produced or owns the decision"
+      type: string
+      validation: "Must match a recognized domain in the domain-mapping registry"
+      examples: ["Town-Hall", "Economics", "Operations", "OSC", "Agents-of-Ecosystem"]
+
+    layer:
+      description: "The NEOS layer that the originating skill belongs to"
+      type: integer
+      validation: "Integer 1-10 corresponding to a NEOS layer"
+      examples: [1, 2, 3, 9]
+
+    skill:
+      description: "The NEOS skill that produced the governance decision"
+      type: string
+      validation: "Must be a valid skill name in kebab-case"
+      examples: ["agreement-creation", "act-consent-phase", "domain-mapping", "decision-record"]
+
+    precedent_level:
+      description: "The governance significance of this decision as precedent"
+      type: enum
+      values:
+        routine: "Does not establish a new governance pattern (e.g., meeting schedule change)"
+        governance: "Establishes or modifies a governance norm (e.g., process change, new agreement type)"
+        constitutional: "Affects the UAF or foundational principles (e.g., principle amendment, structural reform)"
+      validation: "Must include a rationale statement justifying the classification"
+
+    affected_parties:
+      description: "Individuals, circles, or participant classes impacted by the decision"
+      type: list[string]
+      validation: "At least one entry; use specific circle/role names, not vague categories"
+      examples: ["Economics circle", "all SHUR Bali residents", "Onboarding circle", "OSC"]
+
+  # --- Optional Tags (applied when relevant) ---
+  optional:
+    topic:
+      description: "Free-text keywords describing the decision's subject matter"
+      type: list[string]
+      validation: "Maximum 5 keywords; use lowercase-hyphenated format"
+      examples: ["resource-allocation", "meeting-schedule", "domain-boundary", "consent-process"]
+
+    related_precedents:
+      description: "Decision record IDs of related or relevant prior decisions"
+      type: list[string]
+      validation: "Must be valid decision record IDs (DR-[ECOSYSTEM]-[YEAR]-[SEQ])"
+      examples: ["DR-OMNI-2025-008", "DR-OMNI-2026-042"]
+
+    ecosystem_scope:
+      description: "Geographic or organizational scope of the decision's impact"
+      type: enum
+      values:
+        single-azpo: "Affects one AZPO only"
+        cross-azpo: "Affects multiple AZPOs"
+        ecosystem-wide: "Affects the entire ecosystem"
+
+    urgency_at_time:
+      description: "The urgency context when the decision was made"
+      type: enum
+      values:
+        normal: "Standard governance timeline"
+        elevated: "Compressed timeline due to operational need"
+        emergency: "Emergency conditions -- triggers post-emergency review"
+
+  # --- Taxonomy Evolution ---
+  evolution:
+    proposal_process: "Any participant can propose a new tag category through ACT consent"
+    approval_body: "Governance memory steward + the body responsible for governance memory"
+    documentation: "Taxonomy changes are documented as governance-level decision records"
+    retroactive_policy: "Existing records are not retroactively re-tagged unless explicitly scoped in the consent decision"
+    review_cycle: "Annual taxonomy review evaluates usage patterns and promotes frequent free-text topics"
+
+  # --- Tag Quality Controls ---
+  quality:
+    review_required: true        # Every record's tags must be reviewed by a second participant
+    review_deadline_hours: 48    # Reviewer must complete within this window
+    dispute_resolution: "Lightweight consent by original deciding body or governance memory steward"
+    correction_process: "Any participant may propose; corrections appended as amendments, not edits"
+    audit_trail: "Original tags preserved alongside corrections with corrector identity and rationale"
