@@ -269,12 +269,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         return redirect("/auth/login")
 
     # Catch-all: redirect unknown paths to the dashboard
-    @app.exception(Exception)
-    async def catch_all(request, exception):
-        from sanic.exceptions import NotFound
-        if isinstance(exception, NotFound):
-            return redirect("/dashboard")
-        raise exception
+    from sanic.exceptions import NotFound
+    @app.exception(NotFound)
+    async def catch_not_found(request, exception):
+        return redirect("/dashboard")
 
     return app
 
