@@ -18,4 +18,4 @@ COPY agent/alembic.ini .
 COPY neos-core/ neos-core/
 RUN adduser --disabled-password --gecos "" neos && chown -R neos:neos /app
 USER neos
-CMD ["sanic", "neos_agent.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory"]
+CMD ["sh", "-c", "alembic upgrade head && sanic neos_agent.main:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory"]

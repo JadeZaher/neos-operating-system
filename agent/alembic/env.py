@@ -30,6 +30,9 @@ if not database_url:
                 break
 
 if database_url:
+    # Ensure asyncpg driver (Railway provides plain postgresql://)
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata
