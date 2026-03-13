@@ -162,7 +162,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
 ### Tasks:
 
-- [ ] **Task 3.1: Audit `detail.html` for unsafe attribute access**
+- [x] **Task 3.1: Audit `detail.html` for unsafe attribute access**
 
   Review every line of `detail.html` and categorize each attribute access:
 
@@ -184,7 +184,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: `test_member_detail_nonexistent_404` should return 404 with "Member not found" text and no template errors.
 
-- [ ] **Task 3.2: Audit `detail.html` for the `transitions` variable name mismatch**
+- [x] **Task 3.2: Audit `detail.html` for the `transitions` variable name mismatch**
 
   The route handler passes `transitions=transitions` to the template context. But the template on line 341 checks `{% if status_transitions is defined and status_transitions %}` and iterates `{% for t in status_transitions %}`. This is a variable name mismatch -- the route passes `transitions` but the template expects `status_transitions`.
 
@@ -192,7 +192,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write a test `test_member_detail_with_transitions_shows_history` that creates a MemberStatusTransition record and verifies "Status History" appears in the response. This test would fail before the fix due to the name mismatch.
 
-- [ ] **Task 3.3: Audit `form.html` for edge cases**
+- [x] **Task 3.3: Audit `form.html` for edge cases**
 
   Review `form.html`:
   - **Line 43** (`member.ecosystem_id`): When editing, this is a hidden field. When creating (`member=None`), it's empty. The create route requires `ecosystem_id` from the form. For edit, the ecosystem_id should be preserved. Verify the hidden field is populated correctly for both create and edit flows.
@@ -202,7 +202,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: `test_edit_form_own_profile_200` should pass and show pre-populated skills.
 
-- [ ] **Task 3.4: Verify `_is_own_profile()` edge cases**
+- [x] **Task 3.4: Verify `_is_own_profile()` edge cases**
 
   Test that `_is_own_profile()`:
   - Returns `True` when `request.ctx.member.id == member_id`.
@@ -214,7 +214,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write tests, implement any fixes needed. The current code (`getattr(request.ctx, "member", None)`) handles the missing attribute case. Verify the None case.
 
-- [ ] **Task 3.5: Add `member=None` error guard to `detail.html`**
+- [x] **Task 3.5: Add `member=None` error guard to `detail.html`**
 
   Implement the wrap from Task 3.1. The entire content block should be gated:
 
@@ -238,7 +238,9 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: `test_member_detail_nonexistent_404` passes cleanly.
 
-- [ ] **Verification: All tests pass, no template rendering errors** [checkpoint marker]
+- [x] **Verification: All tests pass, no template rendering errors** [checkpoint marker]
+
+  **Result: 23/23 tests pass. 8/8 existing test_views.py tests pass (no regressions).**
 
   Run `pytest agent/tests/test_members.py -v`. All tests green. Manually verify no Jinja2 `UndefinedError` or `TypeError` in test output.
 

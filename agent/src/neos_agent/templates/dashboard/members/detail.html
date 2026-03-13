@@ -4,6 +4,14 @@
 
 
 {% block content %}
+{% if error is defined and error %}
+<div class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">
+  <span class="mt-0.5 shrink-0 text-base" aria-hidden="true">&#9888;</span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{% if member %}
 {# Breadcrumb #}
 <nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
   <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
@@ -389,4 +397,9 @@
     {% endif %}
   </aside>
 </div>
+{% else %}
+  {% if not error %}
+  <p class="text-neos-muted">Member not found.</p>
+  {% endif %}
+{% endif %}
 {% endblock %}

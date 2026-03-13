@@ -212,7 +212,7 @@ async def detail(request: Request, member_id: uuid.UUID):
         member=member,
         ecosystem=ecosystem,
         onboarding=onboarding,
-        transitions=transitions,
+        status_transitions=transitions,
         active_page="members",
     )
     return html(content)
