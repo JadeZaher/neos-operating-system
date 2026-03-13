@@ -458,3 +458,29 @@ Build the decentralized sync layer (GunDB relay + IPFS pinning), embeddable micr
 
 **Spec:** `conductor/tracks/sync_deploy_20260305/spec.md`
 **Plan:** `conductor/tracks/sync_deploy_20260305/plan.md`
+
+---
+
+### 15. [ ] member_profile_harden_20260313 -- Member Profile Flow: Review & Harden
+**Priority:** P0
+**Type:** Bug (Review/Harden)
+**Status:** Pending
+**Created:** 2026-03-13
+**Depends on:** dashboard_views_20260305
+
+Review and harden the member profile flow end-to-end. Fix async lazy-load 500 errors, template context safety issues, variable name mismatches, and add defensive error handling. Validate all CRUD paths (view own profile, view others, edit own, blocked from editing others), ensure skills/interests/ecosystem display correctly, and verify the signup-to-profile flow.
+
+**Known Bugs:**
+- 500 error on profile detail from `MissingGreenlet` (async lazy-load of `member.onboarding`)
+- `transitions`/`status_transitions` variable name mismatch (status history never renders)
+- `member=None` crash risk in detail.html when member not found
+- Zero test coverage for member CRUD paths
+
+**Phases:**
+- [ ] Phase 1: Audit & Test Infrastructure (test fixtures, ~20 tests for all CRUD paths)
+- [ ] Phase 2: Fix Async/Session Bugs (lazy-load fix, session scoping, `current_user` safety)
+- [ ] Phase 3: Harden Templates & Guards (attribute access audit, error guards, name mismatch fix)
+- [ ] Phase 4: End-to-End Validation (signup flow, skills round-trip, regression check)
+
+**Spec:** `conductor/tracks/member_profile_harden_20260313/spec.md`
+**Plan:** `conductor/tracks/member_profile_harden_20260313/plan.md`

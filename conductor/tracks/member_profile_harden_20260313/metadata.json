@@ -1,0 +1,7 @@
+{
+  "id": "member_profile_harden_20260313",
+  "description": "Review and harden the member profile flow - fix async lazy-load 500s, template safety, ownership guards, skills/interests display, end-to-end validation",
+  "type": "bug",
+  "created_at": "2026-03-13T00:00:00Z",
+  "status": "pending"
+}

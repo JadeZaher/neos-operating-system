@@ -178,8 +178,8 @@ async def detail(request: Request, member_id: uuid.UUID):
                 )
                 return html(content, status=404)
 
-            # Load ecosystem relationship
-            await session.refresh(member, ["ecosystem"])
+            # Eagerly load relationships to avoid async lazy-load errors in templates
+            await session.refresh(member, ["ecosystem", "onboarding"])
             ecosystem = member.ecosystem
 
             # Load onboarding record
