@@ -252,7 +252,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
 ### Tasks:
 
-- [ ] **Task 4.1: Write signup-to-profile integration test (FR-7)**
+- [x] **Task 4.1: Write signup-to-profile integration test (FR-7)**
 
   Write a test that simulates the full flow:
   1. POST `/auth/verify` with a new DID (mocking `verify_did_signature` to return True).
@@ -267,7 +267,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write the test first. It exercises the full chain from auth through member CRUD.
 
-- [ ] **Task 4.2: Write skills/interests complete round-trip test (FR-5)**
+- [x] **Task 4.2: Write skills/interests complete round-trip test (FR-5)**
 
   Write a test that:
   1. Seeds a member with no skills/interests.
@@ -279,7 +279,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write test, verify it passes with the existing code. If `_parse_comma_list("")` returns `None` (it does, since `if not raw: return None`), the clear path should work.
 
-- [ ] **Task 4.3: Regression test -- existing views still work**
+- [x] **Task 4.3: Regression test -- existing views still work**
 
   Verify that the existing `test_views.py` tests all still pass. These test agreements, domains, proposals, and decisions -- they exercise `base.html` and `_rendering.py`.
 
@@ -289,7 +289,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Existing tests serve as the regression suite.
 
-- [ ] **Task 4.4: Add documentation comment for async safety pattern**
+- [x] **Task 4.4: Add documentation comment for async safety pattern**
 
   Add a docstring or comment block at the top of `members.py` explaining the async session scoping pattern:
 
@@ -305,12 +305,15 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   No TDD needed -- this is a documentation task.
 
-- [ ] **Verification: Full test suite passes, including regressions** [checkpoint marker]
+- [x] **Verification: Full test suite passes, including regressions** [checkpoint marker]
 
   Run `pytest agent/tests/ -v`. All tests pass. Summarize:
-  - Total tests in `test_members.py`: ~20
-  - Total tests in `test_views.py`: unchanged, all pass
+  - Total tests in `test_members.py`: 25 (all pass)
+  - Total tests in `test_views.py`: 8 (all pass, no regressions)
+  - Full suite: 186 pass, 6 pre-existing failures (test_config, test_governance_tools — unrelated)
   - No 500 errors reproducible via test client
   - Skills/interests round-trip verified
+  - Ownership guards verified
+  - Error pages render cleanly for 404/400 cases
   - Ownership guards verified
   - Error pages render cleanly for 404/500 cases

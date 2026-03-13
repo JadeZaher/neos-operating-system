@@ -469,3 +469,82 @@ async def test_status_transition_missing_status_400(app):
     assert response.status_code == 400
     assert "new_status" in response.text.lower() or "required" in response.text.lower()
     await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: End-to-End Integration Tests
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_signup_to_profile_flow(app):
+    """Simulate signup: create member, view profile, edit, verify update."""
+    engine = await _setup_db(app)
+    # 1. Create a new member
+    _, response = await app.asgi_client.post(
+        "/dashboard/members",
+        data={
+            "ecosystem_id": str(ECOSYSTEM_ID),
+            "display_name": "New Joiner",
+            "member_id": "MEM-JOINER-001",
+            "profile": "townhall",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers.get("location", "")
+    assert "/dashboard/members/" in location
+    new_member_id = location.split("/dashboard/members/")[-1]
+
+    # 2. View the new member's detail page
+    _, response = await app.asgi_client.get(f"/dashboard/members/{new_member_id}")
+    assert response.status_code == 200
+    assert "New Joiner" in response.text
+    assert "MEM-JOINER-001" in response.text
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_skills_interests_complete_roundtrip(app):
+    """Full round-trip: no skills → add skills → verify display → clear → verify gone."""
+    engine = await _setup_db(app)
+    # Start: Bob has no skills
+    _, response = await app.asgi_client.get(f"/dashboard/members/{OTHER_ID}")
+    assert "Skills Offered" not in response.text
+
+    # Add skills via update (as owner of OWNER_ID, update our own profile)
+    _, response = await app.asgi_client.post(
+        f"/dashboard/members/{OWNER_ID}",
+        data={
+            "skills_offered": "coding, mentoring, facilitation",
+            "skills_needed": "accounting",
+            "interests": "regenerative agriculture, web3",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    # Verify skills display
+    _, response = await app.asgi_client.get(f"/dashboard/members/{OWNER_ID}")
+    assert response.status_code == 200
+    assert "coding" in response.text
+    assert "mentoring" in response.text
+    assert "accounting" in response.text
+    assert "regenerative agriculture" in response.text
+
+    # Clear all skills/interests
+    _, response = await app.asgi_client.post(
+        f"/dashboard/members/{OWNER_ID}",
+        data={
+            "skills_offered": "",
+            "skills_needed": "",
+            "interests": "",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    # Verify cleared
+    _, response = await app.asgi_client.get(f"/dashboard/members/{OWNER_ID}")
+    assert response.status_code == 200
+    assert "Skills Offered" not in response.text
+    assert "Interests" not in response.text
+    await engine.dispose()

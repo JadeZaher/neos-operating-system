@@ -5,6 +5,14 @@ Blueprint: members_bp, url_prefix="/dashboard/members"
 Manages the Steward directory — listing, creation, detail, editing,
 and lifecycle status transitions for ecosystem members. Supports
 filtering by status, profile type, AZPO, and text search.
+
+ASYNC SESSION SAFETY NOTES:
+- request.ctx.member (current_user) is loaded in auth middleware and is DETACHED
+  from its session. Only column attributes are safe to access.
+- In route handlers, open a new session to load the target member. Eagerly load
+  all relationships needed by the template using session.refresh() before exiting
+  the session block.
+- Templates must use ``{% if X is defined and X %}`` guards for optional relationships.
 """
 
 from __future__ import annotations
