@@ -16,9 +16,16 @@ from sqlalchemy.ext.asyncio import (
 )
 
 
+def _ensure_async_url(url: str) -> str:
+    """Ensure the URL uses the asyncpg driver (Railway provides plain postgresql://)."""
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 async def create_db_engine(database_url: str, **kwargs: Any) -> AsyncEngine:
     """Create an async SQLAlchemy engine."""
-    return create_async_engine(database_url, **kwargs)
+    return create_async_engine(_ensure_async_url(database_url), **kwargs)
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
