@@ -95,7 +95,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
 ### Tasks:
 
-- [ ] **Task 2.1: Verify and fix `session.refresh()` in detail route (FR-1)**
+- [x] **Task 2.1: Verify and fix `session.refresh()` in detail route (FR-1)**
 
   In `members.py` `detail()`, verify that `session.refresh(member, ["ecosystem", "onboarding"])` correctly eagerly loads both relationships. Confirm behavior when:
   - Member has an ecosystem (should always) -- `member.ecosystem` is populated.
@@ -111,7 +111,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: `test_member_detail_no_onboarding_200` and `test_member_detail_with_onboarding_200` should now pass.
 
-- [ ] **Task 2.2: Verify `current_user` column-only access pattern (FR-2)**
+- [x] **Task 2.2: Verify `current_user` column-only access pattern (FR-2)**
 
   Audit `base.html` and confirm every `current_user` access is a column attribute:
   - `current_user.id` -- column (safe)
@@ -132,7 +132,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: All `base.html`-involving tests should pass without `MissingGreenlet` errors.
 
-- [ ] **Task 2.3: Ensure edit form does not trigger lazy loads (FR-1)**
+- [x] **Task 2.3: Ensure edit form does not trigger lazy loads (FR-1)**
 
   In `members.py` `edit_form()`, the member object is loaded via `get_scoped_entity()` which calls `session.get()`. The form template accesses:
   - `member.display_name`, `member.member_id`, `member.profile`, `member.phone` -- all columns (safe within session).
@@ -150,7 +150,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: `test_edit_form_own_profile_200` should pass.
 
-- [ ] **Verification: All Phase 1 tests related to 500 errors now pass** [checkpoint marker]
+- [x] **Verification: All Phase 1 tests related to 500 errors now pass** [checkpoint marker]
 
   Run `pytest agent/tests/test_members.py -v -k "detail or edit_form"`. All should pass.
 

@@ -41,6 +41,9 @@ async def render(template_name: str, *, request=None, **context) -> str:
     """
     if request is not None and hasattr(request, "ctx"):
         member = getattr(request.ctx, "member", None)
+        # current_user is a detached Member ORM instance from the auth middleware session.
+        # Only column attributes (id, display_name, profile, etc.) are safe for template access.
+        # Relationship attributes (ecosystem, onboarding) will raise MissingGreenlet.
         context["current_user"] = member          # always the logged-in user
         context.setdefault("member", member)      # backward compat for views that don't pass member
         ecosystems = getattr(request.ctx, "ecosystems", [])
