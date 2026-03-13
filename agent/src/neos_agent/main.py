@@ -36,9 +36,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     """
     app = Sanic("neos-agent")
 
-    # Load settings
-    if settings is None:
-        from neos_agent.config import get_settings
+    # Load settings — when invoked via ``sanic --factory``, Sanic passes its
+    # own argparse.Namespace as the first argument, so we need to check the type.
+    from neos_agent.config import Settings, get_settings
+    if not isinstance(settings, Settings):
         settings = get_settings()
 
     app.ctx.settings = settings
