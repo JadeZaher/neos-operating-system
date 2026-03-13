@@ -61,6 +61,22 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
     return stmt
 
 
+def _is_own_profile(request: Request, member_id: uuid.UUID) -> bool:
+    """Check if the logged-in user owns the profile being accessed."""
+    current_user = getattr(request.ctx, "member", None)
+    if current_user is None:
+        return False
+    return current_user.id == member_id
+
+
+def _parse_comma_list(raw: str | None) -> list[str] | None:
+    """Parse a comma-separated string into a list of trimmed non-empty strings."""
+    if not raw:
+        return None
+    items = [s.strip() for s in raw.split(",") if s.strip()]
+    return items if items else None
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -162,6 +178,10 @@ async def detail(request: Request, member_id: uuid.UUID):
                 )
                 return html(content, status=404)
 
+            # Load ecosystem relationship
+            await session.refresh(member, ["ecosystem"])
+            ecosystem = member.ecosystem
+
             # Load onboarding record
             onboarding_result = await session.execute(
                 select(MemberOnboarding)
@@ -190,6 +210,7 @@ async def detail(request: Request, member_id: uuid.UUID):
         "dashboard/members/detail.html",
         request=request,
         member=member,
+        ecosystem=ecosystem,
         onboarding=onboarding,
         transitions=transitions,
         active_page="members",
@@ -199,7 +220,9 @@ async def detail(request: Request, member_id: uuid.UUID):
 
 @members_bp.get("/<member_id:uuid>/edit")
 async def edit_form(request: Request, member_id: uuid.UUID):
-    """GET /dashboard/members/{member_id}/edit -- render edit form."""
+    """GET /dashboard/members/{member_id}/edit -- render edit form (own profile only)."""
+    if not _is_own_profile(request, member_id):
+        return redirect(f"/dashboard/members/{member_id}")
     try:
         async with request.app.ctx.db() as session:
             member = await get_scoped_entity(session, Member, member_id, request)
@@ -231,7 +254,9 @@ async def edit_form(request: Request, member_id: uuid.UUID):
 
 @members_bp.put("/<member_id:uuid>")
 async def update_member(request: Request, member_id: uuid.UUID):
-    """PUT /dashboard/members/{member_id} -- update member."""
+    """PUT /dashboard/members/{member_id} -- update member (own profile only)."""
+    if not _is_own_profile(request, member_id):
+        return redirect(f"/dashboard/members/{member_id}")
     form = request.form
     try:
         async with request.app.ctx.db() as session:
@@ -260,6 +285,11 @@ async def update_member(request: Request, member_id: uuid.UUID):
             if form.get("kyc_status"):
                 member.kyc_status = form.get("kyc_status")
 
+            # Skills and interests — always set (allows clearing)
+            member.skills_offered = _parse_comma_list(form.get("skills_offered"))
+            member.skills_needed = _parse_comma_list(form.get("skills_needed"))
+            member.interests = _parse_comma_list(form.get("interests"))
+
             await session.commit()
     except Exception:
         logger.exception("Failed to update member")
@@ -274,6 +304,12 @@ async def update_member(request: Request, member_id: uuid.UUID):
         )
 
     return redirect(f"/dashboard/members/{member_id}")
+
+
+@members_bp.post("/<member_id:uuid>")
+async def update_member_post(request: Request, member_id: uuid.UUID):
+    """POST /dashboard/members/{id} -- delegates to PUT handler for HTML form compatibility."""
+    return await update_member(request, member_id)
 
 
 @members_bp.post("/<member_id:uuid>/status")

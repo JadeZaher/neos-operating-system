@@ -41,7 +41,8 @@ async def render(template_name: str, *, request=None, **context) -> str:
     """
     if request is not None and hasattr(request, "ctx"):
         member = getattr(request.ctx, "member", None)
-        context.setdefault("member", member)
+        context["current_user"] = member          # always the logged-in user
+        context.setdefault("member", member)      # backward compat for views that don't pass member
         ecosystems = getattr(request.ctx, "ecosystems", [])
         context.setdefault("ecosystems", ecosystems)
     template = _env.get_template(template_name)

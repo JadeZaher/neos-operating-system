@@ -140,6 +140,7 @@ class Member(TimestampMixin, Base):
     profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     skills_offered: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     skills_needed: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    interests: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     onboarding_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     kyc_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     last_governance_activity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

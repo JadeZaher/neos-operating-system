@@ -19,12 +19,14 @@
     <h1 class="text-2xl font-bold text-neos-text">{{ member.display_name }}</h1>
     <p class="text-sm text-neos-muted mt-1">{{ member.member_id }}</p>
   </div>
+  {% if current_user and current_user.id == member.id %}
   <a
     href="/dashboard/members/{{ member.id }}/edit"
     class="inline-flex items-center px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors shrink-0"
   >
-    Edit Member
+    Edit Profile
   </a>
+  {% endif %}
 </div>
 
 {# Metadata Bar #}
@@ -171,6 +173,22 @@
     </div>
     {% endif %}
 
+    {# Interests #}
+    {% if member.interests %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Interests</h3>
+      </div>
+      <div class="px-5 py-4">
+        <div class="flex flex-wrap gap-2">
+          {% for interest in member.interests %}
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">{{ interest }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {# Role Assignments #}
     {% if role_assignments is defined and role_assignments %}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
@@ -290,6 +308,34 @@
         </div>
       </div>
     </div>
+
+    {# Ecosystem Membership #}
+    {% if ecosystem is defined and ecosystem %}
+    <div class="bg-neos-surface border border-neos-border rounded-xl">
+      <div class="px-5 py-4 border-b border-neos-border">
+        <h3 class="text-sm font-semibold text-neos-text">Ecosystem</h3>
+      </div>
+      <div class="px-5 py-4 space-y-3 text-sm">
+        <div class="flex justify-between items-center">
+          <span class="text-neos-muted">Name</span>
+          <span class="text-neos-primary font-medium">{{ ecosystem.name }}</span>
+        </div>
+        {% if ecosystem.location %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Location</span>
+          <span class="text-neos-text">{{ ecosystem.location }}</span>
+        </div>
+        {% endif %}
+        <div class="flex justify-between">
+          <span class="text-neos-muted">Status</span>
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+            {%- if ecosystem.status == 'active' %} bg-green-100 text-green-700
+            {%- else %} bg-gray-100 text-gray-600
+            {%- endif %}">{{ ecosystem.status }}</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     {# Status Transitions #}
     {% if status_transitions is defined and status_transitions %}

@@ -188,6 +188,19 @@
         </a>
       </nav>
 
+      {% if current_user %}
+      <div class="px-4 py-3 border-t border-white/10">
+        <a
+          href="/dashboard/members/{{ current_user.id }}"
+          class="flex items-center gap-3 py-2 text-sm text-white/80 hover:text-white transition-colors"
+          onclick="toggleSidebar()"
+        >
+          <span class="w-5 text-center" aria-hidden="true">&#9786;</span>
+          My Profile
+        </a>
+      </div>
+      {% endif %}
+
       <div class="px-4 py-3 text-xs text-white/40 border-t border-white/10">
         NEOS v0.1.0
       </div>
@@ -241,11 +254,13 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
             <span class="hidden sm:inline">AI Assistant</span>
           </button>
-          {% if member %}
+          {% if current_user %}
             <div class="flex items-center gap-3 ml-2 pl-3 border-l border-neos-border">
-              <span class="text-sm text-neos-text font-medium">{{ member.display_name }}</span>
-              {% if member.profile %}
-                <span class="text-xs text-neos-muted bg-neos-bg px-2 py-0.5 rounded">{{ member.profile }}</span>
+              <a href="/dashboard/members/{{ current_user.id }}" class="text-sm text-neos-text font-medium hover:text-neos-primary transition-colors">
+                {{ current_user.display_name }}
+              </a>
+              {% if current_user.profile %}
+                <span class="text-xs text-neos-muted bg-neos-bg px-2 py-0.5 rounded">{{ current_user.profile }}</span>
               {% endif %}
               <form method="POST" action="/auth/logout" class="inline">
                 <button type="submit"
