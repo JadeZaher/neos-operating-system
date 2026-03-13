@@ -23,7 +23,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
 ### Tasks:
 
-- [ ] **Task 1.1: Create `test_members.py` with authenticated test fixtures**
+- [x] **Task 1.1: Create `test_members.py` with authenticated test fixtures**
 
   Create `agent/tests/test_members.py`. Set up fixtures that:
   - Create an in-memory SQLite DB with `expire_on_commit=False`.
@@ -33,7 +33,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write the fixture, then write a trivial test (`test_fixture_works`) that verifies the seed data is queryable. Run it to confirm the fixture produces a working test app.
 
-- [ ] **Task 1.2: Write failing tests for member detail page (FR-1, FR-4)**
+- [x] **Task 1.2: Write failing tests for member detail page (FR-1, FR-4)**
 
   Write tests in `test_members.py`:
   - `test_member_detail_own_profile_200` -- GET own profile returns 200 with display name, skills, interests, ecosystem.
@@ -44,7 +44,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: These tests will likely fail if the lazy-load bug still exists. That is expected -- they document the bugs.
 
-- [ ] **Task 1.3: Write failing tests for edit/update ownership guards (FR-3)**
+- [x] **Task 1.3: Write failing tests for edit/update ownership guards (FR-3)**
 
   Write tests:
   - `test_edit_form_own_profile_200` -- GET `/members/<own-id>/edit` returns 200 with pre-populated form.
@@ -55,7 +55,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write tests, run to see which pass and which fail. Document failures.
 
-- [ ] **Task 1.4: Write tests for skills/interests round-trip (FR-5)**
+- [x] **Task 1.4: Write tests for skills/interests round-trip (FR-5)**
 
   Write tests:
   - `test_update_skills_offered_stores_json_list` -- POST with `skills_offered=facilitation, design` stores `["facilitation", "design"]`.
@@ -66,7 +66,7 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write tests first. These test the data round-trip through `_parse_comma_list()` and template rendering.
 
-- [ ] **Task 1.5: Write tests for remaining CRUD paths (FR-4)**
+- [x] **Task 1.5: Write tests for remaining CRUD paths (FR-4)**
 
   Write tests:
   - `test_member_directory_200` -- GET `/members` returns 200 with member names.
@@ -78,9 +78,14 @@ Each task follows TDD: write a failing test first, implement the fix, then verif
 
   TDD: Write all tests, run suite. Some should pass with existing code; document any failures.
 
-- [ ] **Verification: Run full test suite, document pass/fail matrix** [checkpoint marker]
+- [x] **Verification: Run full test suite, document pass/fail matrix** [checkpoint marker]
 
   Run `pytest agent/tests/test_members.py -v`. Create a summary of which tests pass and which fail. The failing tests become the bug fix backlog for Phase 2 and 3.
+
+  **Result: 20 pass, 3 fail.** Failing tests document known bugs:
+  - `test_member_detail_nonexistent_404` — detail.html missing error display block
+  - `test_member_detail_with_transitions_shows_history` — `transitions` vs `status_transitions` name mismatch
+  - `test_status_transition_missing_status_400` — same error display bug as nonexistent_404
 
 ---
 
