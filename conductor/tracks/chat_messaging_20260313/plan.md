@@ -19,7 +19,7 @@ This plan is divided into 6 phases, progressing from data model foundations thro
 
 **Tasks:**
 
-- [ ] Task 1.1: Write model tests for Conversation, ConversationParticipant, Message, ConversationLink
+- [x] Task 1.1: Write model tests for Conversation, ConversationParticipant, Message, ConversationLink [053186a]
   - TDD: Create `agent/tests/test_messaging_models.py`
   - Test Conversation creation with ecosystem_id, type, title, created_by
   - Test ConversationParticipant creation with unique constraint (conversation_id, member_id)
@@ -29,7 +29,7 @@ This plan is divided into 6 phases, progressing from data model foundations thro
   - Test cascade: deleting a conversation cascades to participants, messages, links
   - All tests RED initially
 
-- [ ] Task 1.2: Implement messaging models in models.py
+- [x] Task 1.2: Implement messaging models in models.py [053186a]
   - Add 4 new models after the Auth section (line ~762) in `agent/src/neos_agent/db/models.py`
   - `Conversation(TimestampMixin, Base)` -- id, ecosystem_id (FK), type, title, created_by (FK)
   - `ConversationParticipant(TimestampMixin, Base)` -- id, conversation_id (FK), member_id (FK), role, joined_at, last_read_at, muted; UniqueConstraint(conversation_id, member_id)
