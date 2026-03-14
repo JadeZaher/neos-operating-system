@@ -69,7 +69,7 @@
           type="text"
           name="agreement_id"
           value="{{ agreement.agreement_id if agreement is defined and agreement and agreement.agreement_id else '' }}"
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           placeholder="e.g., AGR-2026-001"
         >
         <p class="mt-1 text-xs text-neos-muted">Unique identifier for cross-referencing in other agreements</p>
@@ -85,7 +85,7 @@
           type="text"
           name="title"
           value="{{ agreement.title if agreement is defined and agreement else '' }}"
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           placeholder="e.g., Resource Allocation Protocol"
           required
         >
@@ -100,7 +100,7 @@
           <select
             id="agreement-type"
             name="type"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             required
           >
             <option value="" disabled>Select type...</option>
@@ -121,7 +121,7 @@
           <select
             id="agreement-hierarchy"
             name="hierarchy_level"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             required
           >
             <option value="ecosystem" {% if agreement is not defined or not agreement or agreement.hierarchy_level == 'ecosystem' %}selected{% endif %}>Ecosystem</option>
@@ -139,7 +139,7 @@
           <select
             id="agreement-domain"
             name="domain"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
             <option value="">No specific domain</option>
             {% if domains is defined %}
@@ -161,7 +161,7 @@
             type="text"
             name="proposer"
             value="{{ agreement.proposer if agreement is defined and agreement and agreement.proposer else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., GEV or member name"
           >
           <p class="mt-1 text-xs text-neos-muted">Member or body that proposed this agreement</p>
@@ -176,7 +176,7 @@
           type="text"
           name="version"
           value="{{ agreement.version if agreement is defined and agreement and agreement.version else '1.0' }}"
-          class="w-full sm:w-40 px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent font-mono"
+          class="w-full sm:w-40 px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent font-mono"
           placeholder="1.0"
         >
       </div>
@@ -190,7 +190,7 @@
           id="agreement-text"
           name="text"
           data-markdown-editor
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
           rows="12"
           placeholder="Write the full agreement text. Markdown is supported."
           required
@@ -207,7 +207,7 @@
             type="date"
             name="review_date"
             value="{{ agreement.review_date if agreement is defined and agreement and agreement.review_date else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <p class="mt-1 text-xs text-neos-muted">When this agreement should be reviewed for relevance</p>
         </div>
@@ -219,7 +219,7 @@
             type="date"
             name="sunset_date"
             value="{{ agreement.sunset_date if agreement is defined and agreement and agreement.sunset_date else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <p class="mt-1 text-xs text-neos-muted">Date after which this agreement automatically expires</p>
         </div>
@@ -235,7 +235,7 @@
         </button>
         <a
           href="/dashboard/agreements"
-          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-neos-surface-alt transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
         >
           Cancel
         </a>

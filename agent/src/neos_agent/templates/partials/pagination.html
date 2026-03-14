@@ -17,7 +17,7 @@
        hx-get="{{ base_url }}?offset={{ (page - 2) * page_size }}&limit={{ page_size }}"
        hx-target="#list-container"
        hx-swap="innerHTML"
-       class="px-3 py-1.5 text-sm rounded-lg border border-neos-border hover:bg-gray-100">
+       class="px-3 py-1.5 text-sm rounded-lg border border-neos-border hover:bg-neos-surface-alt">
       &#8249; Prev
     </a>
     {% else %}
@@ -31,7 +31,7 @@
        hx-get="{{ base_url }}?offset={{ (p - 1) * page_size }}&limit={{ page_size }}"
        hx-target="#list-container"
        hx-swap="innerHTML"
-       class="w-9 h-9 flex items-center justify-center text-sm rounded-lg border {% if p == page %}bg-neos-primary text-white border-neos-primary{% else %}border-neos-border hover:bg-gray-100{% endif %}"
+       class="w-9 h-9 flex items-center justify-center text-sm rounded-lg border {% if p == page %}bg-neos-primary text-white border-neos-primary{% else %}border-neos-border hover:bg-neos-surface-alt{% endif %}"
        {% if p == page %}aria-current="page"{% endif %}>
       {{ p }}
     </a>
@@ -42,7 +42,7 @@
        hx-get="{{ base_url }}?offset={{ page * page_size }}&limit={{ page_size }}"
        hx-target="#list-container"
        hx-swap="innerHTML"
-       class="px-3 py-1.5 text-sm rounded-lg border border-neos-border hover:bg-gray-100">
+       class="px-3 py-1.5 text-sm rounded-lg border border-neos-border hover:bg-neos-surface-alt">
       Next &#8250;
     </a>
     {% else %}
@@ -53,7 +53,7 @@
   <div class="flex items-center gap-2">
     <label for="page-size-select" class="text-sm text-neos-muted">Per page:</label>
     <select id="page-size-select"
-            class="text-sm border border-neos-border rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+            class="text-sm border border-neos-border rounded-lg px-2 py-1 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
             onchange="window.location.href='{{ base_url }}?offset=0&limit=' + this.value">
       {% for size in [10, 25, 50, 100] %}
       <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}</option>

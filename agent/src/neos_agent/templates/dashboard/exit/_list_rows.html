@@ -3,7 +3,7 @@
   <div class="overflow-x-auto">
     <table class="w-full text-sm" aria-label="Exit records">
       <thead>
-        <tr class="border-b border-neos-border bg-gray-50">
+        <tr class="border-b border-neos-border bg-neos-surface-alt">
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Exit ID</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Type</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
@@ -13,7 +13,7 @@
       </thead>
       <tbody class="divide-y divide-neos-border">
         {% for exit in exits %}
-        <tr class="hover:bg-gray-50 cursor-pointer transition-colors"
+        <tr class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
             onclick="window.location.href='/dashboard/exit/{{ exit.id }}'">
           <td class="px-4 py-3 font-mono text-xs font-semibold">{{ exit.id | string | truncate(13, true, '') }}</td>
           <td class="px-4 py-3 capitalize text-neos-muted">{{ exit.exit_type }}</td>

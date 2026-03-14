@@ -13,11 +13,11 @@
             onclick="openChatWithMessage('Explain the Universal Agreement Field and what each section means for new members')">
       Explain UAF Sections
     </button>
-    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
             onclick="openChatWithMessage('What should a facilitator know before running a consent ceremony?')">
       Facilitator Briefing
     </button>
-    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
             onclick="openChatWithMessage('Explain the 48-hour cooling off period and why it exists')">
       Cooling Off Period
     </button>
@@ -52,27 +52,27 @@
   <h2 class="text-base font-semibold text-neos-primary mb-2">Universal Agreement Field (UAF)</h2>
   <p class="text-sm text-neos-text mb-3">The UAF is the root agreement every member consents to. It defines the shared foundation of the ecosystem through 6 sections:</p>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">1. Purpose & Values</span>
       <p class="text-xs text-neos-muted mt-1">Shared purpose and core value commitments</p>
     </div>
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">2. Governance Structure</span>
       <p class="text-xs text-neos-muted mt-1">Authority distribution and domains</p>
     </div>
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">3. Decision-Making</span>
       <p class="text-xs text-neos-muted mt-1">ACT process and escalation</p>
     </div>
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">4. Resource Agreements</span>
       <p class="text-xs text-neos-muted mt-1">Economic and Current-See management</p>
     </div>
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">5. Conflict Resolution</span>
       <p class="text-xs text-neos-muted mt-1">Escalation and repair processes</p>
     </div>
-    <div class="bg-white/60 rounded-lg p-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
       <span class="text-xs font-semibold text-neos-primary">6. Exit Rights</span>
       <p class="text-xs text-neos-muted mt-1">Voluntary exit and data portability</p>
     </div>
@@ -91,7 +91,7 @@
   <div class="overflow-x-auto">
     <table class="w-full text-sm" aria-label="Onboarding records">
       <thead>
-        <tr class="border-b border-neos-border bg-gray-50">
+        <tr class="border-b border-neos-border bg-neos-surface-alt">
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Member</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Started</th>
@@ -102,7 +102,7 @@
       </thead>
       <tbody class="divide-y divide-neos-border">
         {% for onboarding in onboardings %}
-        <tr class="hover:bg-gray-50 transition-colors">
+        <tr class="hover:bg-neos-surface-alt transition-colors">
           <td class="px-4 py-3 font-medium text-neos-text">{{ onboarding.member.display_name if onboarding.member else onboarding.member_id }}</td>
           <td class="px-4 py-3">
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold">
@@ -165,7 +165,7 @@
       {% endif %}
     </div>
     {% if onboarding.completion_percentage != 100 %}
-    <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}" class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-neos-primary border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">Continue Ceremony</a>
+    <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}" class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-neos-primary border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors">Continue Ceremony</a>
     {% else %}
     <span class="text-xs text-green-600 font-medium">&#10003; Done</span>
     {% endif %}

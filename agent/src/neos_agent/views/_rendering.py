@@ -57,10 +57,13 @@ _md = mistune.create_markdown(
 )
 
 
-def render_markdown(text: str | None) -> Markup:
+def render_markdown(text: str | dict | None) -> Markup:
     """Convert markdown text to sanitised HTML safe for Jinja2 autoescape."""
     if not text:
         return Markup("")
+    if not isinstance(text, str):
+        import json
+        text = json.dumps(text, indent=2, default=str)
     raw_html = _md(text)
     clean = nh3.clean(
         raw_html,

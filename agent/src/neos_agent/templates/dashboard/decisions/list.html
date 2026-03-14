@@ -29,7 +29,7 @@
       type="search"
       name="q"
       value="{{ filters.get('q', '') if filters is mapping else '' }}"
-      class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
       placeholder="Search decisions..."
       aria-label="Search decisions"
       hx-get="/dashboard/decisions/search/results"
@@ -47,7 +47,7 @@
       type="text"
       name="domain"
       value="{{ filters.get('domain', '') if filters is mapping else '' }}"
-      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent w-32"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent w-32"
       placeholder="Any"
       hx-get="/dashboard/decisions/search/results"
       hx-trigger="input changed delay:300ms"
@@ -62,7 +62,7 @@
     <select
       id="filter-precedent"
       name="precedent_level"
-      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
       hx-get="/dashboard/decisions/search/results"
       hx-trigger="change"
       hx-target="#decisions-results"
@@ -81,7 +81,7 @@
     <select
       id="filter-source"
       name="source_layer"
-      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
       hx-get="/dashboard/decisions/search/results"
       hx-trigger="change"
       hx-target="#decisions-results"
@@ -114,7 +114,7 @@
     <div class="overflow-x-auto">
       <table class="w-full text-sm" aria-label="Decision records">
         <thead>
-          <tr class="border-b border-neos-border bg-gray-50">
+          <tr class="border-b border-neos-border bg-neos-surface-alt">
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Record ID</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Holding</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Domain</th>
@@ -126,7 +126,7 @@
         <tbody class="divide-y divide-neos-border">
           {% for decision in decisions %}
           <tr
-            class="hover:bg-gray-50 cursor-pointer transition-colors"
+            class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
             onclick="window.location.href='/dashboard/decisions/{{ decision.id }}'"
           >
             <td class="px-4 py-3">
@@ -222,14 +222,14 @@
       {% if offset > 0 %}
       <a
         href="?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}"
-        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
         aria-label="Previous page"
       >&#8249; Prev</a>
       {% endif %}
       {% if offset + limit < total %}
       <a
         href="?offset={{ offset + limit }}&limit={{ limit }}"
-        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
         aria-label="Next page"
       >Next &#8250;</a>
       {% endif %}

@@ -13,11 +13,11 @@
             onclick="openChatWithMessage('Run a comprehensive governance health analysis and identify capture risks')">
       Full Health Analysis
     </button>
-    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
             onclick="openChatWithMessage('Assess the 4 capture risk indicators: capital concentration, charismatic authority, emergency overreach, and informal power')">
       Capture Risk Check
     </button>
-    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
             onclick="openChatWithMessage('Generate recommendations for improving governance health scores')">
       Get Recommendations
     </button>
@@ -83,19 +83,19 @@
   <div class="lg:col-span-2 bg-neos-surface border border-neos-border rounded-xl p-6">
     <h2 class="text-sm font-semibold text-neos-muted uppercase tracking-wider mb-4">Capture Risk Indicators</h2>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <div class="text-center p-3 rounded-lg bg-gray-50">
+      <div class="text-center p-3 rounded-lg bg-neos-surface-alt">
         <div class="text-xs text-neos-muted mb-1">Capital Capture</div>
         <div class="text-lg font-bold text-neos-text">{{ latest_audit.capture_risk_indicators.capital if latest_audit and latest_audit.capture_risk_indicators is mapping else '—' }}</div>
       </div>
-      <div class="text-center p-3 rounded-lg bg-gray-50">
+      <div class="text-center p-3 rounded-lg bg-neos-surface-alt">
         <div class="text-xs text-neos-muted mb-1">Charismatic Capture</div>
         <div class="text-lg font-bold text-neos-text">{{ latest_audit.capture_risk_indicators.charismatic if latest_audit and latest_audit.capture_risk_indicators is mapping else '—' }}</div>
       </div>
-      <div class="text-center p-3 rounded-lg bg-gray-50">
+      <div class="text-center p-3 rounded-lg bg-neos-surface-alt">
         <div class="text-xs text-neos-muted mb-1">Emergency Capture</div>
         <div class="text-lg font-bold text-neos-text">{{ latest_audit.capture_risk_indicators.emergency if latest_audit and latest_audit.capture_risk_indicators is mapping else '—' }}</div>
       </div>
-      <div class="text-center p-3 rounded-lg bg-gray-50">
+      <div class="text-center p-3 rounded-lg bg-neos-surface-alt">
         <div class="text-xs text-neos-muted mb-1">Informal Capture</div>
         <div class="text-lg font-bold text-neos-text">{{ latest_audit.capture_risk_indicators.informal if latest_audit and latest_audit.capture_risk_indicators is mapping else '—' }}</div>
       </div>
@@ -126,7 +126,7 @@
   {% if recent_audits %}
   <div class="space-y-3">
     {% for audit in recent_audits %}
-    <a href="/dashboard/safeguards/audits/{{ audit.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors">
+    <a href="/dashboard/safeguards/audits/{{ audit.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-neos-surface-alt transition-colors">
       <div>
         <span class="text-sm font-medium text-neos-text">{{ audit.audit_date.strftime('%Y-%m-%d') if audit.audit_date else '—' }}</span>
         <span class="text-xs text-neos-muted ml-2">by {{ audit.auditor }}</span>

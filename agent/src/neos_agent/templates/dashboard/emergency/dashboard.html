@@ -137,7 +137,7 @@
   {% if history %}
   <div class="space-y-3">
     {% for event in history %}
-    <a href="/dashboard/emergency/{{ event.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 transition-colors border border-neos-border">
+    <a href="/dashboard/emergency/{{ event.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-neos-surface-alt transition-colors border border-neos-border">
       <div class="flex items-center gap-3">
         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
           {% if event.state == 'open' %}bg-red-100 text-red-700

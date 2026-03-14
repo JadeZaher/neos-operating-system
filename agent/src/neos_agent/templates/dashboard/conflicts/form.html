@@ -25,7 +25,7 @@
     <div>
       <label for="scope" class="block text-sm font-medium text-neos-text mb-1">Scope</label>
       <select id="scope" name="scope" required
-              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
         <option value="interpersonal" {% if conflict and conflict.scope == 'interpersonal' %}selected{% endif %}>Interpersonal — Between individuals</option>
         <option value="role" {% if conflict and conflict.scope == 'role' %}selected{% endif %}>Role — Related to stewardship roles</option>
         <option value="domain" {% if conflict and conflict.scope == 'domain' %}selected{% endif %}>Domain — Between circles or domains</option>
@@ -36,7 +36,7 @@
     <div>
       <label for="severity" class="block text-sm font-medium text-neos-text mb-1">Initial Severity Assessment</label>
       <select id="severity" name="severity" required
-              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
         <option value="low" {% if conflict and conflict.severity == 'low' %}selected{% endif %}>Low — Minor disagreement, no urgency</option>
         <option value="medium" {% if conflict and conflict.severity == 'medium' %}selected{% endif %}>Medium — Persistent issue needing attention</option>
         <option value="high" {% if conflict and conflict.severity == 'high' %}selected{% endif %}>High — Impacting governance operations</option>
@@ -47,7 +47,7 @@
     <div>
       <label for="tier" class="block text-sm font-medium text-neos-text mb-1">Escalation Tier</label>
       <select id="tier" name="tier" required
-              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
         <option value="1" {% if conflict and conflict.tier == 1 %}selected{% endif %}>Tier 1 — NVC Direct Dialogue</option>
         <option value="2" {% if conflict and conflict.tier == 2 %}selected{% endif %}>Tier 2 — Facilitated Coaching</option>
         <option value="3" {% if conflict and conflict.tier == 3 %}selected{% endif %}>Tier 3 — Harm Circle (restorative)</option>
@@ -69,7 +69,7 @@
       <label for="triage_notes" class="block text-sm font-medium text-neos-text mb-1">Triage Notes</label>
       <textarea id="triage_notes" name="triage_notes" rows="5"
                 data-markdown-editor
-                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
                 placeholder="Describe the conflict situation, parties involved, and any relevant context...">{{ conflict.triage_notes if conflict else '' }}</textarea>
     </div>
 

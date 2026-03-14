@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 from sanic import Blueprint, html
 from sanic.request import Request
 from sanic.response import redirect
-from sqlalchemy import select, func, join
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import MemberOnboarding, Member
@@ -66,6 +66,40 @@ UAF_SECTIONS = [
         "step": 6,
     },
 ]
+
+
+def apply_section_consent(onboarding: MemberOnboarding, section_key: str, now: datetime) -> bool:
+    """Record consent for a single UAF section on an onboarding record.
+
+    Mutates the onboarding object in-place (section_consents, completion_percentage,
+    cooling-off dates). Caller must commit the session.
+
+    Returns True if all 6 sections are now consented.
+    """
+    consents = onboarding.section_consents or {}
+    if isinstance(consents, str):
+        consents = json.loads(consents)
+    consents[section_key] = {
+        "consented_at": now.isoformat(),
+        "consented": True,
+    }
+    onboarding.section_consents = consents
+
+    all_consented = all(
+        s["key"] in consents and consents[s["key"]].get("consented")
+        for s in UAF_SECTIONS
+    )
+    if all_consented and not onboarding.cooling_off_start:
+        onboarding.cooling_off_start = now.date()
+        onboarding.cooling_off_end = (now + timedelta(hours=48)).date()
+        onboarding.consent_date = now.date()
+
+    consented_count = sum(
+        1 for s in UAF_SECTIONS
+        if s["key"] in consents and consents[s["key"]].get("consented")
+    )
+    onboarding.completion_percentage = int((consented_count / len(UAF_SECTIONS)) * 100)
+    return all_consented
 
 
 # ---------------------------------------------------------------------------
@@ -189,33 +223,7 @@ async def record_consent(request: Request, onboarding_id: uuid.UUID):
             if eco_ids and (member is None or member.ecosystem_id not in eco_ids):
                 return redirect("/dashboard/onboarding")
 
-            # Update consent tracking (stored in section_consents JSON)
-            consents = onboarding.section_consents or {}
-            if isinstance(consents, str):
-                consents = json.loads(consents)
-            consents[section_key] = {
-                "consented_at": now.isoformat(),
-                "consented": True,
-            }
-            onboarding.section_consents = consents
-
-            # Check if all 6 sections are consented
-            all_consented = all(
-                s["key"] in consents and consents[s["key"]].get("consented")
-                for s in UAF_SECTIONS
-            )
-
-            if all_consented and not onboarding.cooling_off_start:
-                onboarding.cooling_off_start = now.date()
-                onboarding.cooling_off_end = (now + timedelta(hours=48)).date()
-                onboarding.consent_date = now.date()
-
-            # Update completion percentage
-            consented_count = sum(
-                1 for s in UAF_SECTIONS
-                if s["key"] in consents and consents[s["key"]].get("consented")
-            )
-            onboarding.completion_percentage = int((consented_count / len(UAF_SECTIONS)) * 100)
+            apply_section_consent(onboarding, section_key, now)
 
             await session.commit()
     except Exception:

@@ -129,6 +129,32 @@ TRANSITION_PATTERNS: list[TransitionPattern] = [
         "emergency-reversion", None, None,
         "Authority reverted", "post-emergency-review",
     ),
+
+    # Layer II — Domain lifecycle
+    TransitionPattern(
+        "domain-mapping", "create_domain_draft", None,
+        "Domain draft created, ready for review", "domain-review",
+    ),
+
+    # Layer VI — Conflict repair
+    TransitionPattern(
+        "harm-circle", "create_repair_agreement", None,
+        "Repair agreement created for conflict", None,
+    ),
+    TransitionPattern(
+        "polycentric-conflict-navigation", "create_repair_agreement", None,
+        "Repair agreement created from conflict resolution", None,
+    ),
+
+    # Layer VII — Safeguards
+    TransitionPattern(
+        "governance-health-audit", "create_safeguard_audit", None,
+        "Audit draft initiated", None,
+    ),
+    TransitionPattern(
+        "capture-pattern-recognition", "create_safeguard_audit", None,
+        "Capture concern warrants formal audit", "governance-health-audit",
+    ),
 ]
 
 

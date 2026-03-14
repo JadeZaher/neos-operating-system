@@ -15,6 +15,7 @@ PUBLIC_PREFIXES = (
     "/api/v1/health",
     "/static/",
     "/ecosystems",
+    "/chat/shared/",
 )
 
 PUBLIC_EXACT = frozenset({

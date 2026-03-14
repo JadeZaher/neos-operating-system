@@ -53,7 +53,7 @@
           type="text"
           name="proposal_id"
           value="{{ proposal.proposal_id if proposal is defined and proposal else '' }}"
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           placeholder="e.g., PROP-2026-001"
         >
       </div>
@@ -68,7 +68,7 @@
           type="text"
           name="title"
           value="{{ proposal.title if proposal is defined and proposal else '' }}"
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           placeholder="Concise title for the proposal"
           required
         >
@@ -83,7 +83,7 @@
           <select
             id="proposal-type"
             name="type"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             required
           >
             <option value="operational" {% if not (proposal is defined and proposal) or proposal.type == 'operational' %}selected{% endif %}>Operational</option>
@@ -98,7 +98,7 @@
           <select
             id="proposal-decision-type"
             name="decision_type"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
             <option value="" {% if not (proposal is defined and proposal and proposal.decision_type) %}selected{% endif %}>Not specified</option>
             <option value="consent" {% if proposal is defined and proposal and proposal.decision_type == 'consent' %}selected{% endif %}>Consent (no reasoned objection)</option>
@@ -117,7 +117,7 @@
             type="text"
             name="proposer"
             value="{{ proposal.proposer if proposal is defined and proposal and proposal.proposer else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="Name or role"
           >
         </div>
@@ -129,7 +129,7 @@
             type="text"
             name="affected_domain"
             value="{{ proposal.affected_domain if proposal is defined and proposal and proposal.affected_domain else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., Operations, Governance"
           >
         </div>
@@ -141,7 +141,7 @@
         <select
           id="proposal-urgency"
           name="urgency"
-          class="w-full sm:w-48 px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full sm:w-48 px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
         >
           <option value="standard" {% if not (proposal is defined and proposal) or proposal.urgency == 'standard' %}selected{% endif %}>Standard</option>
           <option value="elevated" {% if proposal is defined and proposal and proposal.urgency == 'elevated' %}selected{% endif %}>Elevated</option>
@@ -188,7 +188,7 @@
             type="date"
             name="advice_deadline"
             value="{{ proposal.advice_deadline if proposal is defined and proposal and proposal.advice_deadline else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -199,7 +199,7 @@
             type="date"
             name="consent_deadline"
             value="{{ proposal.consent_deadline if proposal is defined and proposal and proposal.consent_deadline else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -210,7 +210,7 @@
             type="text"
             name="test_duration"
             value="{{ proposal.test_duration if proposal is defined and proposal and proposal.test_duration else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., 30 days"
           >
         </div>
@@ -226,7 +226,7 @@
         </button>
         <a
           href="/dashboard/proposals"
-          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-neos-surface-alt transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
         >
           Cancel
         </a>

@@ -17,9 +17,15 @@
   Rendered by: render_agent_message(text, message_id=None)
   SSE event: append (initial placeholder), then morph (streaming updates)
 
-  <div class="flex gap-3 mb-4" id="{message_id}">
+  <div class="group flex gap-3 mb-4" id="{message_id}">
     <div class="w-8 h-8 rounded-full bg-neos-primary text-white flex items-center justify-center text-sm font-bold flex-shrink-0">A</div>
-    <div class="flex-1 bg-neos-surface border border-neos-border rounded-lg p-3 text-sm">{escaped text with <br> for newlines}</div>
+    <div class="flex-1 flex flex-col">
+      <div class="bg-neos-surface border border-neos-border rounded-lg p-3 text-sm agent-msg-content">{escaped text}</div>
+      <div class="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <button class="chat-copy-btn ...">Copy</button>
+        <button class="chat-share-btn ...">Share</button>
+      </div>
+    </div>
   </div>
 
   ===== User message =====
@@ -46,10 +52,10 @@
   Rendered by: render_tool_indicator(tool_name, status, args=None, result=None, link_url=None, link_label=None)
   SSE event: append
 
-  <div class="flex flex-col gap-0.5 mb-3 px-3 py-2 border-l-4 rounded-r {border_class} text-sm">
+  <div class="flex flex-col gap-0.5 mb-3 px-3 py-2 border-l-4 rounded-r {border_class} bg-neos-surface-alt text-sm">
     <div class="flex items-start gap-2">
       <span class="font-mono font-medium">{tool_name}</span>
-      <span class="text-xs px-1.5 py-0.5 rounded bg-white/50">{status}</span>
+      <span class="text-xs px-1.5 py-0.5 rounded bg-neos-surface">{status}</span>
       <span class="text-xs text-neos-muted ml-2">{json args}</span>   (optional)
     </div>
     <div class="mt-1 text-xs text-neos-muted">{result text}</div>     (optional)

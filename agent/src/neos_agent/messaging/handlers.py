@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,7 +54,7 @@ async def _verify_membership(
 
 def _check_rate_limit(member_id: uuid.UUID) -> bool:
     """Return True if the member is within rate limits."""
-    now = datetime.now(UTC).timestamp()
+    now = datetime.utcnow().timestamp()
     times = _last_message_times.get(member_id, [])
     # Keep only times within the last second
     times = [t for t in times if now - t < 1.0]
@@ -113,7 +113,7 @@ async def handle_message(ws, member, data: dict, app) -> None:
         await db.refresh(msg)
 
         # Track rate limit
-        now = datetime.now(UTC).timestamp()
+        now = datetime.utcnow().timestamp()
         _last_message_times.setdefault(member.id, []).append(now)
 
         # Build broadcast payload
@@ -199,7 +199,7 @@ async def handle_read_receipt(ws, member, data: dict, app) -> None:
         if not participant:
             return
 
-        participant.last_read_at = datetime.now(UTC)
+        participant.last_read_at = datetime.utcnow()
         await db.commit()
 
         # Broadcast read receipt

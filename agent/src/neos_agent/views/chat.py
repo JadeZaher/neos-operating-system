@@ -20,8 +20,8 @@ from typing import Optional
 import httpx
 
 from sanic import Blueprint, Request
-from sanic.response import ResponseStream, json as json_response
-from sqlalchemy import select, delete
+from sanic.response import ResponseStream, json as json_response, html as html_response
+from sqlalchemy import select, delete, func, or_, Text
 
 from neos_agent.db.models import AgentSession
 
@@ -52,11 +52,21 @@ def render_agent_message(text: str, message_id: Optional[str] = None) -> str:
     """
     mid = f' id="{message_id}"' if message_id else ""
     safe = escape(text)
+    data_mid = f' data-msg-id="{message_id}"' if message_id else ""
     # No <br> replacement — client-side marked.js handles newlines via markdown
     return (
-        f'<div class="flex gap-3 mb-4"{mid}>'
+        f'<div class="group flex gap-3 mb-4"{mid}>'
         f'<div class="w-8 h-8 rounded-full bg-neos-primary text-white flex items-center justify-center text-sm font-bold flex-shrink-0">A</div>'
-        f'<div class="flex-1 bg-neos-surface border border-neos-border rounded-lg p-3 text-sm agent-msg-content">{safe}</div>'
+        f'<div class="flex-1 flex flex-col">'
+        f'<div class="bg-neos-surface border border-neos-border rounded-lg p-3 text-sm agent-msg-content">{safe}</div>'
+        f'<div class="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">'
+        f'<button type="button" class="chat-copy-btn inline-flex items-center gap-1 px-2 py-1 text-xs text-neos-muted hover:text-neos-primary rounded hover:bg-neos-accent/10 transition-colors"{data_mid} title="Copy message">'
+        f'<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+        f'<span>Copy</span></button>'
+        f'<button type="button" class="chat-share-btn inline-flex items-center gap-1 px-2 py-1 text-xs text-neos-muted hover:text-neos-primary rounded hover:bg-neos-accent/10 transition-colors"{data_mid} title="Copy share link">'
+        f'<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
+        f'<span>Share</span></button>'
+        f'</div></div>'
         f"</div>"
     )
 
@@ -114,8 +124,8 @@ def render_tool_indicator(
         HTML fragment string.
     """
     safe_name = escape(tool_name)
-    status_colors = {"running": "border-yellow-400 bg-yellow-50", "success": "border-green-400 bg-green-50", "error": "border-red-400 bg-red-50"}
-    border_class = status_colors.get(status, "border-gray-300 bg-gray-50")
+    status_colors = {"running": "border-yellow-400 bg-neos-surface-alt", "success": "border-green-400 bg-neos-surface-alt", "error": "border-red-400 bg-neos-surface-alt"}
+    border_class = status_colors.get(status, "border-neos-border bg-neos-surface-alt")
     args_html = ""
     if args:
         args_html = f'<span class="text-xs text-neos-muted ml-2">{escape(json.dumps(args))}</span>'
@@ -135,7 +145,7 @@ def render_tool_indicator(
         f'<div class="flex flex-col gap-0.5 mb-3 px-3 py-2 border-l-4 rounded-r {border_class} text-sm">'
         f'<div class="flex items-start gap-2">'
         f'<span class="font-mono font-medium">{safe_name}</span>'
-        f'<span class="text-xs px-1.5 py-0.5 rounded bg-white/50">{escape(status)}</span>'
+        f'<span class="text-xs px-1.5 py-0.5 rounded bg-neos-surface">{escape(status)}</span>'
         f"{args_html}</div>"
         f"{result_html}{link_html}"
         f"</div>"
@@ -179,6 +189,22 @@ def _extract_result_link(
     if tool_name == "create_decision_record":
         label = data.get("record_id", "View decision")
         return f"/dashboard/decisions/{obj_id}", label
+    if tool_name == "create_domain_draft":
+        label = data.get("domain_id", "View domain")
+        return f"/dashboard/domains/{obj_id}", label
+    if tool_name == "create_ecosystem":
+        label = data.get("name", "View ecosystem")
+        return f"/dashboard/ecosystems/{obj_id}", label
+    if tool_name == "create_safeguard_audit":
+        label = data.get("audit_id", "View audit")
+        return f"/dashboard/safeguards/{obj_id}", label
+    if tool_name == "create_conflict_case":
+        label = data.get("case_id", "View conflict")
+        return f"/dashboard/conflicts/{obj_id}", label
+    if tool_name == "create_repair_agreement":
+        case_id = data.get("case_id", "")
+        label = data.get("title", "View repair agreement")
+        return f"/dashboard/conflicts?case={case_id}", label
 
     return None, None
 
@@ -220,6 +246,7 @@ async def get_or_create_session(
     session_id: str,
     app,
     ecosystem_ids: list | None = None,
+    member_id: uuid.UUID | None = None,
 ) -> AgentSession:
     """Load an existing agent session or create a new one.
 
@@ -227,6 +254,7 @@ async def get_or_create_session(
         session_id: UUID string identifying the session.
         app: Sanic application (provides ``app.ctx.db``).
         ecosystem_ids: Optional list of selected ecosystem UUIDs.
+        member_id: Optional member UUID to associate with the session.
 
     Returns:
         An ``AgentSession`` instance (detached from the DB session).
@@ -255,6 +283,7 @@ async def get_or_create_session(
             agent_session = AgentSession(
                 id=sid,
                 ecosystem_id=eco_id,
+                member_id=member_id,
                 status="active",
                 context={"messages": []},
             )
@@ -366,8 +395,14 @@ async def send_message(request: Request):
         selected_ecosystems = getattr(request.ctx, "ecosystems", [])
         eco_names = [e.name for e in selected_ecosystems] if selected_ecosystems else ["NEOS"]
 
-        # 3. Load or create session
-        session = await get_or_create_session(session_id, request.app, ecosystem_ids=selected_eco_ids or None)
+        # 3. Load or create session (with member association)
+        member = getattr(request.ctx, "member", None)
+        member_id = member.id if member else None
+        session = await get_or_create_session(
+            session_id, request.app,
+            ecosystem_ids=selected_eco_ids or None,
+            member_id=member_id,
+        )
 
         # 4. Build system prompt
         try:
@@ -571,6 +606,21 @@ async def send_message(request: Request):
             messages.append({"role": "assistant", "content": full_response})
             await save_session(session, messages, request.app)
 
+            # Generate title from first user message if not set yet
+            if not session.title:
+                title = message[:100].strip()
+                if len(title) > 80:
+                    title = title[:80].rsplit(" ", 1)[0] + "..."
+                if title:
+                    async with request.app.ctx.db() as db:
+                        result = await db.execute(
+                            select(AgentSession).where(AgentSession.id == session.id)
+                        )
+                        db_session = result.scalar_one_or_none()
+                        if db_session and not db_session.title:
+                            db_session.title = title
+                            await db.commit()
+
         except (asyncio.TimeoutError, TimeoutError) as exc:
             logger.warning("Chat stream timed out: %s", exc)
             # Remove stale typing/processing indicator
@@ -621,5 +671,219 @@ async def get_history(request: Request):
     if not session or not session.context:
         return json_response({"messages": [], "welcome": True})
 
+    # Ownership check: only return history for own sessions
+    member = getattr(request.ctx, "member", None)
+    if member and session.member_id and session.member_id != member.id:
+        return json_response({"messages": [], "welcome": True})
+
     messages = session.context.get("messages", [])
-    return json_response({"messages": messages, "active_skill": session.skill_name})
+    return json_response({
+        "messages": messages,
+        "active_skill": session.skill_name,
+        "title": session.title,
+        "session_id": str(session.id),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Conversation history routes
+# ---------------------------------------------------------------------------
+
+@chat_bp.route("/conversations", methods=["GET"])
+async def list_conversations(request: Request):
+    """GET /chat/conversations -- list conversations for the authenticated user.
+
+    Query params:
+        q: Optional search string (searches title and message content).
+        offset: Pagination offset (default 0).
+        limit: Pagination limit (default 20, max 50).
+
+    Returns HTML fragment with clickable conversation items.
+    """
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json_response({"error": "Authentication required"}, status=401)
+
+    search = (request.args.get("q") or "").strip()
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    try:
+        limit = min(50, max(1, int(request.args.get("limit", 20))))
+    except (ValueError, TypeError):
+        limit = 20
+
+    async with request.app.ctx.db() as db:
+        stmt = (
+            select(AgentSession)
+            .where(
+                AgentSession.member_id == member.id,
+                AgentSession.archived == False,  # noqa: E712
+                AgentSession.status == "active",
+            )
+            .order_by(AgentSession.updated_at.desc())
+        )
+
+        if search:
+            pattern = f"%{search}%"
+            stmt = stmt.where(
+                or_(
+                    AgentSession.title.ilike(pattern),
+                    AgentSession.context.cast(Text).ilike(pattern),
+                )
+            )
+
+        # Get total count for pagination
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        # Get paginated results
+        result = await db.execute(stmt.offset(offset).limit(limit))
+        sessions = result.scalars().all()
+
+    # Build conversation list as HTML fragment
+    items: list[str] = []
+    for s in sessions:
+        msg_count = len(s.context.get("messages", [])) if s.context else 0
+        title = escape(s.title or "New conversation")
+        updated = s.updated_at.strftime("%b %d, %H:%M") if s.updated_at else ""
+        skill = escape(s.skill_name or "General")
+        items.append(
+            f'<div class="chat-conv-item group flex items-center gap-2 px-4 py-3 '
+            f'hover:bg-neos-accent/10 border-b border-neos-border transition-colors cursor-pointer" '
+            f'data-session-id="{s.id}" onclick="loadConversation(\'{s.id}\')">'
+            f'<div class="flex-1 min-w-0">'
+            f'<div class="text-sm font-medium text-neos-text truncate">{title}</div>'
+            f'<div class="flex items-center gap-2 mt-1">'
+            f'<span class="text-xs text-neos-muted">{msg_count} messages</span>'
+            f'<span class="text-xs text-neos-muted">&middot;</span>'
+            f'<span class="text-xs text-neos-muted">{updated}</span>'
+            f'</div>'
+            f'<div class="text-xs text-neos-accent mt-0.5">{skill}</div>'
+            f'</div>'
+            f'<button type="button" class="chat-conv-delete opacity-0 group-hover:opacity-100 p-1 rounded '
+            f'hover:bg-red-100 text-neos-muted hover:text-red-600 transition-all" '
+            f'onclick="event.stopPropagation(); deleteConversation(\'{s.id}\', this)" title="Delete">'
+            f'<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">'
+            f'<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 '
+            f'21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>'
+            f'</svg></button>'
+            f'</div>'
+        )
+
+    html_content = "".join(items)
+    if not items:
+        if search:
+            html_content = (
+                '<div class="px-4 py-8 text-center text-sm text-neos-muted">'
+                f'No conversations matching &ldquo;{escape(search)}&rdquo;</div>'
+            )
+        else:
+            html_content = (
+                '<div class="px-4 py-8 text-center text-sm text-neos-muted">'
+                'No conversations yet. Start a new chat!</div>'
+            )
+
+    # Pagination: load more button
+    if offset + limit < total:
+        next_offset = offset + limit
+        q_param = f"&q={escape(search)}" if search else ""
+        html_content += (
+            f'<button type="button" class="w-full px-4 py-2 text-xs text-neos-primary '
+            f'font-medium hover:bg-neos-accent/10 transition-colors border-b border-neos-border" '
+            f'onclick="loadMoreConversations({next_offset}, {limit})">'
+            f'Load more ({total - next_offset} remaining)</button>'
+        )
+
+    return html_response(html_content)
+
+
+@chat_bp.route("/conversations/<session_id:str>", methods=["DELETE"])
+async def archive_conversation(request: Request, session_id: str):
+    """DELETE /chat/conversations/<id> -- soft-delete (archive) a conversation."""
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json_response({"error": "Authentication required"}, status=401)
+
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        return json_response({"error": "Invalid session ID"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        result = await db.execute(
+            select(AgentSession).where(
+                AgentSession.id == sid,
+                AgentSession.member_id == member.id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            session.archived = True
+            await db.commit()
+
+    return json_response({"success": True})
+
+
+@chat_bp.route("/conversations/<session_id:str>", methods=["PATCH"])
+async def rename_conversation(request: Request, session_id: str):
+    """PATCH /chat/conversations/<id> -- update conversation title."""
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json_response({"error": "Authentication required"}, status=401)
+
+    data = request.json or {}
+    new_title = (data.get("title") or "").strip()[:200]
+    if not new_title:
+        return json_response({"error": "Title required"}, status=400)
+
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        return json_response({"error": "Invalid session ID"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        result = await db.execute(
+            select(AgentSession).where(
+                AgentSession.id == sid,
+                AgentSession.member_id == member.id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if session:
+            session.title = new_title
+            await db.commit()
+
+    return json_response({"success": True, "title": new_title})
+
+
+@chat_bp.route("/shared/<session_id:str>", methods=["GET"])
+async def get_shared_conversation(request: Request, session_id: str):
+    """GET /chat/shared/<id> -- return a read-only view of a shared conversation.
+
+    This endpoint is accessible without ownership checks, enabling share links.
+    Returns only messages and metadata (no write access).
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        return json_response({"error": "Invalid session ID"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        result = await db.execute(
+            select(AgentSession).where(AgentSession.id == sid)
+        )
+        session = result.scalar_one_or_none()
+
+    if not session or not session.context:
+        return json_response({"messages": [], "title": None})
+
+    messages = session.context.get("messages", [])
+    return json_response({
+        "messages": messages,
+        "title": session.title,
+        "active_skill": session.skill_name,
+        "session_id": str(session.id),
+        "read_only": True,
+    })

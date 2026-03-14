@@ -47,7 +47,7 @@
       type="search"
       name="q"
       value="{{ filters.q | default('') | first if filters.q is defined and filters.q is iterable and filters.q is not string else filters.get('q', '') if filters is mapping else '' }}"
-      class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+      class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       placeholder="Search agreements..."
       aria-label="Search agreements"
       hx-get="/dashboard/agreements/filter"
@@ -64,7 +64,7 @@
     <select
       id="filter-type"
       name="type"
-      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       hx-get="/dashboard/agreements/filter"
       hx-trigger="change"
       hx-target="#agreements-list"
@@ -87,7 +87,7 @@
     <select
       id="filter-status"
       name="status"
-      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       hx-get="/dashboard/agreements/filter"
       hx-trigger="change"
       hx-target="#agreements-list"
@@ -110,7 +110,7 @@
     <select
       id="filter-domain"
       name="domain"
-      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+      class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       hx-get="/dashboard/agreements/filter"
       hx-trigger="change"
       hx-target="#agreements-list"
@@ -129,7 +129,7 @@
   {# Clear filters #}
   <button
     type="button"
-    class="px-3 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 hover:text-neos-text transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent"
+    class="px-3 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-neos-surface-alt hover:text-neos-text transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent"
     onclick="this.closest('form').reset()"
     hx-get="/dashboard/agreements/filter"
     hx-target="#agreements-list"
@@ -148,7 +148,7 @@
     <div class="overflow-x-auto">
       <table class="w-full text-sm" aria-label="Agreements list">
         <thead>
-          <tr class="border-b border-neos-border bg-gray-50">
+          <tr class="border-b border-neos-border bg-neos-surface-alt">
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Title</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Type</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
@@ -160,7 +160,7 @@
         <tbody class="divide-y divide-neos-border">
           {% for agreement in agreements %}
           <tr
-            class="hover:bg-gray-50 cursor-pointer transition-colors"
+            class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
             onclick="window.location.href='/dashboard/agreements/{{ agreement.id }}'"
           >
             <td class="px-4 py-3">

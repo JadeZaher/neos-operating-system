@@ -1,4 +1,4 @@
-"""19 governance MCP-style tools for the NEOS agent.
+"""23 governance MCP-style tools for the NEOS agent.
 
 Each tool is an async function with signature:
     async def handler(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict
@@ -6,7 +6,7 @@ Each tool is an async function with signature:
 Returns {"success": True, "data": {...}} or {"success": False, "error": "..."}.
 
 The module also exports:
-- GOVERNANCE_TOOLS: list[ToolDef] with all 19 tool definitions
+- GOVERNANCE_TOOLS: list[ToolDef] with all 23 tool definitions
 - get_tool_definitions(): tool defs in Claude API format
 - execute_tool(name, args, db_session): dispatch by name
 """
@@ -32,10 +32,13 @@ from neos_agent.db.models import (
     DecisionRecord,
     DecisionSemanticTag,
     Domain,
+    Ecosystem,
     EmergencyState,
     ExitRecord,
+    GovernanceHealthAudit,
     Member,
     Proposal,
+    RepairAgreementRecord,
 )
 
 
@@ -1223,6 +1226,224 @@ async def create_exit_record(args: dict, db: AsyncSession, ecosystem_ids: list |
 
 
 # ===================================================================
+# TOOL 20: create_domain_draft
+# ===================================================================
+
+async def create_domain_draft(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Create a new domain contract in draft status."""
+    domain_id = args.get("domain_id", "")
+    purpose = args.get("purpose", "")
+    if not domain_id or not purpose:
+        return {"success": False, "error": "'domain_id' and 'purpose' are required."}
+
+    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    if eco_id is None:
+        return {"success": False, "error": "No ecosystem configured."}
+
+    # Check for duplicates
+    existing = await db.execute(
+        select(Domain).where(
+            Domain.domain_id == domain_id,
+            Domain.ecosystem_id == eco_id,
+        )
+    )
+    if existing.scalars().first():
+        return {"success": False, "error": f"Domain '{domain_id}' already exists."}
+
+    # Resolve steward if provided
+    steward_id = None
+    steward_name = args.get("steward")
+    if steward_name:
+        steward = await _resolve_member(db, steward_name, ecosystem_ids)
+        if steward is None:
+            return {"success": False, "error": f"Steward '{steward_name}' is not an active member."}
+        steward_id = steward.id
+        steward_name = steward.display_name
+
+    # Resolve parent domain if provided
+    parent_uuid = None
+    parent_domain_id = args.get("parent_domain_id")
+    if parent_domain_id:
+        parent_stmt = select(Domain).where(Domain.domain_id == parent_domain_id)
+        if ecosystem_ids:
+            parent_stmt = parent_stmt.where(Domain.ecosystem_id.in_(ecosystem_ids))
+        parent_result = await db.execute(parent_stmt)
+        parent = parent_result.scalars().first()
+        if parent is None:
+            return {"success": False, "error": f"Parent domain '{parent_domain_id}' not found."}
+        parent_uuid = parent.id
+
+    domain = Domain(
+        id=uuid.uuid4(),
+        ecosystem_id=eco_id,
+        domain_id=domain_id,
+        version="0.1",
+        status="draft",
+        purpose=purpose,
+        current_steward=steward_name,
+        steward_id=steward_id,
+        parent_domain_id=parent_uuid,
+        created_by=args.get("created_by"),
+        metric_definitions=args.get("metric_definitions"),
+        elements=args.get("elements"),
+    )
+    db.add(domain)
+    await db.flush()
+
+    return {
+        "success": True,
+        "data": {
+            "id": str(domain.id),
+            "domain_id": domain_id,
+            "status": "draft",
+            "version": "0.1",
+            "steward": steward_name,
+            "message": f"Domain draft '{domain_id}' created.",
+        },
+    }
+
+
+# ===================================================================
+# TOOL 21: create_ecosystem
+# ===================================================================
+
+async def create_ecosystem(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Create a new ecosystem."""
+    name = args.get("name", "")
+    if not name:
+        return {"success": False, "error": "'name' is required."}
+
+    # Check for duplicates
+    existing = await db.execute(
+        select(Ecosystem).where(func.lower(Ecosystem.name) == name.lower())
+    )
+    if existing.scalars().first():
+        return {"success": False, "error": f"Ecosystem '{name}' already exists."}
+
+    eco = Ecosystem(
+        id=uuid.uuid4(),
+        name=name,
+        description=args.get("description"),
+        status="active",
+        location=args.get("location"),
+        website=args.get("website"),
+        founded_date=_today(),
+        tags=args.get("tags"),
+        contact_email=args.get("contact_email"),
+        governance_summary=args.get("governance_summary"),
+        visibility=args.get("visibility", "public"),
+    )
+    db.add(eco)
+    await db.flush()
+
+    return {
+        "success": True,
+        "data": {
+            "id": str(eco.id),
+            "name": name,
+            "status": "active",
+            "message": f"Ecosystem '{name}' created.",
+        },
+    }
+
+
+# ===================================================================
+# TOOL 22: create_safeguard_audit
+# ===================================================================
+
+async def create_safeguard_audit(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Create a governance health audit draft (Layer VII safeguard)."""
+    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    if eco_id is None:
+        return {"success": False, "error": "No ecosystem configured."}
+
+    # Generate audit ID
+    year = _today().year
+    count_result = await db.execute(
+        select(func.count()).select_from(GovernanceHealthAudit).where(
+            GovernanceHealthAudit.ecosystem_id == eco_id
+        )
+    )
+    seq = count_result.scalar() + 1
+    audit_id = f"GHA-{year}-{seq:03d}"
+
+    audit = GovernanceHealthAudit(
+        id=uuid.uuid4(),
+        ecosystem_id=eco_id,
+        audit_id=audit_id,
+        audit_date=_today(),
+        auditor=args.get("auditor"),
+        capture_risk_indicators=args.get("capture_risk_indicators"),
+        findings=args.get("findings"),
+        recommendations=args.get("recommendations"),
+        status="draft",
+    )
+    db.add(audit)
+    await db.flush()
+
+    return {
+        "success": True,
+        "data": {
+            "id": str(audit.id),
+            "audit_id": audit_id,
+            "status": "draft",
+            "message": f"Governance health audit '{audit_id}' created.",
+        },
+    }
+
+
+# ===================================================================
+# TOOL 23: create_repair_agreement
+# ===================================================================
+
+async def create_repair_agreement(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Create a repair agreement for a conflict case."""
+    case_id = args.get("case_id", "")
+    title = args.get("title", "")
+    if not case_id or not title:
+        return {"success": False, "error": "'case_id' and 'title' are required."}
+
+    # Find the conflict case
+    case_stmt = select(ConflictCase).where(ConflictCase.case_id == case_id)
+    if ecosystem_ids:
+        case_stmt = case_stmt.where(ConflictCase.ecosystem_id.in_(ecosystem_ids))
+    result = await db.execute(case_stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        return {"success": False, "error": f"Conflict case '{case_id}' not found."}
+
+    # Auto-set 30/60/90-day check-in dates from today
+    today = _today()
+    repair = RepairAgreementRecord(
+        id=uuid.uuid4(),
+        conflict_case_id=case.id,
+        title=title,
+        commitments=args.get("commitments"),
+        responsible_party=args.get("responsible_party"),
+        status="active",
+        checkin_30_date=today + timedelta(days=30),
+        checkin_60_date=today + timedelta(days=60),
+        checkin_90_date=today + timedelta(days=90),
+    )
+    db.add(repair)
+    await db.flush()
+
+    return {
+        "success": True,
+        "data": {
+            "id": str(repair.id),
+            "case_id": case_id,
+            "title": title,
+            "status": "active",
+            "checkin_30": str(repair.checkin_30_date),
+            "checkin_60": str(repair.checkin_60_date),
+            "checkin_90": str(repair.checkin_90_date),
+            "message": f"Repair agreement '{title}' created for case {case_id}.",
+        },
+    }
+
+
+# ===================================================================
 # TOOL REGISTRY
 # ===================================================================
 
@@ -1534,6 +1755,77 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
             "required": ["member_name"],
         },
         handler=create_exit_record,
+    ),
+    # 20
+    ToolDef(
+        name="create_domain_draft",
+        description="Create a new domain contract in draft status. Validates steward as active member and checks for duplicate domain IDs.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "domain_id": {"type": "string", "description": "Unique domain identifier (business key, e.g. 'operations', 'governance')."},
+                "purpose": {"type": "string", "description": "Purpose statement for the domain."},
+                "steward": {"type": "string", "description": "Name or member_id of the domain steward (must be active member)."},
+                "parent_domain_id": {"type": "string", "description": "Parent domain business key (for nested domains)."},
+                "created_by": {"type": "string", "description": "Who created this domain."},
+                "elements": {"type": "object", "description": "Domain elements (S3 pattern: drivers, deliverables, etc.)."},
+                "metric_definitions": {"type": "object", "description": "Success metrics for the domain."},
+            },
+            "required": ["domain_id", "purpose"],
+        },
+        handler=create_domain_draft,
+    ),
+    # 21
+    ToolDef(
+        name="create_ecosystem",
+        description="Create a new NEOS ecosystem. Checks for duplicate names. Sets founded date to today.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Ecosystem name (must be unique)."},
+                "description": {"type": "string", "description": "Description of the ecosystem."},
+                "location": {"type": "string", "description": "Physical location or region."},
+                "website": {"type": "string", "description": "Website URL."},
+                "contact_email": {"type": "string", "description": "Primary contact email."},
+                "governance_summary": {"type": "string", "description": "Brief governance model summary."},
+                "tags": {"type": "object", "description": "Descriptive tags."},
+                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Visibility (default: public)."},
+            },
+            "required": ["name"],
+        },
+        handler=create_ecosystem,
+    ),
+    # 22
+    ToolDef(
+        name="create_safeguard_audit",
+        description="Create a governance health audit draft (Layer VII safeguard). Auto-generates audit ID. Used to assess capture risk, governance health, and structural diversity.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "auditor": {"type": "string", "description": "Name of the auditor or monitoring body."},
+                "capture_risk_indicators": {"type": "object", "description": "Capture risk indicator assessments."},
+                "findings": {"type": "string", "description": "Initial findings or observations."},
+                "recommendations": {"type": "object", "description": "Recommendations for governance improvements."},
+            },
+            "required": [],
+        },
+        handler=create_safeguard_audit,
+    ),
+    # 23
+    ToolDef(
+        name="create_repair_agreement",
+        description="Create a repair agreement for a conflict case (Layer VI). Auto-sets 30/60/90-day check-in dates. Links to an existing conflict case.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "case_id": {"type": "string", "description": "Conflict case business key (e.g. CONF-XXXXXXXX)."},
+                "title": {"type": "string", "description": "Title of the repair agreement."},
+                "commitments": {"type": "object", "description": "Binding repair commitments (structured)."},
+                "responsible_party": {"type": "string", "description": "Name of the party responsible for repair."},
+            },
+            "required": ["case_id", "title"],
+        },
+        handler=create_repair_agreement,
     ),
 ]
 

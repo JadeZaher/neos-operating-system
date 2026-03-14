@@ -53,7 +53,7 @@
             type="text"
             name="display_name"
             value="{{ member.display_name if member is defined and member else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="Full name"
             required
           >
@@ -66,7 +66,7 @@
             type="text"
             name="member_id"
             value="{{ member.member_id if member is defined and member else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., member-jane-doe"
             {% if member is defined and member %}readonly{% endif %}
           >
@@ -83,7 +83,7 @@
           <select
             id="member-profile"
             name="profile"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             required
           >
             <option value="" disabled {% if not (member is defined and member and member.profile) %}selected{% endif %}>Select profile type...</option>
@@ -101,7 +101,7 @@
             type="tel"
             name="phone"
             value="{{ member.phone if member is defined and member and member.phone else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="+62..."
           >
         </div>
@@ -116,7 +116,7 @@
             type="text"
             name="skills_offered"
             value="{{ member.skills_offered | join(', ') if member is defined and member and member.skills_offered else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., facilitation, design, coding"
           >
           <p class="mt-1 text-xs text-neos-muted">Comma-separated list of skills you can contribute</p>
@@ -129,7 +129,7 @@
             type="text"
             name="skills_needed"
             value="{{ member.skills_needed | join(', ') if member is defined and member and member.skills_needed else '' }}"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="e.g., legal, marketing, accounting"
           >
           <p class="mt-1 text-xs text-neos-muted">Comma-separated list of skills you are looking for</p>
@@ -144,7 +144,7 @@
           type="text"
           name="interests"
           value="{{ member.interests | join(', ') if member is defined and member and member.interests else '' }}"
-          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           placeholder="e.g., regenerative agriculture, community currencies, permaculture"
         >
         <p class="mt-1 text-xs text-neos-muted">Comma-separated list of your interests</p>
@@ -157,7 +157,7 @@
           <select
             id="member-azpo"
             name="azpo"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
             <option value="">No AZPO assignment</option>
             {% if azpos is defined %}
@@ -175,7 +175,7 @@
             id="member-facilitator"
             type="text"
             name="facilitator"
-            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             placeholder="Name of facilitator"
           >
           <p class="mt-1 text-xs text-neos-muted">The member who will guide the onboarding process</p>
@@ -205,7 +205,7 @@
         </button>
         <a
           href="/dashboard/members"
-          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-neos-surface-alt transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
         >
           Cancel
         </a>

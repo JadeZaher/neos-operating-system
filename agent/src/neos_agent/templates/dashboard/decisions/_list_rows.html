@@ -6,7 +6,7 @@
     <div class="overflow-x-auto">
       <table class="w-full text-sm" aria-label="Decision records">
         <thead>
-          <tr class="border-b border-neos-border bg-gray-50">
+          <tr class="border-b border-neos-border bg-neos-surface-alt">
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Record ID</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Holding</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Domain</th>
@@ -18,7 +18,7 @@
         <tbody class="divide-y divide-neos-border">
           {% for decision in decisions %}
           <tr
-            class="hover:bg-gray-50 cursor-pointer transition-colors"
+            class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
             onclick="window.location.href='/dashboard/decisions/{{ decision.id }}'"
           >
             <td class="px-4 py-3">
@@ -80,14 +80,14 @@
       {% if offset > 0 %}
       <a
         href="?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}"
-        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
         aria-label="Previous page"
       >&#8249; Prev</a>
       {% endif %}
       {% if offset + limit < total %}
       <a
         href="?offset={{ offset + limit }}&limit={{ limit }}"
-        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
         aria-label="Next page"
       >Next &#8250;</a>
       {% endif %}

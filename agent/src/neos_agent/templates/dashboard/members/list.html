@@ -51,7 +51,7 @@
         value="{{ filters.search | default('') }}"
         placeholder="Search members..."
         aria-label="Search members"
-        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       >
     </div>
   </div>
@@ -62,7 +62,7 @@
     <select
       id="filter-status"
       name="status"
-      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
     >
       <option value="">All Statuses</option>
       <option value="prospective" {% if filters.status == 'prospective' %}selected{% endif %}>Prospective</option>
@@ -80,7 +80,7 @@
     <select
       id="filter-profile"
       name="profile"
-      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
     >
       <option value="">All Profiles</option>
       <option value="co_creator" {% if filters.profile == 'co_creator' %}selected{% endif %}>Co-Creator</option>
@@ -99,7 +99,7 @@
     </button>
     <a
       href="/dashboard/members"
-      class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+      class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors"
     >
       Clear
     </a>
@@ -176,7 +176,7 @@
     {% endif %}
   </p>
   {% if filters.search or filters.status or filters.profile %}
-    <a href="/dashboard/members" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">
+    <a href="/dashboard/members" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors">
       Clear filters
     </a>
   {% else %}

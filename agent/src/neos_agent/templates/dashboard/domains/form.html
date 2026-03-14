@@ -73,7 +73,7 @@
             placeholder="e.g., finance-stewardship"
             required
             {% if domain %}readonly{% endif %}
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent {% if domain %}bg-gray-50 text-neos-muted cursor-not-allowed{% endif %}"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent {% if domain %}bg-neos-surface-alt text-neos-muted cursor-not-allowed{% endif %}"
           >
           <span class="text-xs text-neos-muted">Unique, kebab-case identifier for this domain</span>
         </div>
@@ -87,7 +87,7 @@
             name="current_steward"
             value="{{ domain.current_steward if domain else '' }}"
             placeholder="Name of steward"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -100,7 +100,7 @@
             name="steward_id"
             value="{{ domain.steward_id if domain else '' }}"
             placeholder="e.g., member-jane-doe"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Links steward to their member record</span>
         </div>
@@ -114,7 +114,7 @@
             id="domain-status"
             name="status"
             required
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
           >
             <option value="active" {% if domain and domain.status == 'active' %}selected{% elif not domain %}selected{% endif %}>Active</option>
             <option value="inactive" {% if domain and domain.status == 'inactive' %}selected{% endif %}>Inactive</option>
@@ -131,7 +131,7 @@
             name="version"
             value="{{ domain.version if domain else '1' }}"
             placeholder="1"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -144,7 +144,7 @@
             name="created_by"
             value="{{ domain.created_by if domain else '' }}"
             placeholder="e.g., OSC, Town Hall, AE Circle"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Who delegated authority over this domain</span>
         </div>
@@ -158,7 +158,7 @@
             name="parent_domain_id"
             value="{{ domain.parent_domain_id if domain else '' }}"
             placeholder="e.g., governance-core (optional)"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Leave blank if this is a root-level domain</span>
         </div>
@@ -174,15 +174,15 @@
         data-markdown-editor
         rows="3"
         placeholder="What need does this domain address? Why does it exist?"
-        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
       >{{ domain.purpose if domain else '' }}</textarea>
     </fieldset>
 
     {# ---- Form Actions ---- #}
-    <div class="flex items-center justify-between gap-4 px-6 py-4 bg-gray-50 rounded-b-xl">
+    <div class="flex items-center justify-between gap-4 px-6 py-4 bg-neos-surface-alt rounded-b-xl">
       <a
         href="/dashboard/domains{% if domain %}/{{ domain.id }}{% endif %}"
-        class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-white transition-colors"
+        class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface transition-colors"
       >
         Cancel
       </a>

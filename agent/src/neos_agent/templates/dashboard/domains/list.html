@@ -51,7 +51,7 @@
         value="{{ filters.search | default('') }}"
         placeholder="Search domains..."
         aria-label="Search domains"
-        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
       >
     </div>
   </div>
@@ -62,7 +62,7 @@
     <select
       id="filter-status"
       name="status"
-      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
     >
       <option value="">All Statuses</option>
       <option value="active" {% if filters.status == 'active' %}selected{% endif %}>Active</option>
@@ -80,7 +80,7 @@
       name="steward"
       value="{{ filters.steward | default('') }}"
       placeholder="Steward name..."
-      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
     >
   </div>
 
@@ -94,7 +94,7 @@
     </button>
     <a
       href="/dashboard/domains"
-      class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+      class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors"
     >
       Clear
     </a>
@@ -166,7 +166,7 @@
     {% endif %}
   </p>
   {% if filters.search or filters.status or filters.steward %}
-    <a href="/dashboard/domains" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">
+    <a href="/dashboard/domains" class="px-4 py-2 text-sm text-neos-muted border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors">
       Clear filters
     </a>
   {% else %}

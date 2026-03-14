@@ -17,9 +17,10 @@ ASYNC SESSION SAFETY NOTES:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from sanic import Blueprint, html
 from sanic.request import Request
@@ -31,7 +32,8 @@ from neos_agent.db.models import (
     MemberOnboarding,
     MemberStatusTransition,
 )
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, html_fragment
+from neos_agent.views.onboarding import UAF_SECTIONS, apply_section_consent
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +223,8 @@ async def detail(request: Request, member_id: uuid.UUID):
         ecosystem=ecosystem,
         onboarding=onboarding,
         status_transitions=transitions,
+        uaf_sections=UAF_SECTIONS,
+        is_own_profile=_is_own_profile(request, member_id),
         active_page="members",
     )
     return html(content)
@@ -389,5 +393,104 @@ async def status_transition(request: Request, member_id: uuid.UUID):
             ),
             status=500,
         )
+
+    return redirect(f"/dashboard/members/{member_id}")
+
+
+@members_bp.post("/<member_id:uuid>/onboarding/consent")
+async def onboarding_consent(request: Request, member_id: uuid.UUID):
+    """POST /dashboard/members/{member_id}/onboarding/consent
+
+    HTMX endpoint: records consent for a UAF section and returns the
+    updated onboarding checklist fragment.
+    """
+    if not _is_own_profile(request, member_id):
+        return redirect(f"/dashboard/members/{member_id}")
+
+    section_key = request.form.get("section_key")
+    if not section_key:
+        return redirect(f"/dashboard/members/{member_id}")
+
+    try:
+        now = datetime.now(timezone.utc)
+        async with request.app.ctx.db() as session:
+            member = await get_scoped_entity(session, Member, member_id, request)
+            if member is None:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            onboarding_result = await session.execute(
+                select(MemberOnboarding)
+                .where(MemberOnboarding.member_id == member_id)
+            )
+            onboarding = onboarding_result.scalar_one_or_none()
+            if onboarding is None:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            apply_section_consent(onboarding, section_key, now)
+            await session.commit()
+            await session.refresh(onboarding)
+
+            # HTMX requests get the fragment; plain POST gets a redirect
+            if not request.headers.get("HX-Request"):
+                return redirect(f"/dashboard/members/{member_id}")
+
+            fragment = await render(
+                "dashboard/members/_onboarding_checklist.html",
+                request=request,
+                onboarding=onboarding,
+                uaf_sections=UAF_SECTIONS,
+                member=member,
+                is_own_profile=True,
+            )
+            return html_fragment(fragment)
+    except Exception:
+        logger.exception("Failed to record consent from member profile")
+        return redirect(f"/dashboard/members/{member_id}")
+
+
+@members_bp.post("/<member_id:uuid>/onboarding/finalize")
+async def onboarding_finalize(request: Request, member_id: uuid.UUID):
+    """POST /dashboard/members/{member_id}/onboarding/finalize
+
+    Completes the onboarding process if all sections are consented and
+    the cooling-off period has passed. Redirects back to member profile.
+    """
+    if not _is_own_profile(request, member_id):
+        return redirect(f"/dashboard/members/{member_id}")
+
+    try:
+        now = datetime.now(timezone.utc)
+        async with request.app.ctx.db() as session:
+            member = await get_scoped_entity(session, Member, member_id, request)
+            if member is None:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            onboarding_result = await session.execute(
+                select(MemberOnboarding)
+                .where(MemberOnboarding.member_id == member_id)
+            )
+            onboarding = onboarding_result.scalar_one_or_none()
+            if onboarding is None:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            consents = onboarding.section_consents or {}
+            if isinstance(consents, str):
+                consents = json.loads(consents)
+
+            all_consented = all(
+                s["key"] in consents and consents[s["key"]].get("consented")
+                for s in UAF_SECTIONS
+            )
+            if not all_consented:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            if not onboarding.cooling_off_end or now.date() < onboarding.cooling_off_end:
+                return redirect(f"/dashboard/members/{member_id}")
+
+            onboarding.completion_percentage = 100
+            member.current_status = "active"
+            await session.commit()
+    except Exception:
+        logger.exception("Failed to finalize onboarding from member profile")
 
     return redirect(f"/dashboard/members/{member_id}")

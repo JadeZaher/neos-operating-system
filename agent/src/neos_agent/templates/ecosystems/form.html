@@ -68,7 +68,7 @@
             value="{{ ecosystem.name if ecosystem else '' }}"
             placeholder="e.g., OmniOne"
             required
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Unique name for this ecosystem</span>
         </div>
@@ -82,7 +82,7 @@
             name="location"
             value="{{ ecosystem.location if ecosystem else '' }}"
             placeholder="e.g., Bali, Indonesia"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -95,7 +95,7 @@
             name="website"
             value="{{ ecosystem.website if ecosystem else '' }}"
             placeholder="https://example.com"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -108,7 +108,7 @@
             name="contact_email"
             value="{{ ecosystem.contact_email if ecosystem else '' }}"
             placeholder="hello@ecosystem.org"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -121,7 +121,7 @@
             name="logo_url"
             value="{{ ecosystem.logo_url if ecosystem else '' }}"
             placeholder="https://example.com/logo.png"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Direct link to ecosystem logo image</span>
         </div>
@@ -134,7 +134,7 @@
             type="date"
             name="founded_date"
             value="{{ ecosystem.founded_date.isoformat() if ecosystem and ecosystem.founded_date else '' }}"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
         </div>
 
@@ -144,7 +144,7 @@
           <select
             id="eco-visibility"
             name="visibility"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
           >
             <option value="public" {% if not ecosystem or ecosystem.visibility == 'public' %}selected{% endif %}>Public</option>
             <option value="private" {% if ecosystem and ecosystem.visibility == 'private' %}selected{% endif %}>Private</option>
@@ -159,7 +159,7 @@
           <select
             id="eco-status"
             name="status"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
           >
             <option value="active" {% if ecosystem.status == 'active' %}selected{% endif %}>Active</option>
             <option value="forming" {% if ecosystem.status == 'forming' %}selected{% endif %}>Forming</option>
@@ -177,7 +177,7 @@
             name="tags"
             value="{{ ecosystem.tags | join(', ') if ecosystem and ecosystem.tags else '' }}"
             placeholder="e.g., agriculture, education, sustainability"
-            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            class="px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
           >
           <span class="text-xs text-neos-muted">Comma-separated list of category tags</span>
         </div>
@@ -192,7 +192,7 @@
         name="description"
         rows="4"
         placeholder="Describe the ecosystem's mission, community, and vision..."
-        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
       >{{ ecosystem.description if ecosystem else '' }}</textarea>
     </fieldset>
 
@@ -204,15 +204,15 @@
         name="governance_summary"
         rows="3"
         placeholder="e.g., Consent-based decision-making with domain stewards, ACT process for proposals..."
-        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+        class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
       >{{ ecosystem.governance_summary if ecosystem else '' }}</textarea>
     </fieldset>
 
     {# ---- Form Actions ---- #}
-    <div class="flex items-center justify-between gap-4 px-6 py-4 bg-gray-50 rounded-b-xl">
+    <div class="flex items-center justify-between gap-4 px-6 py-4 bg-neos-surface-alt rounded-b-xl">
       <a
         href="/ecosystems{% if ecosystem %}/{{ ecosystem.id }}{% endif %}"
-        class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-white transition-colors"
+        class="px-4 py-2 text-sm text-neos-muted hover:text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface transition-colors"
       >
         Cancel
       </a>

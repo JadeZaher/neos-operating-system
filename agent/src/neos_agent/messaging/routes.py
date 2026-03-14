@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sanic import Blueprint
 from sanic.request import Request
@@ -385,7 +385,7 @@ async def conversation_detail(request: Request, conversation_id: uuid.UUID):
                         break
 
             # Update last_read_at
-            participant.last_read_at = datetime.now(UTC)
+            participant.last_read_at = datetime.utcnow()
             await db.commit()
 
     except Exception:
@@ -555,7 +555,7 @@ async def edit_message(request: Request, conversation_id: uuid.UUID, message_id:
                 return html_response("<p class='text-red-500'>Can only edit own messages</p>", status=403)
 
             msg.content = new_content
-            msg.edited_at = datetime.now(UTC)
+            msg.edited_at = datetime.utcnow()
             await db.commit()
 
             # Broadcast edit event
@@ -598,7 +598,7 @@ async def delete_message(request: Request, conversation_id: uuid.UUID, message_i
             if msg.sender_id != member.id:
                 return html_response("", status=403)
 
-            msg.deleted_at = datetime.now(UTC)
+            msg.deleted_at = datetime.utcnow()
             await db.commit()
 
             # Broadcast delete event
@@ -789,7 +789,7 @@ async def mark_read(request: Request, conversation_id: uuid.UUID):
             )
             participant = result.scalar_one_or_none()
             if participant:
-                participant.last_read_at = datetime.now(UTC)
+                participant.last_read_at = datetime.utcnow()
                 await db.commit()
     except Exception:
         logger.debug("Failed to mark read")

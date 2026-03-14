@@ -33,7 +33,7 @@
         type="search"
         name="q"
         value="{{ filters.q | default('') }}"
-        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-white placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
         placeholder="Search proposals..."
         aria-label="Search proposals"
         hx-get="/dashboard/proposals"
@@ -49,7 +49,7 @@
       <select
         id="filter-phase"
         name="phase"
-        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
         hx-get="/dashboard/proposals"
         hx-trigger="change"
         hx-target="#proposals-list-container"
@@ -71,7 +71,7 @@
       <select
         id="filter-type"
         name="type"
-        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
         hx-get="/dashboard/proposals"
         hx-trigger="change"
         hx-target="#proposals-list-container"
@@ -90,7 +90,7 @@
       <select
         id="filter-domain"
         name="domain"
-        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
         hx-get="/dashboard/proposals"
         hx-trigger="change"
         hx-target="#proposals-list-container"
@@ -111,7 +111,7 @@
       <select
         id="filter-urgency"
         name="urgency"
-        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
         hx-get="/dashboard/proposals"
         hx-trigger="change"
         hx-target="#proposals-list-container"
@@ -284,14 +284,14 @@
     {% if offset > 0 %}
     <a
       href="?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}{% if filters.q %}&q={{ filters.q | urlencode }}{% endif %}{% if filters.phase %}&phase={{ filters.phase }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.domain %}&domain={{ filters.domain | urlencode }}{% endif %}{% if filters.urgency %}&urgency={{ filters.urgency }}{% endif %}"
-      class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+      class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
       aria-label="Previous page"
     >&#8249; Prev</a>
     {% endif %}
     {% if offset + limit < total %}
     <a
       href="?offset={{ offset + limit }}&limit={{ limit }}{% if filters.q %}&q={{ filters.q | urlencode }}{% endif %}{% if filters.phase %}&phase={{ filters.phase }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.domain %}&domain={{ filters.domain | urlencode }}{% endif %}{% if filters.urgency %}&urgency={{ filters.urgency }}{% endif %}"
-      class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-white hover:bg-neos-bg transition-colors"
+      class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
       aria-label="Next page"
     >Next &#8250;</a>
     {% endif %}
