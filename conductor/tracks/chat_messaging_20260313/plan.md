@@ -98,59 +98,13 @@ This plan is divided into 6 phases, progressing from data model foundations thro
 
 **Tasks:**
 
-- [ ] Task 3.1: Write tests for conversation CRUD endpoints
-  - TDD: Create `agent/tests/test_messaging_views.py`
-  - Test GET /messaging returns messaging page HTML (authenticated)
-  - Test GET /messaging redirects to login (unauthenticated)
-  - Test GET /messaging/conversations returns conversation list partial
-  - Test POST /messaging/conversations creates DM conversation
-  - Test POST /messaging/conversations with existing DM returns existing
-  - Test POST /messaging/conversations creates group conversation
-  - Test POST /messaging/conversations with invalid member IDs returns 400
-  - Test ecosystem scoping: cannot create conversation with member in different ecosystem
+- [x] Task 3.1-3.6: REST API implementation and tests
+  - 15 endpoints: messaging page, conversation CRUD, message CRUD, participant management, governance links, member picker, unread count
+  - DM uniqueness enforcement, ecosystem scoping, owner succession on leave
+  - 15 tests covering all CRUD paths, pagination, unread counts, governance links
+  - All tests GREEN
 
-- [ ] Task 3.2: Implement conversation list and creation endpoints
-  - In `agent/src/neos_agent/messaging/routes.py`:
-  - `GET /messaging` -- render `messaging/index.html` (full page with base.html layout)
-  - `GET /messaging/conversations` -- query conversations for the authenticated member, return htmx partial `messaging/conversation_list.html`; include unread counts via subquery
-  - `POST /messaging/conversations` -- accept JSON `{type, title, member_ids}`; enforce DM uniqueness, ecosystem scoping; return htmx partial of new conversation
-  - `GET /messaging/members` -- member picker partial filtered by current ecosystem, search by name; return `messaging/member_picker.html`
-  - Run tests -- GREEN
-
-- [ ] Task 3.3: Write tests for message endpoints
-  - Test GET /messaging/conversations/{id} returns conversation detail with recent messages
-  - Test GET /messaging/conversations/{id}/messages returns paginated messages (offset, limit)
-  - Test POST /messaging/conversations/{id}/messages sends message (REST fallback for non-WS clients)
-  - Test PUT /messaging/conversations/{id}/messages/{msg_id} edits own message
-  - Test PUT /messaging/conversations/{id}/messages/{msg_id} on other's message returns 403
-  - Test DELETE /messaging/conversations/{id}/messages/{msg_id} soft-deletes own message
-  - Test non-participant cannot access conversation (403)
-
-- [ ] Task 3.4: Implement message endpoints
-  - `GET /messaging/conversations/{id}` -- load conversation with participants, last 50 messages; render `messaging/conversation_detail.html`
-  - `GET /messaging/conversations/{id}/messages` -- paginated older messages; render `messaging/message_list.html` partial for htmx scroll-up
-  - `POST /messaging/conversations/{id}/messages` -- persist message, broadcast via ConnectionManager; return htmx partial of new message
-  - `PUT /messaging/conversations/{id}/messages/{msg_id}` -- update content, set edited_at; broadcast edit event
-  - `DELETE /messaging/conversations/{id}/messages/{msg_id}` -- set deleted_at; broadcast delete event
-  - Run tests -- GREEN
-
-- [ ] Task 3.5: Write tests for participant management
-  - Test POST /messaging/conversations/{id}/participants adds member (group only)
-  - Test POST fails for DM conversations
-  - Test DELETE /messaging/conversations/{id}/participants/{mid} removes participant
-  - Test self-removal (leave) works
-  - Test owner succession on owner leave
-  - Test POST /messaging/conversations/{id}/read updates last_read_at
-  - Test POST /messaging/conversations/{id}/link creates governance link
-
-- [ ] Task 3.6: Implement participant and link management endpoints
-  - `POST /messaging/conversations/{id}/participants` -- add member to group, generate system message
-  - `DELETE /messaging/conversations/{id}/participants/{member_id}` -- remove/leave, handle owner succession, generate system message
-  - `POST /messaging/conversations/{id}/read` -- update last_read_at for authenticated member
-  - `POST /messaging/conversations/{id}/link` -- create ConversationLink, generate governance_link system message
-  - Run tests -- GREEN
-
-- [ ] Verification: All REST endpoints return correct responses, conversation CRUD works end-to-end via test client [checkpoint marker]
+- [x] Verification: 53 total tests pass (18 model + 14 CM + 6 handler + 15 views) [checkpoint marker]
 
 ---
 
