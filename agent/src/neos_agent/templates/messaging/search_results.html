@@ -1,0 +1,44 @@
+{# Search results partial — loaded into #search-results via htmx #}
+{% if results %}
+<div class="divide-y divide-neos-border border-b border-neos-border">
+  <div class="px-4 py-2 bg-neos-surface-alt flex items-center justify-between">
+    <span class="text-xs font-medium text-neos-muted">{{ results | length }} result{{ 's' if results | length != 1 else '' }}</span>
+    <button type="button" class="text-xs text-neos-primary hover:text-neos-secondary" onclick="
+      document.getElementById('search-results').innerHTML = '';
+      document.getElementById('search-results').classList.add('hidden');
+      document.getElementById('conversation-list').classList.remove('hidden');
+    ">Clear</button>
+  </div>
+  {% for item in results %}
+  {% set msg = item.message %}
+  {% set sender = item.sender %}
+  {% set convo = item.conversation %}
+  <button
+    type="button"
+    class="w-full text-left px-4 py-3 hover:bg-neos-surface-alt transition-colors"
+    hx-get="/messaging/conversations/{{ convo.id }}"
+    hx-target="#conversation-detail"
+    hx-swap="innerHTML"
+    onclick="
+      document.getElementById('conversation-detail').classList.remove('hidden');
+      document.getElementById('conversation-detail').classList.add('flex');
+      document.getElementById('conversation-detail').dataset.conversationId = '{{ convo.id }}';
+      document.getElementById('search-results').innerHTML = '';
+      document.getElementById('search-results').classList.add('hidden');
+      document.getElementById('conversation-list').classList.remove('hidden');
+    "
+  >
+    <div class="flex items-baseline gap-2 mb-0.5">
+      <span class="text-xs font-medium text-neos-text">{{ sender.display_name }}</span>
+      <span class="text-xs text-neos-muted">in {{ convo.title or 'DM' }}</span>
+      <span class="text-xs text-neos-muted ml-auto">{{ msg.created_at.strftime('%b %d') if msg.created_at else '' }}</span>
+    </div>
+    <p class="text-xs text-neos-muted truncate">{{ msg.content[:80] }}{% if msg.content | length > 80 %}...{% endif %}</p>
+  </button>
+  {% endfor %}
+</div>
+{% else %}
+<div class="p-4 text-center">
+  <p class="text-sm text-neos-muted">No messages found for "{{ query }}"</p>
+</div>
+{% endif %}

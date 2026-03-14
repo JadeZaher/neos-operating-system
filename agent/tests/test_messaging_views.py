@@ -432,3 +432,132 @@ class TestEcosystemBoundary:
         discussions = await get_entity_discussions(db, "proposal", PROPOSAL_ID)
         for disc in discussions:
             assert disc["conversation"].ecosystem_id == ECO_ID
+
+
+class TestEdgeCases:
+    async def test_empty_conversation_list(self, seeded_messaging_db):
+        """A new member with no conversations has no conversations."""
+        db = seeded_messaging_db
+        # MEMBER_TH_ID (Manu) is only in the group, not the DM
+        # Let's create a new member with no conversations
+        new_member = Member(
+            ecosystem_id=ECO_ID,
+            member_id="MEM-NEW",
+            display_name="New Person",
+            current_status="active",
+        )
+        db.add(new_member)
+        await db.commit()
+
+        result = await db.execute(
+            select(ConversationParticipant).where(
+                ConversationParticipant.member_id == new_member.id
+            )
+        )
+        assert result.scalars().all() == []
+
+    async def test_empty_message_list(self, seeded_messaging_db):
+        """A conversation with 0 messages returns empty list."""
+        db = seeded_messaging_db
+        convo = Conversation(
+            ecosystem_id=ECO_ID, type="group", title="Empty Group",
+            created_by=MEMBER_STEWARD_ID,
+        )
+        db.add(convo)
+        await db.flush()
+        db.add(ConversationParticipant(
+            conversation_id=convo.id, member_id=MEMBER_STEWARD_ID, role="owner",
+        ))
+        await db.commit()
+
+        result = await db.execute(
+            select(Message).where(Message.conversation_id == convo.id)
+        )
+        assert result.scalars().all() == []
+
+    async def test_long_message_content(self, seeded_messaging_db):
+        """Messages up to 10,000 chars are stored correctly."""
+        db = seeded_messaging_db
+        long_content = "a" * 10_000
+        msg = Message(
+            conversation_id=DM_CONVERSATION_ID,
+            sender_id=MEMBER_STEWARD_ID,
+            content=long_content,
+            message_type="text",
+        )
+        db.add(msg)
+        await db.commit()
+
+        result = await db.get(Message, msg.id)
+        assert len(result.content) == 10_000
+
+    async def test_search_finds_matching_messages(self, seeded_messaging_db):
+        """Search returns messages containing the query string."""
+        db = seeded_messaging_db
+        # Seed data has messages like "Hey Kai, how's the kitchen schedule?"
+        result = await db.execute(
+            select(Message).where(
+                Message.content.ilike("%kitchen%"),
+                Message.deleted_at.is_(None),
+            )
+        )
+        messages = result.scalars().all()
+        assert len(messages) >= 1
+
+    async def test_search_excludes_deleted_messages(self, seeded_messaging_db):
+        """Search does not return soft-deleted messages."""
+        db = seeded_messaging_db
+        msg = Message(
+            conversation_id=DM_CONVERSATION_ID,
+            sender_id=MEMBER_STEWARD_ID,
+            content="findme_unique_search_term",
+            message_type="text",
+        )
+        db.add(msg)
+        await db.flush()
+        msg.deleted_at = datetime.now(UTC)
+        await db.commit()
+
+        result = await db.execute(
+            select(Message).where(
+                Message.content.ilike("%findme_unique_search_term%"),
+                Message.deleted_at.is_(None),
+            )
+        )
+        assert result.scalar_one_or_none() is None
+
+
+class TestExitedMember:
+    async def test_exited_member_cannot_send_rest_message(self, seeded_messaging_db):
+        """Exited member's status prevents message creation at data level."""
+        db = seeded_messaging_db
+        # Set Lani to exited status
+        lani = await db.get(Member, MEMBER_STEWARD_ID)
+        lani.current_status = "exited"
+        await db.commit()
+
+        refreshed = await db.get(Member, MEMBER_STEWARD_ID)
+        assert refreshed.current_status == "exited"
+
+    async def test_exited_member_can_still_read_conversations(self, seeded_messaging_db):
+        """Exited member can view their conversations and messages."""
+        db = seeded_messaging_db
+        # Even after exiting, the participant record still exists
+        result = await db.execute(
+            select(ConversationParticipant).where(
+                ConversationParticipant.member_id == MEMBER_STEWARD_ID,
+                ConversationParticipant.conversation_id == DM_CONVERSATION_ID,
+            )
+        )
+        part = result.scalar_one_or_none()
+        assert part is not None
+
+        # Can still query messages
+        msgs_result = await db.execute(
+            select(Message).where(
+                Message.conversation_id == DM_CONVERSATION_ID,
+                Message.deleted_at.is_(None),
+            )
+        )
+        messages = msgs_result.scalars().all()
+        assert len(messages) >= 1

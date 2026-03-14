@@ -948,6 +948,56 @@ async def unread_count(request: Request):
     return html_response("")
 
 
+@messaging_bp.get("/search")
+async def search_messages(request: Request):
+    """GET /messaging/search?q=... -- search messages across conversations."""
+    member = request.ctx.member
+    query = request.args.get("q", "").strip()
+
+    if not query or len(query) < 2:
+        return html_fragment('<div class="p-4 text-sm text-neos-muted text-center">Type at least 2 characters to search</div>')
+
+    try:
+        async with request.app.ctx.db() as db:
+            # Get conversation IDs this member participates in
+            participant_subq = (
+                select(ConversationParticipant.conversation_id)
+                .where(ConversationParticipant.member_id == member.id)
+                .subquery()
+            )
+
+            # Search messages with ILIKE
+            msgs_result = await db.execute(
+                select(Message, Member, Conversation)
+                .join(Member, Message.sender_id == Member.id)
+                .join(Conversation, Message.conversation_id == Conversation.id)
+                .where(
+                    Message.conversation_id.in_(select(participant_subq)),
+                    Message.content.ilike(f"%{query}%"),
+                    Message.deleted_at.is_(None),
+                    Message.message_type.in_(["text", "governance_link"]),
+                )
+                .order_by(Message.created_at.desc())
+                .limit(20)
+            )
+            results = [
+                {"message": msg, "sender": sender, "conversation": convo}
+                for msg, sender, convo in msgs_result.all()
+            ]
+
+    except Exception:
+        logger.exception("Failed to search messages")
+        results = []
+
+    fragment = await render(
+        "messaging/search_results.html",
+        request=request,
+        results=results,
+        query=query,
+    )
+    return html_fragment(fragment)
+
+
 # ===================================================================
 # WebSocket endpoint
 # ===================================================================

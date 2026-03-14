@@ -31,12 +31,24 @@
       </div>
       <input
         type="text"
-        placeholder="Search conversations..."
+        placeholder="Search messages..."
         class="w-full px-3 py-2 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
         hx-get="/messaging/search"
         hx-trigger="keyup changed delay:300ms"
         hx-target="#search-results"
         name="q"
+        oninput="
+          const sr = document.getElementById('search-results');
+          const cl = document.getElementById('conversation-list');
+          if (this.value.trim().length >= 2) {
+            sr.classList.remove('hidden');
+            cl.classList.add('hidden');
+          } else {
+            sr.classList.add('hidden');
+            sr.innerHTML = '';
+            cl.classList.remove('hidden');
+          }
+        "
       >
     </div>
 
