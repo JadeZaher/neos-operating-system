@@ -19,6 +19,8 @@ Tracks are ordered by layer number for sequential implementation. Each track's d
 12. Dashboard & Views              <- depends on #11 (Datastar UI, CRUD views)
 13. Agent Core                     <- depends on #11 (Claude Agent SDK, chat, tools)
 14. Sync & Deploy                  <- depends on #11, #12, #13 (GunDB, IPFS, Railway)
+15. Member Profile Harden          <- depends on #12 (bug fix track)
+16. Chat & Messaging               <- depends on #11, #12, #13 (member-to-member messaging)
 ```
 
 ---
@@ -56,6 +58,40 @@ Build the foundation of the NEOS governance webservice: Sanic app factory, skill
 
 **Spec:** `conductor/tracks/agent_foundation_20260305/spec.md`
 **Plan:** `conductor/tracks/agent_foundation_20260305/plan.md`
+
+---
+
+### 16. [ ] chat_messaging_20260313 -- Chat & Direct Messaging System
+**Priority:** P1
+**Type:** feature
+**Status:** Planned
+**Created:** 2026-03-13
+**Depends on:** agent_foundation_20260305 (complete), dashboard_views_20260305 (pending), agent_core_20260305 (pending)
+
+Real-time member-to-member messaging with DM (1:1), group conversations (multi-party), and governance process integration. Uses Sanic native WebSocket for real-time delivery alongside existing SSE-based AI chat. Conversations can be linked to proposals, agreements, domains, and conflicts. Ecosystem-scoped with read receipts, unread counts, and member search.
+
+**Deliverables:**
+- [ ] 4 new database models (Conversation, ConversationParticipant, Message, ConversationLink)
+- [ ] WebSocket ConnectionManager for real-time message delivery
+- [ ] Authenticated WebSocket endpoint with JSON frame protocol
+- [ ] REST/htmx endpoints for conversation CRUD, message pagination, member picker
+- [ ] Messaging UI (two-panel layout, conversation list, message view, member picker)
+- [ ] Governance entity integration (Discuss buttons, linked conversations, entity sharing)
+- [ ] Sidebar navigation with unread message badge
+- [ ] Message search across conversation history
+
+**Phases:**
+- [ ] Phase 1: Data Models & Migration (4 models, Alembic migration, seed fixtures)
+- [ ] Phase 2: Connection Manager & WebSocket Infrastructure (ConnectionManager, WS auth, handlers)
+- [ ] Phase 3: REST API & Conversation Management (conversation CRUD, messages, participants, links)
+- [ ] Phase 4: Templates & UI (messaging page, conversation list/detail, member picker, base.html nav)
+- [ ] Phase 5: Governance Integration (Discuss buttons on entity pages, ConversationLink, Discussions sections)
+- [ ] Phase 6: Search, Polish & E2E Validation (message search, edge cases, exited member handling, performance)
+
+**Tech Stack:** Sanic WebSocket, SQLAlchemy 2.0 async, Jinja2, htmx 2.x, Tailwind CSS 4.x (CDN)
+
+**Spec:** `conductor/tracks/chat_messaging_20260313/spec.md`
+**Plan:** `conductor/tracks/chat_messaging_20260313/plan.md`
 
 ---
 

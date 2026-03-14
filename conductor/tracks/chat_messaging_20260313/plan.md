@@ -1,0 +1,433 @@
+# Implementation Plan: Chat & Direct Messaging System
+
+**Track ID:** chat_messaging_20260313
+**Created:** 2026-03-13
+
+---
+
+## Overview
+
+This plan is divided into 6 phases, progressing from data model foundations through WebSocket infrastructure, REST/htmx views, real-time features, governance integration, and finally end-to-end validation. Each phase builds on the previous one and ends with a verification checkpoint.
+
+**Estimated total effort:** 12-16 hours across 6 phases.
+
+---
+
+## Phase 1: Data Models & Migration
+
+**Goal:** Define the messaging data models in SQLAlchemy, create the Alembic migration, and validate with unit tests.
+
+**Tasks:**
+
+- [ ] Task 1.1: Write model tests for Conversation, ConversationParticipant, Message, ConversationLink
+  - TDD: Create `agent/tests/test_messaging_models.py`
+  - Test Conversation creation with ecosystem_id, type, title, created_by
+  - Test ConversationParticipant creation with unique constraint (conversation_id, member_id)
+  - Test Message creation with conversation FK, sender FK, content, message_type, soft delete
+  - Test ConversationLink creation with entity_type and entity_id
+  - Test DM uniqueness constraint (only one DM per member pair per ecosystem)
+  - Test cascade: deleting a conversation cascades to participants, messages, links
+  - All tests RED initially
+
+- [ ] Task 1.2: Implement messaging models in models.py
+  - Add 4 new models after the Auth section (line ~762) in `agent/src/neos_agent/db/models.py`
+  - `Conversation(TimestampMixin, Base)` -- id, ecosystem_id (FK), type, title, created_by (FK)
+  - `ConversationParticipant(TimestampMixin, Base)` -- id, conversation_id (FK), member_id (FK), role, joined_at, last_read_at, muted; UniqueConstraint(conversation_id, member_id)
+  - `Message(TimestampMixin, Base)` -- id, conversation_id (FK), sender_id (FK), content, message_type, metadata (JSON), edited_at, deleted_at; Index(conversation_id, created_at)
+  - `ConversationLink(TimestampMixin, Base)` -- id, conversation_id (FK), entity_type, entity_id, created_by (FK), created_at; Index(entity_type, entity_id)
+  - Add relationships: Conversation.participants, Conversation.messages, Conversation.links
+  - Update module docstring with new table count
+  - Run tests from Task 1.1 -- all GREEN
+
+- [ ] Task 1.3: Create Alembic migration
+  - Generate migration: `alembic revision --autogenerate -m "add messaging models"`
+  - Verify migration creates tables: conversations, conversation_participants, messages, conversation_links
+  - Verify indexes and unique constraints are present
+  - Test migration up/down cycle
+
+- [ ] Task 1.4: Add messaging seed data to conftest.py
+  - Update `agent/tests/conftest.py` to import new models
+  - Create a `seeded_messaging_db` fixture that extends `seeded_db` with:
+    - 1 DM conversation between Lani and Kai
+    - 1 group conversation ("Kitchen Planning") with all 3 members
+    - 5 sample messages in the DM
+    - 3 sample messages in the group
+    - 1 governance link (group linked to proposal PROP-2026-001)
+  - This fixture will be reused by all subsequent test files
+
+- [ ] Verification: Run full test suite, confirm all model tests pass, migration applies cleanly on fresh SQLite [checkpoint marker]
+
+---
+
+## Phase 2: Connection Manager & WebSocket Infrastructure
+
+**Goal:** Build the in-memory WebSocket connection manager and the authenticated WebSocket endpoint.
+
+**Tasks:**
+
+- [ ] Task 2.1: Write tests for ConnectionManager
+  - TDD: Create `agent/tests/test_connection_manager.py`
+  - Test register(member_id, ws) adds connection to registry
+  - Test unregister(member_id, ws) removes connection
+  - Test unregister of last connection removes member from registry
+  - Test multiple connections per member (multiple browser tabs)
+  - Test send_to_member sends to all connections for a member
+  - Test send_to_member with no connections is a no-op (no error)
+  - Test broadcast_to_conversation sends to all online participants
+  - Test broadcast_to_conversation excludes sender when specified
+  - Use mock WebSocket objects
+
+- [ ] Task 2.2: Implement ConnectionManager
+  - Create `agent/src/neos_agent/messaging/__init__.py`
+  - Create `agent/src/neos_agent/messaging/connections.py`
+  - Singleton `ConnectionManager` class with:
+    - `_connections: dict[uuid.UUID, set[WebSocket]]` -- member_id to WebSocket set
+    - `register(member_id, ws)` -- thread-safe add
+    - `unregister(member_id, ws)` -- thread-safe remove
+    - `is_online(member_id) -> bool`
+    - `send_to_member(member_id, payload: dict)` -- JSON serialize and send to all connections
+    - `broadcast_to_conversation(conversation_id, payload, exclude_member_id=None)` -- look up participants from DB, send to each online member
+    - `get_online_count() -> int` -- for health/metrics
+  - Note: `broadcast_to_conversation` needs a DB session parameter to look up participants
+  - Run tests from Task 2.1 -- all GREEN
+
+- [ ] Task 2.3: Write tests for WebSocket endpoint authentication
+  - TDD: Add tests to `agent/tests/test_messaging_ws.py`
+  - Test WS connection without session cookie is rejected (close with 4001)
+  - Test WS connection with invalid session cookie is rejected
+  - Test WS connection with valid session cookie is accepted
+  - Test WS connection registers member in ConnectionManager
+  - Test WS disconnect unregisters member from ConnectionManager
+  - Test WS ping/pong keepalive
+
+- [ ] Task 2.4: Implement WebSocket endpoint
+  - Create `agent/src/neos_agent/messaging/routes.py`
+  - Create `messaging_bp = Blueprint("messaging", url_prefix="/messaging")`
+  - Implement `@messaging_bp.websocket("/ws")` handler:
+    - Extract session cookie from WebSocket request headers
+    - Validate using `verify_session_cookie` from auth middleware
+    - Look up AuthSession and Member from DB
+    - Register connection in ConnectionManager
+    - Enter receive loop: parse JSON frames, dispatch by `type` field
+    - On disconnect: unregister from ConnectionManager
+    - Implement ping/pong every 30 seconds using asyncio.create_task
+  - Register blueprint in main.py
+  - Update `PUBLIC_PREFIXES` in auth middleware if needed (WebSocket upgrade requests)
+
+- [ ] Task 2.5: Implement WebSocket message handlers
+  - In `agent/src/neos_agent/messaging/handlers.py`, create:
+    - `handle_message(ws, member, data, app)` -- validate conversation membership, persist message to DB, broadcast via ConnectionManager
+    - `handle_typing(ws, member, data, app)` -- validate membership, broadcast typing indicator (no persist)
+    - `handle_read_receipt(ws, member, data, app)` -- update last_read_at in DB, broadcast receipt
+  - Each handler validates that the member is a participant in the referenced conversation
+  - Each handler validates ecosystem scoping
+  - Write tests for each handler in `test_messaging_ws.py`
+
+- [ ] Verification: WebSocket connects, authenticates, sends/receives messages in test environment [checkpoint marker]
+
+---
+
+## Phase 3: REST API & Conversation Management
+
+**Goal:** Build the htmx-compatible REST endpoints for conversation CRUD, message pagination, and member picker.
+
+**Tasks:**
+
+- [ ] Task 3.1: Write tests for conversation CRUD endpoints
+  - TDD: Create `agent/tests/test_messaging_views.py`
+  - Test GET /messaging returns messaging page HTML (authenticated)
+  - Test GET /messaging redirects to login (unauthenticated)
+  - Test GET /messaging/conversations returns conversation list partial
+  - Test POST /messaging/conversations creates DM conversation
+  - Test POST /messaging/conversations with existing DM returns existing
+  - Test POST /messaging/conversations creates group conversation
+  - Test POST /messaging/conversations with invalid member IDs returns 400
+  - Test ecosystem scoping: cannot create conversation with member in different ecosystem
+
+- [ ] Task 3.2: Implement conversation list and creation endpoints
+  - In `agent/src/neos_agent/messaging/routes.py`:
+  - `GET /messaging` -- render `messaging/index.html` (full page with base.html layout)
+  - `GET /messaging/conversations` -- query conversations for the authenticated member, return htmx partial `messaging/conversation_list.html`; include unread counts via subquery
+  - `POST /messaging/conversations` -- accept JSON `{type, title, member_ids}`; enforce DM uniqueness, ecosystem scoping; return htmx partial of new conversation
+  - `GET /messaging/members` -- member picker partial filtered by current ecosystem, search by name; return `messaging/member_picker.html`
+  - Run tests -- GREEN
+
+- [ ] Task 3.3: Write tests for message endpoints
+  - Test GET /messaging/conversations/{id} returns conversation detail with recent messages
+  - Test GET /messaging/conversations/{id}/messages returns paginated messages (offset, limit)
+  - Test POST /messaging/conversations/{id}/messages sends message (REST fallback for non-WS clients)
+  - Test PUT /messaging/conversations/{id}/messages/{msg_id} edits own message
+  - Test PUT /messaging/conversations/{id}/messages/{msg_id} on other's message returns 403
+  - Test DELETE /messaging/conversations/{id}/messages/{msg_id} soft-deletes own message
+  - Test non-participant cannot access conversation (403)
+
+- [ ] Task 3.4: Implement message endpoints
+  - `GET /messaging/conversations/{id}` -- load conversation with participants, last 50 messages; render `messaging/conversation_detail.html`
+  - `GET /messaging/conversations/{id}/messages` -- paginated older messages; render `messaging/message_list.html` partial for htmx scroll-up
+  - `POST /messaging/conversations/{id}/messages` -- persist message, broadcast via ConnectionManager; return htmx partial of new message
+  - `PUT /messaging/conversations/{id}/messages/{msg_id}` -- update content, set edited_at; broadcast edit event
+  - `DELETE /messaging/conversations/{id}/messages/{msg_id}` -- set deleted_at; broadcast delete event
+  - Run tests -- GREEN
+
+- [ ] Task 3.5: Write tests for participant management
+  - Test POST /messaging/conversations/{id}/participants adds member (group only)
+  - Test POST fails for DM conversations
+  - Test DELETE /messaging/conversations/{id}/participants/{mid} removes participant
+  - Test self-removal (leave) works
+  - Test owner succession on owner leave
+  - Test POST /messaging/conversations/{id}/read updates last_read_at
+  - Test POST /messaging/conversations/{id}/link creates governance link
+
+- [ ] Task 3.6: Implement participant and link management endpoints
+  - `POST /messaging/conversations/{id}/participants` -- add member to group, generate system message
+  - `DELETE /messaging/conversations/{id}/participants/{member_id}` -- remove/leave, handle owner succession, generate system message
+  - `POST /messaging/conversations/{id}/read` -- update last_read_at for authenticated member
+  - `POST /messaging/conversations/{id}/link` -- create ConversationLink, generate governance_link system message
+  - Run tests -- GREEN
+
+- [ ] Verification: All REST endpoints return correct responses, conversation CRUD works end-to-end via test client [checkpoint marker]
+
+---
+
+## Phase 4: Templates & UI
+
+**Goal:** Build the Jinja2 + Tailwind templates for the messaging interface, integrate with base.html navigation.
+
+**Tasks:**
+
+- [ ] Task 4.1: Create messaging template directory and layout
+  - Create directory: `agent/src/neos_agent/templates/messaging/`
+  - Create `messaging/index.html` -- extends base.html, two-panel layout:
+    - Left panel (w-80, border-r): conversation list container with search bar and "New Message" button
+    - Right panel (flex-1): active conversation or empty state
+    - Mobile responsive: stacked layout with navigation
+  - Set `{% block active_page %}messaging{% endblock %}`
+  - Set appropriate breadcrumb block
+
+- [ ] Task 4.2: Create conversation list partial
+  - Create `messaging/conversation_list.html` -- htmx partial
+  - Each conversation row shows:
+    - Avatar(s) -- first letter of display_name for DMs, group icon for groups
+    - Conversation title (DM: other member's name; Group: title)
+    - Last message preview (truncated to 60 chars)
+    - Timestamp of last message (relative: "2m ago", "1h ago", "Yesterday")
+    - Unread badge (count > 0)
+  - Clicking a conversation uses htmx `hx-get` to load conversation detail into the right panel
+  - "New Message" button opens member picker modal
+
+- [ ] Task 4.3: Create conversation detail partial
+  - Create `messaging/conversation_detail.html` -- htmx partial
+  - Header bar with conversation title, participant avatars, settings dropdown (for groups: add/remove members, leave)
+  - If governance-linked: banner showing linked entity type and title with link to entity page
+  - Message list container (scrollable, newest at bottom)
+  - Each message shows: sender avatar, sender name, message content, timestamp, edited indicator
+  - System messages shown as centered, muted text
+  - Deleted messages show "This message was deleted" in italic
+  - Message input area at bottom: textarea with Shift+Enter for newline, Enter to send (or send button)
+  - Typing indicator area below messages
+
+- [ ] Task 4.4: Create message list partial (for pagination)
+  - Create `messaging/message_list.html` -- htmx partial for older messages
+  - Used by scroll-up infinite scroll: `hx-get` triggered by scroll sentinel at top
+  - Returns a batch of older messages
+  - Includes `hx-swap="afterbegin"` to prepend to message container
+
+- [ ] Task 4.5: Create member picker partial
+  - Create `messaging/member_picker.html` -- htmx partial
+  - Search input with `hx-get="/messaging/members?q=..."` for live filtering
+  - List of members with checkboxes (for group) or click-to-select (for DM)
+  - Each member shows avatar, display_name, profile type, status badge
+  - Only shows members from current ecosystem(s) with status "active"
+  - Submit button creates the conversation via `hx-post`
+
+- [ ] Task 4.6: Update base.html with Messages nav link and unread badge
+  - Add "Messages" link to sidebar navigation in `agent/src/neos_agent/templates/base.html`
+  - Place it in a new "Communication" section between "Processes" and "Lifecycle"
+  - Include unread count badge (loaded via htmx polling or WebSocket update)
+  - Chat icon (speech bubble) next to "Messages" text
+
+- [ ] Task 4.7: Add "Message" button to member profile detail page
+  - Update `agent/src/neos_agent/templates/dashboard/members/detail.html`
+  - Add "Message" button next to member name (only visible when viewing another member's profile)
+  - Button links to `/messaging?dm={member_id}` which auto-creates/opens a DM
+
+- [ ] Task 4.8: WebSocket client JavaScript
+  - Add JavaScript to `messaging/index.html` (inline in scripts block):
+  - WebSocket connection management (connect, reconnect with exponential backoff)
+  - Message send via WebSocket `{"type": "message", "data": {"conversation_id": "...", "content": "..."}}`
+  - Receive handler: append new message to DOM, update conversation list order, update unread counts
+  - Typing indicator: debounced typing event on keypress (every 3 seconds max)
+  - Read receipt: send when conversation becomes visible
+  - Enter to send, Shift+Enter for newline
+  - Auto-scroll to newest message on new message arrival
+  - Scroll-up detection for loading older messages via htmx
+
+- [ ] Verification: Full UI works in browser -- create DM, send messages, see real-time delivery, conversation list updates, unread badges show correctly [checkpoint marker]
+
+---
+
+## Phase 5: Governance Integration
+
+**Goal:** Connect conversations to governance entities (proposals, agreements, domains, conflicts) with bidirectional navigation.
+
+**Tasks:**
+
+- [ ] Task 5.1: Write tests for governance link creation and display
+  - TDD: Add to `agent/tests/test_messaging_views.py`
+  - Test POST /messaging/conversations/{id}/link creates ConversationLink
+  - Test GET /messaging/conversations/{id} displays governance link banner
+  - Test sharing a governance entity into a conversation creates a governance_link message
+  - Test ConversationLink prevents duplicate links (same entity + same conversation)
+
+- [ ] Task 5.2: Implement governance entity sharing
+  - In handlers: when a `governance_link` message is received, validate entity exists and is accessible
+  - Create a `governance_link` message with metadata: `{"entity_type": "...", "entity_id": "...", "entity_title": "..."}`
+  - Render governance link messages as styled cards in the conversation view (entity type icon, title, link to entity page)
+  - Run tests -- GREEN
+
+- [ ] Task 5.3: Add "Discuss" button to governance entity detail pages
+  - Update templates (check each for existence first):
+    - `agent/src/neos_agent/templates/dashboard/proposals/detail.html` -- add "Discuss" button
+    - `agent/src/neos_agent/templates/dashboard/agreements/detail.html` -- add "Discuss" button
+    - `agent/src/neos_agent/templates/dashboard/domains/detail.html` -- add "Discuss" button
+    - `agent/src/neos_agent/templates/dashboard/conflicts/detail.html` -- add "Discuss" button
+  - "Discuss" button sends POST to `/messaging/conversations` with `{type: "group", title: "<Entity> Discussion", link_entity_type: "...", link_entity_id: "..."}`
+  - If a linked conversation already exists, redirect to it
+
+- [ ] Task 5.4: Add "Discussions" section to governance entity detail pages
+  - On each entity detail page, add a "Discussions" section showing linked conversations
+  - Query ConversationLink by entity_type + entity_id
+  - Show each linked conversation: title, participant count, last activity, unread count
+  - Each links to `/messaging?conversation={id}`
+
+- [ ] Task 5.5: Write integration tests for governance flow
+  - Test creating a discussion from a proposal page, sending messages, verifying the link
+  - Test that the proposal detail page shows the discussion in the "Discussions" section
+  - Test sharing an agreement into an existing group conversation
+  - Test ecosystem boundary: cannot link entity from different ecosystem
+
+- [ ] Verification: Navigate from proposal to discussion and back, share entities in conversations, see Discussions sections on entity pages [checkpoint marker]
+
+---
+
+## Phase 6: Search, Polish & End-to-End Validation
+
+**Goal:** Add message search, polish the UI, handle edge cases, and run full end-to-end validation.
+
+**Tasks:**
+
+- [ ] Task 6.1: Implement message search
+  - Write tests for GET /messaging/search?q=... returning matching messages
+  - Implement full-text search across messages the member participates in
+  - Use SQL ILIKE for initial implementation (PostgreSQL full-text search deferred)
+  - Return search results as htmx partial with conversation context
+  - Clicking a result navigates to that message in its conversation
+
+- [ ] Task 6.2: Handle edge cases and error states
+  - Write tests for:
+    - Member with no conversations sees empty state with "Start a conversation" CTA
+    - Conversation with 0 messages shows empty state
+    - WebSocket reconnection after network interruption
+    - Rapid message sending (rate limiting: max 10/sec per member)
+    - Very long messages (truncate at 10,000 characters)
+    - XSS prevention: message content is HTML-escaped on render
+  - Implement rate limiting in WebSocket handler
+  - Implement max message length validation
+  - Ensure all user content is escaped via Jinja2 autoescape
+
+- [ ] Task 6.3: Exited member handling
+  - Write tests for:
+    - Exited member can view conversation list and message history
+    - Exited member cannot send messages (REST returns 403, WebSocket rejects)
+    - Exited member cannot create new conversations
+    - Exited member sees "You have exited this ecosystem" notice
+  - Implement status check in message send path
+  - Implement read-only UI state for exited members
+
+- [ ] Task 6.4: Unread badge polling/refresh
+  - Implement unread count endpoint: GET /messaging/unread-count returns `{"count": N}`
+  - Add htmx polling on base.html sidebar badge: `hx-get="/messaging/unread-count" hx-trigger="every 30s"` to update badge
+  - WebSocket also pushes unread count updates for instant badge refresh when chat is open
+  - Write test for unread count endpoint
+
+- [ ] Task 6.5: Performance optimization
+  - Add database indexes review:
+    - Verify Index on messages(conversation_id, created_at) exists
+    - Verify Index on conversation_participants(member_id) for quick conversation lookup
+    - Verify Index on conversation_links(entity_type, entity_id) for governance page queries
+  - Test conversation list query performance with 100 conversations
+  - Test message pagination performance with 1000 messages
+  - Add `select_from` hints and eager loading where needed
+
+- [ ] Task 6.6: End-to-end validation
+  - Manual test script:
+    1. Log in as Lani (co_creator) -- verify Messages link in sidebar
+    2. Click "Messages" -- verify empty state with "Start a conversation"
+    3. Navigate to Kai's profile -- click "Message" -- verify DM created
+    4. Send 3 messages in the DM -- verify real-time delivery (open second browser as Kai)
+    5. Create group conversation with Lani, Kai, Manu -- title "Kitchen Planning"
+    6. Send messages in group -- verify all 3 members receive them
+    7. Navigate to proposal PROP-2026-001 -- click "Discuss" -- verify conversation created and linked
+    8. Share an agreement into the Kitchen Planning group -- verify governance_link card renders
+    9. Verify unread badges update when Manu sends a message while Lani is on a different page
+    10. Verify ecosystem boundary: switch to a different ecosystem, verify only members from that ecosystem appear in member picker
+    11. Edit a message -- verify "edited" indicator appears
+    12. Delete a message -- verify "This message was deleted" appears
+  - Document any issues found and fix
+
+- [ ] Verification: Full end-to-end flow works, all tests pass, no console errors, messaging is functional for all member types [checkpoint marker]
+
+---
+
+## File Summary
+
+### New Files
+
+| File | Description |
+|------|-------------|
+| `agent/src/neos_agent/messaging/__init__.py` | Messaging package init |
+| `agent/src/neos_agent/messaging/connections.py` | WebSocket ConnectionManager singleton |
+| `agent/src/neos_agent/messaging/routes.py` | Blueprint with REST + WebSocket endpoints |
+| `agent/src/neos_agent/messaging/handlers.py` | WebSocket message type handlers |
+| `agent/src/neos_agent/templates/messaging/index.html` | Main messaging page |
+| `agent/src/neos_agent/templates/messaging/conversation_list.html` | Conversation list partial |
+| `agent/src/neos_agent/templates/messaging/conversation_detail.html` | Conversation detail partial |
+| `agent/src/neos_agent/templates/messaging/message_list.html` | Paginated message partial |
+| `agent/src/neos_agent/templates/messaging/member_picker.html` | Member selection partial |
+| `agent/tests/test_messaging_models.py` | Model unit tests |
+| `agent/tests/test_connection_manager.py` | ConnectionManager unit tests |
+| `agent/tests/test_messaging_ws.py` | WebSocket endpoint tests |
+| `agent/tests/test_messaging_views.py` | REST endpoint tests |
+| `agent/alembic/versions/xxxx_add_messaging_models.py` | Database migration |
+
+### Modified Files
+
+| File | Changes |
+|------|---------|
+| `agent/src/neos_agent/db/models.py` | Add 4 new models (~80 lines) |
+| `agent/src/neos_agent/main.py` | Register messaging blueprint |
+| `agent/src/neos_agent/templates/base.html` | Add Messages nav link with unread badge |
+| `agent/src/neos_agent/auth/middleware.py` | Add /messaging to public prefix check if WS needs it |
+| `agent/tests/conftest.py` | Add messaging seed fixture |
+| `agent/src/neos_agent/templates/dashboard/members/detail.html` | Add "Message" button |
+| `agent/src/neos_agent/templates/dashboard/proposals/detail.html` | Add "Discuss" button + Discussions section |
+| `agent/src/neos_agent/templates/dashboard/agreements/detail.html` | Add "Discuss" button + Discussions section |
+| `agent/src/neos_agent/templates/dashboard/domains/detail.html` | Add "Discuss" button + Discussions section |
+| `agent/src/neos_agent/templates/dashboard/conflicts/detail.html` | Add "Discuss" button + Discussions section |
+
+---
+
+## Dependency Graph
+
+```
+Phase 1 (Models) ──> Phase 2 (WebSocket) ──> Phase 3 (REST API)
+                                                    |
+                                                    v
+                     Phase 4 (Templates) <──────────┘
+                           |
+                           v
+                     Phase 5 (Governance Integration)
+                           |
+                           v
+                     Phase 6 (Search, Polish, E2E)
+```

@@ -1,0 +1,15 @@
+{
+  "track_id": "chat_messaging_20260313",
+  "title": "Chat & Direct Messaging System",
+  "type": "feature",
+  "priority": "P1",
+  "status": "planned",
+  "created": "2026-03-13",
+  "depends_on": [
+    "agent_foundation_20260305",
+    "dashboard_views_20260305",
+    "agent_core_20260305"
+  ],
+  "phases": 6,
+  "estimated_hours": "12-16"
+}
