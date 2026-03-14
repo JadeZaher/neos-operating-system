@@ -19,6 +19,7 @@ from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Domain, DomainElement, DomainMetric
+from neos_agent.messaging.queries import get_entity_discussions
 from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
 
 logger = logging.getLogger(__name__)
@@ -207,12 +208,20 @@ async def detail(request: Request, domain_id: uuid.UUID):
         )
         return html(content, status=500)
 
+    discussions = []
+    try:
+        async with request.app.ctx.db() as session:
+            discussions = await get_entity_discussions(session, "domain", domain_id)
+    except Exception:
+        pass
+
     content = await render(
         "dashboard/domains/detail.html",
         request=request,
         domain=domain,
         elements=elements,
         metrics=metrics,
+        discussions=discussions,
         active_page="domains",
     )
     return html(content)

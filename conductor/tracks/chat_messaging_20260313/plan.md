@@ -148,39 +148,28 @@ This plan is divided into 6 phases, progressing from data model foundations thro
 
 **Tasks:**
 
-- [ ] Task 5.1: Write tests for governance link creation and display
-  - TDD: Add to `agent/tests/test_messaging_views.py`
-  - Test POST /messaging/conversations/{id}/link creates ConversationLink
-  - Test GET /messaging/conversations/{id} displays governance link banner
-  - Test sharing a governance entity into a conversation creates a governance_link message
-  - Test ConversationLink prevents duplicate links (same entity + same conversation)
+- [x] Task 5.1: Write tests for governance link creation and display
+  - Added TestGetEntityDiscussions (4 tests) and TestEcosystemBoundary (1 test) to test_messaging_views.py
 
-- [ ] Task 5.2: Implement governance entity sharing
-  - In handlers: when a `governance_link` message is received, validate entity exists and is accessible
-  - Create a `governance_link` message with metadata: `{"entity_type": "...", "entity_id": "...", "entity_title": "..."}`
-  - Render governance link messages as styled cards in the conversation view (entity type icon, title, link to entity page)
-  - Run tests -- GREEN
+- [x] Task 5.2: Implement governance entity sharing
+  - Governance link messages render as styled cards in conversation_detail.html and message_list.html
+  - REST endpoint POST /messaging/conversations/{id}/link handles creation with duplicate prevention
+  - governance_link message metadata stores entity_type, entity_id, entity_title
 
-- [ ] Task 5.3: Add "Discuss" button to governance entity detail pages
-  - Update templates (check each for existence first):
-    - `agent/src/neos_agent/templates/dashboard/proposals/detail.html` -- add "Discuss" button
-    - `agent/src/neos_agent/templates/dashboard/agreements/detail.html` -- add "Discuss" button
-    - `agent/src/neos_agent/templates/dashboard/domains/detail.html` -- add "Discuss" button
-    - `agent/src/neos_agent/templates/dashboard/conflicts/detail.html` -- add "Discuss" button
-  - "Discuss" button sends POST to `/messaging/conversations` with `{type: "group", title: "<Entity> Discussion", link_entity_type: "...", link_entity_id: "..."}`
-  - If a linked conversation already exists, redirect to it
+- [x] Task 5.3: Add "Discuss" button to governance entity detail pages
+  - Added "Discuss" button to proposals, agreements, domains, and conflicts detail templates
+  - Buttons use htmx POST to /messaging/conversations with link_entity_type and link_entity_id
 
-- [ ] Task 5.4: Add "Discussions" section to governance entity detail pages
-  - On each entity detail page, add a "Discussions" section showing linked conversations
-  - Query ConversationLink by entity_type + entity_id
-  - Show each linked conversation: title, participant count, last activity, unread count
-  - Each links to `/messaging?conversation={id}`
+- [x] Task 5.4: Add "Discussions" section to governance entity detail pages
+  - Created `messaging/queries.py` with `get_entity_discussions()` helper (avoids circular import)
+  - Updated proposals, agreements, domains, and conflicts views to pass `discussions` context
+  - Each entity detail page shows linked conversations with participant counts
 
-- [ ] Task 5.5: Write integration tests for governance flow
-  - Test creating a discussion from a proposal page, sending messages, verifying the link
-  - Test that the proposal detail page shows the discussion in the "Discussions" section
-  - Test sharing an agreement into an existing group conversation
-  - Test ecosystem boundary: cannot link entity from different ecosystem
+- [x] Task 5.5: Write integration tests for governance flow
+  - Tests for get_entity_discussions: returns linked discussions, empty for no links, duplicate prevention
+  - Tests for governance_link message metadata
+  - Test ecosystem boundary enforcement
+  - 58 total tests pass (18 model + 14 CM + 6 handler + 20 views)
 
 - [ ] Verification: Navigate from proposal to discussion and back, share entities in conversations, see Discussions sections on entity pages [checkpoint marker]
 

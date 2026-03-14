@@ -24,6 +24,7 @@ from neos_agent.db.models import (
     ReviewRecord,
     AgreementRatificationRecord,
 )
+from neos_agent.messaging.queries import get_entity_discussions
 from neos_agent.views._rendering import render, html_fragment, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
 
 logger = logging.getLogger(__name__)
@@ -181,7 +182,14 @@ async def detail(request: Request, agreement_id: uuid.UUID):
         )
         return html(content, status=500)
 
-    content = await render("dashboard/agreements/detail.html", request=request, agreement=agreement)
+    discussions = []
+    try:
+        async with request.app.ctx.db() as session:
+            discussions = await get_entity_discussions(session, "agreement", agreement_id)
+    except Exception:
+        pass
+
+    content = await render("dashboard/agreements/detail.html", request=request, agreement=agreement, discussions=discussions)
     return html(content)
 
 

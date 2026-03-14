@@ -72,10 +72,22 @@
   <div class="flex items-center gap-2 shrink-0">
     <a
       href="/dashboard/agreements/{{ agreement.id }}/edit"
-      class="inline-flex items-center px-3 py-2 border border-neos-border text-sm font-medium text-neos-text rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      class="inline-flex items-center px-3 py-2 border border-neos-border text-sm font-medium text-neos-text rounded-lg hover:bg-neos-surface-alt transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent"
     >
       Edit
     </a>
+    <button
+      type="button"
+      class="inline-flex items-center gap-1.5 px-3 py-2 border border-neos-accent/30 text-neos-primary text-sm font-medium rounded-lg hover:bg-neos-accent/10 transition-colors"
+      hx-post="/messaging/conversations"
+      hx-vals='{"type": "group", "title": "{{ agreement.title }} Discussion", "member_ids": [], "link_entity_type": "agreement", "link_entity_id": "{{ agreement.id }}"}'
+      hx-target="#conversation-detail"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+      </svg>
+      Discuss
+    </button>
   </div>
 </div>
 
@@ -89,7 +101,7 @@
 
     {# Detail card #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+      <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
         <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Details</h2>
       </div>
       <dl class="divide-y divide-neos-border">
@@ -144,7 +156,7 @@
 
     {# Agreement Text #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+      <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
         <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Text</h2>
       </div>
       <div class="px-6 py-5 prose prose-sm max-w-none text-neos-text leading-relaxed">
@@ -154,7 +166,7 @@
 
     {# ---- Status Transition Form ---- #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+      <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
         <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Status Transition</h2>
       </div>
       <div class="px-6 py-5">
@@ -169,7 +181,7 @@
               <select
                 id="transition-status"
                 name="new_status"
-                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+                class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
               >
                 <option value="">Select status...</option>
                 {% set s = agreement.status | default('draft') %}
@@ -199,7 +211,7 @@
             <textarea
               id="transition-reason"
               name="reason"
-              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+              class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
               rows="3"
               placeholder="Provide context for this status change..."
             ></textarea>
@@ -223,7 +235,7 @@
       {# Amendments #}
       {% if amendments is defined and amendments %}
       <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
           <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Amendments</h2>
         </div>
         <ul class="divide-y divide-neos-border" role="list">
@@ -250,7 +262,7 @@
       {# Reviews #}
       {% if reviews is defined and reviews %}
       <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
           <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Reviews</h2>
         </div>
         <ul class="divide-y divide-neos-border" role="list">
@@ -276,13 +288,13 @@
       {# Ratification Records #}
       {% if ratifications is defined and ratifications %}
       <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-neos-border bg-gray-50">
+        <div class="px-6 py-4 border-b border-neos-border bg-neos-surface-alt">
           <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Ratification Records</h2>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm" aria-label="Ratification records">
             <thead>
-              <tr class="border-b border-neos-border bg-gray-50">
+              <tr class="border-b border-neos-border bg-neos-surface-alt">
                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Participant</th>
                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Role</th>
                 <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Position</th>
@@ -291,7 +303,7 @@
             </thead>
             <tbody class="divide-y divide-neos-border">
               {% for record in ratifications %}
-              <tr class="hover:bg-gray-50">
+              <tr class="hover:bg-neos-surface-alt">
                 <td class="px-4 py-3 font-semibold text-neos-text">{{ record.participant or '—' }}</td>
                 <td class="px-4 py-3 text-neos-muted">{{ record.role or '—' }}</td>
                 <td class="px-4 py-3">
@@ -324,7 +336,7 @@
 
     {# Key Dates card #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+      <div class="px-4 py-3 border-b border-neos-border bg-neos-surface-alt">
         <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Key Dates</h3>
       </div>
       <dl class="divide-y divide-neos-border">
@@ -352,7 +364,7 @@
     {# Proposer card #}
     {% if agreement.proposer %}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+      <div class="px-4 py-3 border-b border-neos-border bg-neos-surface-alt">
         <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Proposer</h3>
       </div>
       <div class="px-4 py-3">
@@ -363,19 +375,19 @@
 
     {# Quick links #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-neos-border bg-gray-50">
+      <div class="px-4 py-3 border-b border-neos-border bg-neos-surface-alt">
         <h3 class="text-xs font-semibold text-neos-muted uppercase tracking-wider">Actions</h3>
       </div>
       <div class="px-4 py-3 space-y-2">
         <a
           href="/dashboard/agreements/{{ agreement.id }}/edit"
-          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors"
         >
           <span aria-hidden="true">&#9998;</span> Edit Agreement
         </a>
         <a
           href="/dashboard/agreements/{{ agreement.id }}/history"
-          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-gray-50 transition-colors"
+          class="flex items-center gap-2 px-3 py-2 text-sm text-neos-text border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors"
         >
           <span aria-hidden="true">&#128336;</span> Full History
         </a>
@@ -393,6 +405,30 @@
 
 </div>
 {# /grid #}
+
+{# Discussions section #}
+{% if discussions is defined and discussions %}
+<div class="bg-neos-surface border border-neos-border rounded-xl mt-6">
+  <div class="px-6 py-4 border-b border-neos-border">
+    <h2 class="text-base font-semibold text-neos-text">Discussions</h2>
+  </div>
+  <div class="divide-y divide-neos-border">
+    {% for disc in discussions %}
+    <a href="/messaging?conversation={{ disc.conversation.id }}" class="flex items-center gap-3 px-6 py-3 hover:bg-neos-surface-alt transition-colors">
+      <div class="w-8 h-8 rounded-full bg-neos-primary/15 text-neos-primary flex items-center justify-center shrink-0">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <span class="text-sm font-medium text-neos-text block truncate">{{ disc.conversation.title or 'Discussion' }}</span>
+        <span class="text-xs text-neos-muted">{{ disc.participant_count }} member{{ 's' if disc.participant_count != 1 else '' }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% endif %}
 {# /error guard #}

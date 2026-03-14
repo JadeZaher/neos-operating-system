@@ -18,6 +18,7 @@ from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import ConflictCase, RepairAgreementRecord
+from neos_agent.messaging.queries import get_entity_discussions
 from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
 
 logger = logging.getLogger(__name__)
@@ -193,11 +194,19 @@ async def detail(request: Request, conflict_uuid: uuid.UUID):
         )
         return html(content, status=500)
 
+    discussions = []
+    try:
+        async with request.app.ctx.db() as session:
+            discussions = await get_entity_discussions(session, "conflict", conflict_uuid)
+    except Exception:
+        pass
+
     content = await render(
         "dashboard/conflicts/detail.html",
         request=request,
         conflict=conflict,
         repairs=repairs,
+        discussions=discussions,
         active_page="conflicts",
     )
     return html(content)
