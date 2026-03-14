@@ -13,10 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from neos_agent.db.models import (
     Base,
     Agreement,
+    Conversation,
+    ConversationLink,
+    ConversationParticipant,
     Domain,
     DomainElement,
     Ecosystem,
     Member,
+    Message,
     Proposal,
 )
 
@@ -199,6 +203,10 @@ AGREEMENT_ACTIVE_ID = uuid.UUID("00000000000000000000000000001000")
 AGREEMENT_DRAFT_ID = uuid.UUID("00000000000000000000000000002000")
 PROPOSAL_ID = uuid.UUID("00000000000000000000000000010000")
 
+# Messaging seed data UUIDs
+DM_CONVERSATION_ID = uuid.UUID("00000000000000000000000000100000")
+GROUP_CONVERSATION_ID = uuid.UUID("00000000000000000000000000200000")
+
 
 @pytest_asyncio.fixture
 async def seeded_db(db_engine):
@@ -322,6 +330,196 @@ async def seeded_db(db_engine):
             created_date=date(2026, 2, 10),
         )
         session.add(prop)
+
+        await session.commit()
+
+    # Yield a fresh session for the test
+    async with session_factory() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def seeded_messaging_db(db_engine):
+    """Session pre-loaded with governance seed data PLUS messaging data.
+
+    Extends seeded_db with:
+    - 1 DM conversation between Lani and Kai
+    - 1 group conversation ("Kitchen Planning") with all 3 members
+    - 5 sample messages in the DM
+    - 3 sample messages in the group
+    - 1 governance link (group linked to proposal PROP-2026-001)
+    """
+    session_factory = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with session_factory() as session:
+        # -- Governance seed data (same as seeded_db) --
+        eco = Ecosystem(id=ECO_ID, name="OmniOne", status="active")
+        session.add(eco)
+
+        lani = Member(
+            id=MEMBER_STEWARD_ID, ecosystem_id=ECO_ID,
+            member_id="MEM-001", display_name="Lani",
+            current_status="active", profile="co_creator",
+        )
+        kai = Member(
+            id=MEMBER_BUILDER_ID, ecosystem_id=ECO_ID,
+            member_id="MEM-002", display_name="Kai",
+            current_status="active", profile="builder",
+        )
+        manu = Member(
+            id=MEMBER_TH_ID, ecosystem_id=ECO_ID,
+            member_id="MEM-003", display_name="Manu",
+            current_status="active", profile="townhall",
+        )
+        session.add_all([lani, kai, manu])
+
+        domain = Domain(
+            id=DOMAIN_ID, ecosystem_id=ECO_ID,
+            domain_id="SHUR-KITCHEN", version="1.0", status="active",
+            purpose="Community kitchen operations and scheduling",
+            current_steward="Lani", steward_id=MEMBER_STEWARD_ID,
+            elements={"primary_accountabilities": ["meal scheduling", "hygiene"]},
+        )
+        session.add(domain)
+
+        agr_active = Agreement(
+            id=AGREEMENT_ACTIVE_ID, ecosystem_id=ECO_ID,
+            agreement_id="AGR-SHUR-2026-001", type="space",
+            title="SHUR Kitchen Scheduling Agreement", version="1.0",
+            status="active", proposer="Kai",
+            affected_parties=["Lani", "Kai", "Manu"],
+            domain="SHUR Kitchen",
+            text="Kitchen scheduling rules for OmniOne SHUR.",
+            created_date=date(2026, 1, 15),
+        )
+        agr_draft = Agreement(
+            id=AGREEMENT_DRAFT_ID, ecosystem_id=ECO_ID,
+            agreement_id="AGR-GARD-2026-002", type="access",
+            title="Garden Composting Access Agreement", version="0.1",
+            status="draft", proposer="Manu", domain="Garden",
+            text="Composting access rules.",
+            created_date=date(2026, 2, 1),
+        )
+        session.add_all([agr_active, agr_draft])
+
+        prop = Proposal(
+            id=PROPOSAL_ID, ecosystem_id=ECO_ID,
+            proposal_id="PROP-2026-001", type="agreement",
+            decision_type="consent", title="Add evening kitchen hours",
+            version="1.0", status="advice", proposer="Kai",
+            affected_domain="SHUR-KITCHEN",
+            created_date=date(2026, 2, 10),
+        )
+        session.add(prop)
+
+        # -- Messaging seed data --
+
+        # DM conversation: Lani <-> Kai
+        dm_convo = Conversation(
+            id=DM_CONVERSATION_ID, ecosystem_id=ECO_ID,
+            type="dm", created_by=MEMBER_STEWARD_ID,
+        )
+        session.add(dm_convo)
+        session.add_all([
+            ConversationParticipant(
+                conversation_id=DM_CONVERSATION_ID,
+                member_id=MEMBER_STEWARD_ID, role="member",
+            ),
+            ConversationParticipant(
+                conversation_id=DM_CONVERSATION_ID,
+                member_id=MEMBER_BUILDER_ID, role="member",
+            ),
+        ])
+
+        # Group conversation: Kitchen Planning (all 3 members)
+        group_convo = Conversation(
+            id=GROUP_CONVERSATION_ID, ecosystem_id=ECO_ID,
+            type="group", title="Kitchen Planning",
+            created_by=MEMBER_STEWARD_ID,
+        )
+        session.add(group_convo)
+        session.add_all([
+            ConversationParticipant(
+                conversation_id=GROUP_CONVERSATION_ID,
+                member_id=MEMBER_STEWARD_ID, role="owner",
+            ),
+            ConversationParticipant(
+                conversation_id=GROUP_CONVERSATION_ID,
+                member_id=MEMBER_BUILDER_ID, role="member",
+            ),
+            ConversationParticipant(
+                conversation_id=GROUP_CONVERSATION_ID,
+                member_id=MEMBER_TH_ID, role="member",
+            ),
+        ])
+
+        # 5 DM messages
+        dm_messages = [
+            Message(
+                conversation_id=DM_CONVERSATION_ID,
+                sender_id=MEMBER_STEWARD_ID,
+                content="Hey Kai, can we discuss the kitchen schedule?",
+                message_type="text",
+            ),
+            Message(
+                conversation_id=DM_CONVERSATION_ID,
+                sender_id=MEMBER_BUILDER_ID,
+                content="Sure! I was thinking about extending evening hours.",
+                message_type="text",
+            ),
+            Message(
+                conversation_id=DM_CONVERSATION_ID,
+                sender_id=MEMBER_STEWARD_ID,
+                content="That aligns with the proposal. Let me check the details.",
+                message_type="text",
+            ),
+            Message(
+                conversation_id=DM_CONVERSATION_ID,
+                sender_id=MEMBER_BUILDER_ID,
+                content="I'll draft a schedule and share it in the group.",
+                message_type="text",
+            ),
+            Message(
+                conversation_id=DM_CONVERSATION_ID,
+                sender_id=MEMBER_STEWARD_ID,
+                content="Perfect, thanks!",
+                message_type="text",
+            ),
+        ]
+        session.add_all(dm_messages)
+
+        # 3 group messages
+        group_messages = [
+            Message(
+                conversation_id=GROUP_CONVERSATION_ID,
+                sender_id=MEMBER_STEWARD_ID,
+                content="Lani created this conversation",
+                message_type="system",
+            ),
+            Message(
+                conversation_id=GROUP_CONVERSATION_ID,
+                sender_id=MEMBER_BUILDER_ID,
+                content="Here's my draft for the evening kitchen schedule.",
+                message_type="text",
+            ),
+            Message(
+                conversation_id=GROUP_CONVERSATION_ID,
+                sender_id=MEMBER_TH_ID,
+                content="Looks good! I have a few suggestions.",
+                message_type="text",
+            ),
+        ]
+        session.add_all(group_messages)
+
+        # Governance link: group convo linked to proposal PROP-2026-001
+        link = ConversationLink(
+            conversation_id=GROUP_CONVERSATION_ID,
+            entity_type="proposal",
+            entity_id=PROPOSAL_ID,
+            created_by=MEMBER_STEWARD_ID,
+        )
+        session.add(link)
 
         await session.commit()
 

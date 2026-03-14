@@ -39,13 +39,13 @@ This plan is divided into 6 phases, progressing from data model foundations thro
   - Update module docstring with new table count
   - Run tests from Task 1.1 -- all GREEN
 
-- [ ] Task 1.3: Create Alembic migration
+- [x] Task 1.3: Create Alembic migration
   - Generate migration: `alembic revision --autogenerate -m "add messaging models"`
   - Verify migration creates tables: conversations, conversation_participants, messages, conversation_links
   - Verify indexes and unique constraints are present
   - Test migration up/down cycle
 
-- [ ] Task 1.4: Add messaging seed data to conftest.py
+- [x] Task 1.4: Add messaging seed data to conftest.py
   - Update `agent/tests/conftest.py` to import new models
   - Create a `seeded_messaging_db` fixture that extends `seeded_db` with:
     - 1 DM conversation between Lani and Kai
@@ -55,7 +55,7 @@ This plan is divided into 6 phases, progressing from data model foundations thro
     - 1 governance link (group linked to proposal PROP-2026-001)
   - This fixture will be reused by all subsequent test files
 
-- [ ] Verification: Run full test suite, confirm all model tests pass, migration applies cleanly on fresh SQLite [checkpoint marker]
+- [x] Verification: Run full test suite, confirm all model tests pass, migration applies cleanly [checkpoint marker]
 
 ---
 
