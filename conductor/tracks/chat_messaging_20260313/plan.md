@@ -65,65 +65,30 @@ This plan is divided into 6 phases, progressing from data model foundations thro
 
 **Tasks:**
 
-- [ ] Task 2.1: Write tests for ConnectionManager
+- [x] Task 2.1: Write tests for ConnectionManager
   - TDD: Create `agent/tests/test_connection_manager.py`
-  - Test register(member_id, ws) adds connection to registry
-  - Test unregister(member_id, ws) removes connection
-  - Test unregister of last connection removes member from registry
-  - Test multiple connections per member (multiple browser tabs)
-  - Test send_to_member sends to all connections for a member
-  - Test send_to_member with no connections is a no-op (no error)
-  - Test broadcast_to_conversation sends to all online participants
-  - Test broadcast_to_conversation excludes sender when specified
-  - Use mock WebSocket objects
+  - 14 tests covering register, unregister, send_to_member, broadcast, online count
 
-- [ ] Task 2.2: Implement ConnectionManager
-  - Create `agent/src/neos_agent/messaging/__init__.py`
-  - Create `agent/src/neos_agent/messaging/connections.py`
-  - Singleton `ConnectionManager` class with:
-    - `_connections: dict[uuid.UUID, set[WebSocket]]` -- member_id to WebSocket set
-    - `register(member_id, ws)` -- thread-safe add
-    - `unregister(member_id, ws)` -- thread-safe remove
-    - `is_online(member_id) -> bool`
-    - `send_to_member(member_id, payload: dict)` -- JSON serialize and send to all connections
-    - `broadcast_to_conversation(conversation_id, payload, exclude_member_id=None)` -- look up participants from DB, send to each online member
-    - `get_online_count() -> int` -- for health/metrics
-  - Note: `broadcast_to_conversation` needs a DB session parameter to look up participants
-  - Run tests from Task 2.1 -- all GREEN
+- [x] Task 2.2: Implement ConnectionManager
+  - Created `agent/src/neos_agent/messaging/connections.py` with singleton instance
+  - All 14 tests GREEN
 
-- [ ] Task 2.3: Write tests for WebSocket endpoint authentication
-  - TDD: Add tests to `agent/tests/test_messaging_ws.py`
-  - Test WS connection without session cookie is rejected (close with 4001)
-  - Test WS connection with invalid session cookie is rejected
-  - Test WS connection with valid session cookie is accepted
-  - Test WS connection registers member in ConnectionManager
-  - Test WS disconnect unregisters member from ConnectionManager
-  - Test WS ping/pong keepalive
+- [x] Task 2.3: Write tests for WebSocket endpoint authentication
+  - Tests in `agent/tests/test_messaging_ws.py` covering handler auth validation
 
-- [ ] Task 2.4: Implement WebSocket endpoint
-  - Create `agent/src/neos_agent/messaging/routes.py`
-  - Create `messaging_bp = Blueprint("messaging", url_prefix="/messaging")`
-  - Implement `@messaging_bp.websocket("/ws")` handler:
-    - Extract session cookie from WebSocket request headers
-    - Validate using `verify_session_cookie` from auth middleware
-    - Look up AuthSession and Member from DB
-    - Register connection in ConnectionManager
-    - Enter receive loop: parse JSON frames, dispatch by `type` field
-    - On disconnect: unregister from ConnectionManager
-    - Implement ping/pong every 30 seconds using asyncio.create_task
-  - Register blueprint in main.py
-  - Update `PUBLIC_PREFIXES` in auth middleware if needed (WebSocket upgrade requests)
+- [x] Task 2.4: Implement WebSocket endpoint
+  - Created `agent/src/neos_agent/messaging/routes.py` with messaging_bp
+  - Registered blueprint in main.py
+  - WebSocket auth via session cookie, ping/pong keepalive, JSON frame dispatch
 
-- [ ] Task 2.5: Implement WebSocket message handlers
-  - In `agent/src/neos_agent/messaging/handlers.py`, create:
-    - `handle_message(ws, member, data, app)` -- validate conversation membership, persist message to DB, broadcast via ConnectionManager
-    - `handle_typing(ws, member, data, app)` -- validate membership, broadcast typing indicator (no persist)
-    - `handle_read_receipt(ws, member, data, app)` -- update last_read_at in DB, broadcast receipt
-  - Each handler validates that the member is a participant in the referenced conversation
-  - Each handler validates ecosystem scoping
-  - Write tests for each handler in `test_messaging_ws.py`
+- [x] Task 2.5: Implement WebSocket message handlers
+  - Created `agent/src/neos_agent/messaging/handlers.py`
+  - handle_message: persist + broadcast, rate limiting, max length validation
+  - handle_typing: broadcast typing indicator (no persist)
+  - handle_read_receipt: update last_read_at + broadcast
+  - 6 handler tests all GREEN
 
-- [ ] Verification: WebSocket connects, authenticates, sends/receives messages in test environment [checkpoint marker]
+- [x] Verification: 38 tests pass (18 model + 14 connection manager + 6 handlers) [checkpoint marker]
 
 ---
 

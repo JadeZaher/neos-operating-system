@@ -134,6 +134,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.auth.routes import auth_bp
     app.blueprint(auth_bp)
 
+    # Register messaging blueprint (WebSocket + REST)
+    from neos_agent.messaging.routes import messaging_bp
+    app.blueprint(messaging_bp)
+
     # Auth middleware — protect all non-public routes
     @app.on_request
     async def auth_middleware(request: Request):
