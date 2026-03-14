@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
 
+import mistune
+import nh3
 import jinja2
+from markupsafe import Markup
 from sanic import html as html_response
 
 # Template directory is a sibling of the views package
@@ -25,6 +28,50 @@ _env = jinja2.Environment(
     autoescape=True,
     enable_async=True,
 )
+
+
+# ---------------------------------------------------------------------------
+# Markdown rendering (mistune → nh3 sanitisation)
+# ---------------------------------------------------------------------------
+
+_MARKDOWN_ALLOWED_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
+    "strong", "em", "del", "code", "pre",
+    "ul", "ol", "li", "blockquote",
+    "a", "img", "table", "thead", "tbody", "tr", "th", "td",
+    "sup", "sub", "input",
+}
+
+_MARKDOWN_ALLOWED_ATTRS = {
+    "a": {"href", "title"},  # rel is set via link_rel parameter
+    "img": {"src", "alt", "title"},
+    "code": {"class"},
+    "pre": {"class"},
+    "th": {"align"},
+    "td": {"align"},
+    "input": {"type", "checked", "disabled"},
+}
+
+_md = mistune.create_markdown(
+    plugins=["strikethrough", "table", "task_lists", "footnotes"],
+)
+
+
+def render_markdown(text: str | None) -> Markup:
+    """Convert markdown text to sanitised HTML safe for Jinja2 autoescape."""
+    if not text:
+        return Markup("")
+    raw_html = _md(text)
+    clean = nh3.clean(
+        raw_html,
+        tags=_MARKDOWN_ALLOWED_TAGS,
+        attributes=_MARKDOWN_ALLOWED_ATTRS,
+        link_rel="noopener noreferrer nofollow",
+    )
+    return Markup(clean)
+
+
+_env.filters["markdown"] = render_markdown
 
 
 async def render(template_name: str, *, request=None, **context) -> str:

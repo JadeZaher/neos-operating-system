@@ -36,6 +36,7 @@
     <div>
       <label for="reason" class="block text-sm font-medium text-neos-text mb-1">Reason (optional)</label>
       <textarea id="reason" name="reason" rows="4"
+                data-markdown-editor
                 class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
                 placeholder="You are not required to provide a reason, but it can help improve the ecosystem..."></textarea>
       <p class="text-xs text-neos-muted mt-1">Providing a reason is entirely voluntary and will be kept confidential.</p>
@@ -56,7 +57,7 @@
     <p class="text-xs text-neos-muted mb-3">The governance agent can explain your exit rights, the commitment unwinding process, and data portability options.</p>
     <button type="button"
             class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Explain my exit rights and what happens during the exit process'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Explain my exit rights and what happens during the exit process')">
       Ask About Exit Rights
     </button>
   </div>

@@ -166,21 +166,20 @@ The seed script is idempotent (safe to run multiple times) and creates:
 Make sure `DATABASE_URL` and `ANTHROPIC_API_KEY` are set (via `.env` or environment).
 
 ```bash
-# Development (auto-reload)
-python -m neos_agent.main --dev
-
-# Production
-python -m neos_agent.main --workers 4
+# Development (auto-reload) — run from the agent/ directory
+cd agent
+../.venv/Scripts/python -m neos_agent.main --dev
 
 # Custom host/port
-python -m neos_agent.main --dev --host 127.0.0.1 --port 3000
+../.venv/Scripts/python -m neos_agent.main --dev --host 127.0.0.1 --port 3000
 
-# One-liner with inline env vars (Linux/macOS)
-DATABASE_URL="sqlite+aiosqlite:///neos.db" ANTHROPIC_API_KEY="sk-ant-..." \
-  python -m neos_agent.main --dev
+# Production
+../.venv/Scripts/python -m neos_agent.main --workers 4
 ```
 
 > **Note:** The `sanic` CLI does not work on Windows (missing `grp` module). Use `python -m neos_agent.main` instead.
+>
+> **First-time setup:** If you get `ModuleNotFoundError: No module named 'neos_agent'`, run `../.venv/Scripts/pip install -e .` from the `agent/` directory.
 
 The dashboard is at [http://localhost:8000/dashboard](http://localhost:8000/dashboard).
 

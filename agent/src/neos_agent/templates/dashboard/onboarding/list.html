@@ -10,20 +10,20 @@
   </div>
   <div class="flex flex-wrap gap-2 flex-1">
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Explain the Universal Agreement Field and what each section means for new members'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Explain the Universal Agreement Field and what each section means for new members')">
       Explain UAF Sections
     </button>
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
-            onclick="document.getElementById('chat-message-input').value='What should a facilitator know before running a consent ceremony?'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('What should a facilitator know before running a consent ceremony?')">
       Facilitator Briefing
     </button>
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-neos-border text-neos-text hover:bg-gray-50 transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Explain the 48-hour cooling off period and why it exists'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Explain the 48-hour cooling off period and why it exists')">
       Cooling Off Period
     </button>
   </div>
   <button type="button" class="text-xs text-neos-primary hover:text-neos-secondary font-medium shrink-0 transition-colors"
-          onclick="document.getElementById('chat-panel').classList.remove('hidden')">
+          onclick="toggleChat()">
     Open Chat &rarr;
   </button>
 </div>
@@ -80,7 +80,7 @@
   <div class="mt-4">
     <button type="button"
             class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Explain the Universal Agreement Field sections in detail'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Explain the Universal Agreement Field sections in detail')">
       Ask AI About UAF
     </button>
   </div>

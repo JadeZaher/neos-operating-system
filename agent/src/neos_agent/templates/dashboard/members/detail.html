@@ -141,7 +141,7 @@
         {% if member.notes %}
         <div class="flex justify-between">
           <span class="text-neos-muted">Notes</span>
-          <span class="text-neos-text">{{ member.notes }}</span>
+          <div class="prose prose-sm max-w-none text-neos-text">{{ member.notes | markdown }}</div>
         </div>
         {% endif %}
       </div>

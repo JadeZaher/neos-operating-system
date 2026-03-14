@@ -14,6 +14,8 @@ Requires-Dist: datastar-py>=0.8
 Requires-Dist: jinja2>=3.1
 Requires-Dist: PyNaCl>=1.5
 Requires-Dist: base58>=2.1
+Requires-Dist: mistune>=3.0
+Requires-Dist: nh3>=0.2
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.24; extra == "dev"

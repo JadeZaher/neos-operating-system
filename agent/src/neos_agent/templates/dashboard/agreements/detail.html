@@ -148,7 +148,7 @@
         <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Text</h2>
       </div>
       <div class="px-6 py-5 prose prose-sm max-w-none text-neos-text leading-relaxed">
-        {{ agreement.text_html | safe if agreement.text_html is defined else agreement.text | default("No content provided.", true) }}
+        {{ agreement.text | markdown if agreement.text else "No content provided." }}
       </div>
     </div>
 

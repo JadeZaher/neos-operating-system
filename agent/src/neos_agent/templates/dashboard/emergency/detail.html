@@ -48,7 +48,7 @@
   {% if state.notes %}
   <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
     <h2 class="font-semibold text-base text-neos-text mb-3">Reason for Declaration</h2>
-    <div class="text-sm text-neos-text whitespace-pre-wrap">{{ state.notes }}</div>
+    <div class="prose prose-sm max-w-none text-neos-text">{{ state.notes | markdown }}</div>
   </div>
   {% endif %}
 
@@ -60,7 +60,7 @@
     </form>
     <button type="button"
             class="px-4 py-2 text-sm font-medium bg-neos-primary text-white rounded-lg hover:bg-neos-secondary transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Help me assess whether this emergency can be resolved safely'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Help me assess whether this emergency can be resolved safely')">
       AI Resolution Assessment
     </button>
   </div>

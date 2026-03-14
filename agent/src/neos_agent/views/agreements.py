@@ -217,9 +217,9 @@ async def edit_form(request: Request, agreement_id: uuid.UUID):
     return html(content)
 
 
-@agreements_bp.put("/<agreement_id:uuid>")
+@agreements_bp.post("/<agreement_id:uuid>")
 async def update_agreement(request: Request, agreement_id: uuid.UUID):
-    """PUT /dashboard/agreements/{agreement_id} -- update agreement."""
+    """POST /dashboard/agreements/{agreement_id} -- update agreement."""
     form = request.form
     try:
         async with request.app.ctx.db() as session:

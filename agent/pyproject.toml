@@ -19,6 +19,8 @@ dependencies = [
     "jinja2>=3.1",
     "PyNaCl>=1.5",
     "base58>=2.1",
+    "mistune>=3.0",
+    "nh3>=0.2",
 ]
 
 [project.optional-dependencies]

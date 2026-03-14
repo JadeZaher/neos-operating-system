@@ -57,7 +57,7 @@
     {% if exit_record.departure_notice %}
     <div class="bg-neos-surface border border-neos-border rounded-xl p-6">
       <h2 class="font-semibold text-base text-neos-text mb-3">Departure Notice</h2>
-      <div class="text-sm text-neos-text whitespace-pre-wrap">{{ exit_record.departure_notice }}</div>
+      <div class="prose prose-sm max-w-none text-neos-text">{{ exit_record.departure_notice | markdown }}</div>
     </div>
     {% endif %}
 
@@ -69,7 +69,7 @@
         <p>Commitment inventory and unwinding status will be displayed here.</p>
         <button type="button"
                 class="mt-3 px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-                onclick="document.getElementById('chat-message-input').value='Help me review the commitment inventory for exit {{ exit_record.id }} and create an unwinding plan'; document.querySelector('#chat-send-form').requestSubmit()">
+                onclick="openChatWithMessage('Help me review the commitment inventory for exit {{ exit_record.id }} and create an unwinding plan')">
           AI-Assisted Unwinding Plan
         </button>
       </div>
@@ -84,7 +84,7 @@
       <p class="text-xs text-neos-muted mb-3">The governance agent can help ensure a smooth, dignified exit process.</p>
       <button type="button"
               class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-              onclick="document.getElementById('chat-message-input').value='Guide me through the exit process for {{ exit_record.id }}'; document.querySelector('#chat-send-form').requestSubmit()">
+              onclick="openChatWithMessage('Guide me through the exit process for {{ exit_record.id }}')">
         Get Exit Guidance
       </button>
     </div>

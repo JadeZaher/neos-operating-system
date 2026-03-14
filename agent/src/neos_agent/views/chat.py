@@ -9,12 +9,15 @@ load, save, prune, cleanup) backed by the agent_sessions table.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime, timedelta
 from html import escape
 from typing import Optional
+
+import httpx
 
 from sanic import Blueprint, Request
 from sanic.response import ResponseStream, json as json_response
@@ -49,11 +52,11 @@ def render_agent_message(text: str, message_id: Optional[str] = None) -> str:
     """
     mid = f' id="{message_id}"' if message_id else ""
     safe = escape(text)
-    safe = safe.replace("\n", "<br>")
+    # No <br> replacement — client-side marked.js handles newlines via markdown
     return (
         f'<div class="flex gap-3 mb-4"{mid}>'
         f'<div class="w-8 h-8 rounded-full bg-neos-primary text-white flex items-center justify-center text-sm font-bold flex-shrink-0">A</div>'
-        f'<div class="flex-1 bg-neos-surface border border-neos-border rounded-lg p-3 text-sm">{safe}</div>'
+        f'<div class="flex-1 bg-neos-surface border border-neos-border rounded-lg p-3 text-sm agent-msg-content">{safe}</div>'
         f"</div>"
     )
 
@@ -387,7 +390,10 @@ async def send_message(request: Request):
             )
 
             settings = request.app.ctx.settings
-            client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            client = anthropic.AsyncAnthropic(
+                api_key=settings.ANTHROPIC_API_KEY,
+                timeout=httpx.Timeout(120.0, connect=10.0),
+            )
 
             # Build messages from session context
             messages = (
@@ -413,39 +419,40 @@ async def send_message(request: Request):
                 final_message = None
                 text_started = False
 
-                async with client.messages.stream(
-                    model=settings.CLAUDE_MODEL,
-                    max_tokens=4096,
-                    system=system_prompt,
-                    messages=api_messages,
-                    tools=tools if tools else anthropic.NOT_GIVEN,
-                ) as msg_stream:
-                    async for event in msg_stream:
-                        if event.type == "content_block_delta":
-                            if hasattr(event.delta, "text"):
-                                if not text_started:
-                                    # Emit an initial agent message placeholder
+                async with asyncio.timeout(90):
+                    async with client.messages.stream(
+                        model=settings.CLAUDE_MODEL,
+                        max_tokens=4096,
+                        system=system_prompt,
+                        messages=api_messages,
+                        tools=tools if tools else anthropic.NOT_GIVEN,
+                    ) as msg_stream:
+                        async for event in msg_stream:
+                            if event.type == "content_block_delta":
+                                if hasattr(event.delta, "text"):
+                                    if not text_started:
+                                        # Emit an initial agent message placeholder
+                                        await emit_chat_event(
+                                            response, "append",
+                                            render_agent_message("", msg_id),
+                                        )
+                                        text_started = True
+                                    turn_text += event.delta.text
+                                    # Morph the specific agent message by ID
+                                    await emit_chat_event(
+                                        response, "morph",
+                                        render_agent_message(turn_text, msg_id),
+                                    )
+                            elif event.type == "content_block_start":
+                                if event.content_block.type == "tool_use":
                                     await emit_chat_event(
                                         response, "append",
-                                        render_agent_message("", msg_id),
+                                        render_tool_indicator(
+                                            event.content_block.name, "running",
+                                        ),
                                     )
-                                    text_started = True
-                                turn_text += event.delta.text
-                                # Morph the specific agent message by ID
-                                await emit_chat_event(
-                                    response, "morph",
-                                    render_agent_message(turn_text, msg_id),
-                                )
-                        elif event.type == "content_block_start":
-                            if event.content_block.type == "tool_use":
-                                await emit_chat_event(
-                                    response, "append",
-                                    render_tool_indicator(
-                                        event.content_block.name, "running",
-                                    ),
-                                )
 
-                    final_message = await msg_stream.get_final_message()
+                        final_message = await msg_stream.get_final_message()
 
                 response_text = turn_text
 
@@ -479,6 +486,9 @@ async def send_message(request: Request):
                     for block in final_message.content:
                         if block.type != "tool_use":
                             continue
+
+                        # SSE keepalive to prevent proxy/browser timeout
+                        await response.write(": keepalive\n\n")
 
                         tool_calls_made.append({"name": block.name})
                         result = await execute_tool(
@@ -561,8 +571,27 @@ async def send_message(request: Request):
             messages.append({"role": "assistant", "content": full_response})
             await save_session(session, messages, request.app)
 
+        except (asyncio.TimeoutError, TimeoutError) as exc:
+            logger.warning("Chat stream timed out: %s", exc)
+            # Remove stale typing/processing indicator
+            await emit_chat_event(
+                response, "morph",
+                '<div id="typing-indicator"></div>',
+            )
+            await emit_chat_event(
+                response, "append",
+                render_system_message(
+                    "error",
+                    "The response took too long. Please try a simpler question or try again.",
+                ),
+            )
         except Exception as exc:
             logger.exception("Chat error: %s", exc)
+            # Remove stale typing/processing indicator
+            await emit_chat_event(
+                response, "morph",
+                '<div id="typing-indicator"></div>',
+            )
             await emit_chat_event(
                 response, "append",
                 render_system_message("error", "An error occurred. Please try again."),

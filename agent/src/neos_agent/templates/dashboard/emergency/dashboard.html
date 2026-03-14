@@ -10,20 +10,20 @@
   </div>
   <div class="flex flex-wrap gap-2 flex-1">
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-red-600 text-white hover:bg-red-700 transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Assess whether current conditions meet the emergency criteria defined in NEOS Principle #10'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Assess whether current conditions meet the emergency criteria defined in NEOS Principle #10')">
       Assess Emergency Criteria
     </button>
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Explain the circuit breaker pattern and auto-reversion timer for emergencies'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Explain the circuit breaker pattern and auto-reversion timer for emergencies')">
       Circuit Breaker Info
     </button>
     <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-white border border-red-200 text-red-700 hover:bg-red-50 transition-colors"
-            onclick="document.getElementById('chat-message-input').value='What are the pre-authorized emergency roles and their powers?'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('What are the pre-authorized emergency roles and their powers?')">
       Emergency Roles
     </button>
   </div>
   <button type="button" class="text-xs text-red-600 hover:text-red-700 font-medium shrink-0 transition-colors"
-          onclick="document.getElementById('chat-panel').classList.remove('hidden')">
+          onclick="toggleChat()">
     Open Chat &rarr;
   </button>
 </div>
@@ -125,7 +125,7 @@
   <div class="mt-3">
     <button type="button"
             class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
-            onclick="document.getElementById('chat-message-input').value='Assess current emergency criteria and check the circuit breaker state'; document.querySelector('#chat-send-form').requestSubmit()">
+            onclick="openChatWithMessage('Assess current emergency criteria and check the circuit breaker state')">
       AI Emergency Assessment
     </button>
   </div>

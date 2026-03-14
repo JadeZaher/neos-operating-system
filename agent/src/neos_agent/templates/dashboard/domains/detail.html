@@ -124,7 +124,7 @@
           <div class="text-xs font-semibold text-neos-muted uppercase tracking-wider mb-1">
             {{ element.element_name | replace('_', ' ') | title }}
           </div>
-          <div class="text-sm text-neos-text whitespace-pre-wrap">{{ element.element_value or '—' }}</div>
+          <div class="prose prose-sm max-w-none text-neos-text">{{ element.element_value | markdown if element.element_value else '—' }}</div>
         </div>
         {% endfor %}
       </div>

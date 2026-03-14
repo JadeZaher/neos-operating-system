@@ -135,8 +135,8 @@
       <div class="px-6 py-4 border-b border-neos-border">
         <h2 class="text-base font-semibold text-neos-text">Proposed Change</h2>
       </div>
-      <div class="px-6 py-5 text-sm text-neos-text leading-relaxed">
-        {{ proposal.proposed_change | default('No proposed change text.') }}
+      <div class="px-6 py-5 prose prose-sm max-w-none text-neos-text leading-relaxed">
+        {{ proposal.proposed_change | markdown if proposal.proposed_change else 'No proposed change text.' }}
       </div>
     </div>
 
@@ -146,8 +146,8 @@
       <div class="px-6 py-4 border-b border-neos-border">
         <h2 class="text-base font-semibold text-neos-text">Rationale</h2>
       </div>
-      <div class="px-6 py-5 text-sm text-neos-text leading-relaxed">
-        {{ proposal.rationale }}
+      <div class="px-6 py-5 prose prose-sm max-w-none text-neos-text leading-relaxed">
+        {{ proposal.rationale | markdown }}
       </div>
     </div>
     {% endif %}
