@@ -27,14 +27,27 @@
     <h1 class="text-2xl font-bold text-neos-text">{{ member.display_name }}</h1>
     <p class="text-sm text-neos-muted mt-1">{{ member.member_id }}</p>
   </div>
-  {% if current_user and current_user.id == member.id %}
-  <a
-    href="/dashboard/members/{{ member.id }}/edit"
-    class="inline-flex items-center px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors shrink-0"
-  >
-    Edit Profile
-  </a>
-  {% endif %}
+  <div class="flex items-center gap-2 shrink-0">
+    {% if current_user and current_user.id != member.id %}
+    <a
+      href="/messaging?dm={{ member.id }}"
+      class="inline-flex items-center gap-1.5 px-4 py-2 bg-neos-primary text-white text-sm font-medium rounded-lg hover:bg-neos-secondary transition-colors"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+      </svg>
+      Message
+    </a>
+    {% endif %}
+    {% if current_user and current_user.id == member.id %}
+    <a
+      href="/dashboard/members/{{ member.id }}/edit"
+      class="inline-flex items-center px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-neos-surface-alt transition-colors"
+    >
+      Edit Profile
+    </a>
+    {% endif %}
+  </div>
 </div>
 
 {# Metadata Bar #}
@@ -65,7 +78,10 @@
   {% endif %}
 </div>
 
-{# Onboarding Stepper #}
+{# Onboarding Section — interactive checklist for own profile, read-only stepper for others #}
+{% if is_own_profile is defined and is_own_profile and onboarding is defined and onboarding and onboarding.completion_percentage is defined and onboarding.completion_percentage < 100 %}
+  {% include "dashboard/members/_onboarding_checklist.html" %}
+{% else %}
 {% set onboarding_stages = ['orientation', 'discovery', 'integration', 'active'] %}
 {% set current_stage = member.onboarding_status | default('orientation') %}
 <div class="bg-neos-surface border border-neos-border rounded-xl mb-6">
@@ -105,6 +121,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 {# Main Content + Sidebar #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -207,7 +224,7 @@
       <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm" aria-label="Role assignments">
           <thead>
-            <tr class="border-b border-neos-border bg-gray-50">
+            <tr class="border-b border-neos-border bg-neos-surface-alt">
               <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Role</th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Domain</th>
               <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Since</th>
@@ -215,7 +232,7 @@
           </thead>
           <tbody class="divide-y divide-neos-border">
             {% for role in role_assignments %}
-            <tr class="hover:bg-gray-50 transition-colors">
+            <tr class="hover:bg-neos-surface-alt transition-colors">
               <td class="px-4 py-3 font-medium text-neos-text">{{ role.name }}</td>
               <td class="px-4 py-3">
                 {% if role.domain_id %}

@@ -114,72 +114,29 @@ This plan is divided into 6 phases, progressing from data model foundations thro
 
 **Tasks:**
 
-- [ ] Task 4.1: Create messaging template directory and layout
-  - Create directory: `agent/src/neos_agent/templates/messaging/`
-  - Create `messaging/index.html` -- extends base.html, two-panel layout:
-    - Left panel (w-80, border-r): conversation list container with search bar and "New Message" button
-    - Right panel (flex-1): active conversation or empty state
-    - Mobile responsive: stacked layout with navigation
-  - Set `{% block active_page %}messaging{% endblock %}`
-  - Set appropriate breadcrumb block
+- [x] Task 4.1: Create messaging template directory and layout
+  - Created `messaging/index.html` -- extends base.html, two-panel layout with WebSocket JS
 
-- [ ] Task 4.2: Create conversation list partial
-  - Create `messaging/conversation_list.html` -- htmx partial
-  - Each conversation row shows:
-    - Avatar(s) -- first letter of display_name for DMs, group icon for groups
-    - Conversation title (DM: other member's name; Group: title)
-    - Last message preview (truncated to 60 chars)
-    - Timestamp of last message (relative: "2m ago", "1h ago", "Yesterday")
-    - Unread badge (count > 0)
-  - Clicking a conversation uses htmx `hx-get` to load conversation detail into the right panel
-  - "New Message" button opens member picker modal
+- [x] Task 4.2: Create conversation list partial
+  - Created `messaging/conversation_list.html` -- htmx partial with avatars, unread badges, last message preview
 
-- [ ] Task 4.3: Create conversation detail partial
-  - Create `messaging/conversation_detail.html` -- htmx partial
-  - Header bar with conversation title, participant avatars, settings dropdown (for groups: add/remove members, leave)
-  - If governance-linked: banner showing linked entity type and title with link to entity page
-  - Message list container (scrollable, newest at bottom)
-  - Each message shows: sender avatar, sender name, message content, timestamp, edited indicator
-  - System messages shown as centered, muted text
-  - Deleted messages show "This message was deleted" in italic
-  - Message input area at bottom: textarea with Shift+Enter for newline, Enter to send (or send button)
-  - Typing indicator area below messages
+- [x] Task 4.3: Create conversation detail partial
+  - Created `messaging/conversation_detail.html` -- header, messages, governance link banners, typing indicator, input area
 
-- [ ] Task 4.4: Create message list partial (for pagination)
-  - Create `messaging/message_list.html` -- htmx partial for older messages
-  - Used by scroll-up infinite scroll: `hx-get` triggered by scroll sentinel at top
-  - Returns a batch of older messages
-  - Includes `hx-swap="afterbegin"` to prepend to message container
+- [x] Task 4.4: Create message list partial (for pagination)
+  - Created `messaging/message_list.html` -- supports system, deleted, governance_link, and regular messages
 
-- [ ] Task 4.5: Create member picker partial
-  - Create `messaging/member_picker.html` -- htmx partial
-  - Search input with `hx-get="/messaging/members?q=..."` for live filtering
-  - List of members with checkboxes (for group) or click-to-select (for DM)
-  - Each member shows avatar, display_name, profile type, status badge
-  - Only shows members from current ecosystem(s) with status "active"
-  - Submit button creates the conversation via `hx-post`
+- [x] Task 4.5: Create member picker partial
+  - Created `messaging/member_picker.html` -- member list with avatars, profile types, status badges
 
-- [ ] Task 4.6: Update base.html with Messages nav link and unread badge
-  - Add "Messages" link to sidebar navigation in `agent/src/neos_agent/templates/base.html`
-  - Place it in a new "Communication" section between "Processes" and "Lifecycle"
-  - Include unread count badge (loaded via htmx polling or WebSocket update)
-  - Chat icon (speech bubble) next to "Messages" text
+- [x] Task 4.6: Update base.html with Messages nav link and unread badge
+  - Added "Communication" section with Messages link and htmx-polled unread badge (every 30s)
 
-- [ ] Task 4.7: Add "Message" button to member profile detail page
-  - Update `agent/src/neos_agent/templates/dashboard/members/detail.html`
-  - Add "Message" button next to member name (only visible when viewing another member's profile)
-  - Button links to `/messaging?dm={member_id}` which auto-creates/opens a DM
+- [x] Task 4.7: Add "Message" button to member profile detail page
+  - Added "Message" button to member detail page, links to `/messaging?dm={member_id}`
 
-- [ ] Task 4.8: WebSocket client JavaScript
-  - Add JavaScript to `messaging/index.html` (inline in scripts block):
-  - WebSocket connection management (connect, reconnect with exponential backoff)
-  - Message send via WebSocket `{"type": "message", "data": {"conversation_id": "...", "content": "..."}}`
-  - Receive handler: append new message to DOM, update conversation list order, update unread counts
-  - Typing indicator: debounced typing event on keypress (every 3 seconds max)
-  - Read receipt: send when conversation becomes visible
-  - Enter to send, Shift+Enter for newline
-  - Auto-scroll to newest message on new message arrival
-  - Scroll-up detection for loading older messages via htmx
+- [x] Task 4.8: WebSocket client JavaScript
+  - Included in index.html: connect/reconnect, send, typing, read receipts, message append, auto-scroll
 
 - [ ] Verification: Full UI works in browser -- create DM, send messages, see real-time delivery, conversation list updates, unread badges show correctly [checkpoint marker]
 

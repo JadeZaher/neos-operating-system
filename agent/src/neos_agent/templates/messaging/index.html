@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}Messages{% endblock %}
+{% block active_page %}messaging{% endblock %}
+
+{% block breadcrumb %}
+  <span aria-hidden="true">/</span>
+  <span class="font-medium text-neos-text">Messages</span>
+{% endblock %}
+
+{% block ai_actions %}{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-10rem)] -m-4 lg:-m-6 bg-neos-surface rounded-xl border border-neos-border overflow-hidden">
+  {# Left panel: Conversation list #}
+  <div id="conversation-panel" class="w-full md:w-80 border-r border-neos-border flex flex-col bg-neos-surface shrink-0">
+    {# Header with search and new message #}
+    <div class="px-4 py-3 border-b border-neos-border">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-neos-text">Messages</h2>
+        <button
+          type="button"
+          onclick="document.getElementById('member-picker-modal').classList.remove('hidden')"
+          class="p-2 rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+          title="New message"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+          </svg>
+        </button>
+      </div>
+      <input
+        type="text"
+        placeholder="Search conversations..."
+        class="w-full px-3 py-2 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+        hx-get="/messaging/search"
+        hx-trigger="keyup changed delay:300ms"
+        hx-target="#search-results"
+        name="q"
+      >
+    </div>
+
+    {# Search results (hidden by default) #}
+    <div id="search-results" class="hidden"></div>
+
+    {# Conversation list #}
+    <div
+      id="conversation-list"
+      class="flex-1 overflow-y-auto"
+      hx-get="/messaging/conversations"
+      hx-trigger="load"
+      hx-target="#conversation-list"
+    >
+      <div class="flex items-center justify-center h-32 text-neos-muted text-sm">Loading...</div>
+    </div>
+  </div>
+
+  {# Right panel: Active conversation or empty state #}
+  <div id="conversation-detail" class="hidden md:flex flex-1 flex-col">
+    <div class="flex-1 flex items-center justify-center text-neos-muted">
+      <div class="text-center">
+        <svg class="w-16 h-16 mx-auto mb-4 text-neos-border" fill="none" stroke="currentColor" stroke-width="1" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+        </svg>
+        <p class="text-lg font-medium mb-1">No conversation selected</p>
+        <p class="text-sm">Choose a conversation or start a new one</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Member picker modal #}
+<div id="member-picker-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  <div class="bg-neos-surface rounded-xl border border-neos-border shadow-xl w-full max-w-md mx-4">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-neos-border">
+      <h3 class="font-semibold text-neos-text">New Message</h3>
+      <button type="button" onclick="document.getElementById('member-picker-modal').classList.add('hidden')" class="text-neos-muted hover:text-neos-text">&times;</button>
+    </div>
+
+    <div class="p-4">
+      {# Conversation type selector #}
+      <div class="flex gap-2 mb-4">
+        <button type="button" id="dm-tab" onclick="setConvType('dm')" class="px-3 py-1.5 text-sm rounded-lg bg-neos-primary text-white">Direct Message</button>
+        <button type="button" id="group-tab" onclick="setConvType('group')" class="px-3 py-1.5 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text hover:bg-neos-surface-alt">Group Chat</button>
+      </div>
+
+      {# Group title (hidden for DM) #}
+      <div id="group-title-field" class="hidden mb-3">
+        <input type="text" id="group-title" placeholder="Group name" class="w-full px-3 py-2 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent">
+      </div>
+
+      {# Member search #}
+      <input
+        type="text"
+        placeholder="Search members..."
+        class="w-full px-3 py-2 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent mb-3"
+        hx-get="/messaging/members"
+        hx-trigger="load, keyup changed delay:300ms"
+        hx-target="#member-list"
+        name="q"
+      >
+
+      {# Member list #}
+      <div id="member-list" class="max-h-60 overflow-y-auto"></div>
+
+      {# Selected members display #}
+      <div id="selected-members" class="flex flex-wrap gap-1 mt-3"></div>
+
+      {# Create button #}
+      <button
+        type="button"
+        id="create-convo-btn"
+        onclick="createConversation()"
+        class="w-full mt-4 px-4 py-2 text-sm font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+      >
+        Start Conversation
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---- State ----
+let convType = 'dm';
+let selectedMembers = [];
+let wsConnection = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 5;
+const activeConversationId = {{ auto_conversation_id | tojson if auto_conversation_id else 'null' }};
+
+// ---- WebSocket ----
+function connectWebSocket() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsConnection = new WebSocket(`${protocol}//${location.host}/messaging/ws`);
+
+  wsConnection.onopen = function() {
+    reconnectAttempts = 0;
+  };
+
+  wsConnection.onmessage = function(event) {
+    const msg = JSON.parse(event.data);
+    handleWsMessage(msg);
+  };
+
+  wsConnection.onclose = function() {
+    if (reconnectAttempts < MAX_RECONNECT) {
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      setTimeout(connectWebSocket, delay);
+    }
+  };
+}
+
+function handleWsMessage(msg) {
+  if (msg.type === 'message') {
+    // Append message to current conversation if it matches
+    const detail = document.getElementById('conversation-detail');
+    const currentId = detail ? detail.dataset.conversationId : null;
+    if (currentId === msg.data.conversation_id) {
+      appendMessage(msg.data);
+      // Mark as read
+      fetch(`/messaging/conversations/${currentId}/read`, { method: 'POST' });
+    }
+    // Refresh conversation list to update order and unread counts
+    htmx.trigger('#conversation-list', 'refresh');
+  } else if (msg.type === 'typing') {
+    showTypingIndicator(msg.data);
+  } else if (msg.type === 'message_deleted') {
+    const el = document.getElementById(`msg-${msg.data.id}`);
+    if (el) el.innerHTML = '<p class="text-gray-400 italic text-sm">This message was deleted</p>';
+  } else if (msg.type === 'message_edited') {
+    const el = document.getElementById(`msg-${msg.data.id}`);
+    if (el) {
+      const contentEl = el.querySelector('.msg-content');
+      if (contentEl) contentEl.textContent = msg.data.content;
+      const editedEl = el.querySelector('.msg-edited');
+      if (editedEl) editedEl.classList.remove('hidden');
+    }
+  }
+}
+
+function appendMessage(data) {
+  const container = document.getElementById('message-container');
+  if (!container) return;
+  const isOwn = data.sender_id === '{{ current_user.id if current_user else "" }}';
+  const time = new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const initial = (data.sender_name || '?')[0].toUpperCase();
+
+  const html = `
+    <div id="msg-${data.id}" class="flex gap-3 ${isOwn ? 'flex-row-reverse' : ''}">
+      <div class="w-8 h-8 rounded-full bg-neos-accent/20 text-neos-primary flex items-center justify-center text-sm font-bold shrink-0">${initial}</div>
+      <div class="max-w-[70%]">
+        <div class="flex items-baseline gap-2 ${isOwn ? 'flex-row-reverse' : ''} mb-0.5">
+          <span class="text-xs font-medium text-neos-text">${data.sender_name}</span>
+          <span class="text-xs text-neos-muted">${time}</span>
+        </div>
+        <div class="${isOwn ? 'bg-neos-primary text-white' : 'bg-neos-bg text-neos-text'} rounded-2xl px-4 py-2 text-sm">
+          <span class="msg-content">${escapeHtml(data.content)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+  container.insertAdjacentHTML('beforeend', html);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTypingIndicator(data) {
+  const el = document.getElementById('typing-indicator');
+  if (!el) return;
+  el.textContent = `${data.member_name} is typing...`;
+  el.classList.remove('hidden');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ---- Message sending ----
+function sendMessage(conversationId) {
+  const input = document.getElementById('message-input');
+  const content = input.value.trim();
+  if (!content) return;
+
+  if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+    wsConnection.send(JSON.stringify({
+      type: 'message',
+      data: { conversation_id: conversationId, content: content }
+    }));
+    input.value = '';
+  }
+}
+
+// ---- Typing indicator ----
+let lastTypingSent = 0;
+function sendTyping(conversationId) {
+  const now = Date.now();
+  if (now - lastTypingSent < 3000) return;
+  lastTypingSent = now;
+  if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+    wsConnection.send(JSON.stringify({
+      type: 'typing',
+      data: { conversation_id: conversationId }
+    }));
+  }
+}
+
+// ---- Conversation type ----
+function setConvType(type) {
+  convType = type;
+  selectedMembers = [];
+  document.getElementById('selected-members').innerHTML = '';
+  document.getElementById('group-title-field').classList.toggle('hidden', type === 'dm');
+  document.getElementById('dm-tab').className = type === 'dm'
+    ? 'px-3 py-1.5 text-sm rounded-lg bg-neos-primary text-white'
+    : 'px-3 py-1.5 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text hover:bg-neos-surface-alt';
+  document.getElementById('group-tab').className = type === 'group'
+    ? 'px-3 py-1.5 text-sm rounded-lg bg-neos-primary text-white'
+    : 'px-3 py-1.5 text-sm rounded-lg bg-neos-bg border border-neos-border text-neos-text hover:bg-neos-surface-alt';
+}
+
+function toggleMember(id, name) {
+  if (convType === 'dm') {
+    selectedMembers = [{ id, name }];
+  } else {
+    const idx = selectedMembers.findIndex(m => m.id === id);
+    if (idx >= 0) selectedMembers.splice(idx, 1);
+    else selectedMembers.push({ id, name });
+  }
+  renderSelectedMembers();
+}
+
+function renderSelectedMembers() {
+  const el = document.getElementById('selected-members');
+  el.innerHTML = selectedMembers.map(m =>
+    `<span class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-neos-accent/15 text-neos-primary">
+      ${escapeHtml(m.name)}
+      <button type="button" onclick="toggleMember('${m.id}', '${escapeHtml(m.name)}')" class="hover:text-red-500">&times;</button>
+    </span>`
+  ).join('');
+}
+
+function createConversation() {
+  if (selectedMembers.length === 0) return;
+
+  const body = {
+    type: convType,
+    member_ids: selectedMembers.map(m => m.id),
+  };
+  if (convType === 'group') {
+    body.title = document.getElementById('group-title').value.trim() || 'New Group';
+  }
+
+  fetch('/messaging/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  .then(r => r.text())
+  .then(html => {
+    document.getElementById('member-picker-modal').classList.add('hidden');
+    document.getElementById('conversation-detail').innerHTML = html;
+    document.getElementById('conversation-detail').classList.remove('hidden');
+    // Refresh conversation list
+    htmx.trigger('#conversation-list', 'load');
+    selectedMembers = [];
+    renderSelectedMembers();
+  });
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', function() {
+  connectWebSocket();
+
+  // Auto-open conversation if specified
+  if (activeConversationId) {
+    fetch(`/messaging/conversations/${activeConversationId}`)
+      .then(r => r.text())
+      .then(html => {
+        const detail = document.getElementById('conversation-detail');
+        detail.innerHTML = html;
+        detail.classList.remove('hidden');
+        detail.dataset.conversationId = activeConversationId;
+      });
+  }
+
+  // Handle htmx conversation list refresh
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'conversation-list') {
+      // Re-highlight active conversation if any
+    }
+  });
+});
+
+// Make functions available to htmx-loaded content
+window.sendMessage = sendMessage;
+window.sendTyping = sendTyping;
+window.toggleMember = toggleMember;
+</script>
+{% endblock %}
