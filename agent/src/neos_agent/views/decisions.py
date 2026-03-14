@@ -118,7 +118,17 @@ async def browse_decisions(request: Request):
 @decisions_bp.get("/search")
 async def search_view(request: Request):
     """GET /dashboard/decisions/search -- render search page."""
-    content = await render("dashboard/decisions/list.html", request=request, decisions=[], total=0, search_mode=True)
+    offset, limit = parse_pagination(request)
+    content = await render(
+        "dashboard/decisions/list.html",
+        request=request,
+        decisions=[],
+        total=0,
+        offset=offset,
+        limit=limit,
+        filters={},
+        search_mode=True,
+    )
     return html(content)
 
 
