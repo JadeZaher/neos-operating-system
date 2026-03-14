@@ -61,7 +61,7 @@ Build the foundation of the NEOS governance webservice: Sanic app factory, skill
 
 ---
 
-### 16. [~] chat_messaging_20260313 -- Chat & Direct Messaging System
+### 16. [x] chat_messaging_20260313 -- Chat & Direct Messaging System
 **Priority:** P1
 **Type:** feature
 **Status:** Planned
