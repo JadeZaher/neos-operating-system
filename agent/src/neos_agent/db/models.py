@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 async ORM models for the NEOS governance database.
 
-33 tables organized by section:
+37 tables organized by section:
 - Core (7): ecosystems, members, member_onboarding, member_status_transitions,
   domains, domain_elements, domain_metrics
 - Agreements (4): agreements, agreement_ratification_records, amendment_records,
@@ -16,6 +16,8 @@
 - Emergency (1): emergency_states
 - Exit & Portability (1): exit_records
 - Auth (2): auth_sessions, auth_challenges
+- Messaging (4): conversations, conversation_participants, messages,
+  conversation_links
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -718,12 +721,17 @@ class ExitRecord(TimestampMixin, Base):
 
 class AgentSession(TimestampMixin, Base):
     __tablename__ = "agent_sessions"
-    __table_args__ = (Index("ix_agent_sessions_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_agent_sessions_ecosystem_id", "ecosystem_id"),
+        Index("ix_agent_sessions_member_history", "member_id", "updated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
     member_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), ForeignKey("members.id"), nullable=True)
     skill_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
@@ -759,3 +767,87 @@ class AuthChallenge(TimestampMixin, Base):
     challenge: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+# ========================
+# MESSAGING (4 models)
+# ========================
+
+class Conversation(TimestampMixin, Base):
+    """An ecosystem-scoped conversation thread (DM or group)."""
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_ecosystem_id", "ecosystem_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # "dm" | "group"
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+
+    # Relationships
+    participants: Mapped[list["ConversationParticipant"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+    links: Mapped[list["ConversationLink"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+
+class ConversationParticipant(TimestampMixin, Base):
+    """Links a member to a conversation with a role and read tracking."""
+    __tablename__ = "conversation_participants"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "member_id", name="uq_conversation_member"),
+        Index("ix_conversation_participants_member_id", "member_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("conversations.id"), nullable=False)
+    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="member")  # "owner" | "admin" | "member"
+    joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    last_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    muted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Relationships
+    conversation: Mapped["Conversation"] = relationship(back_populates="participants")
+
+
+class Message(TimestampMixin, Base):
+    """A single message within a conversation."""
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("conversations.id"), nullable=False)
+    sender_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(20), nullable=False, default="text")  # "text" | "system" | "governance_link"
+    message_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
+    edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+
+
+class ConversationLink(TimestampMixin, Base):
+    """Links a conversation to a governance entity (proposal, agreement, etc.)."""
+    __tablename__ = "conversation_links"
+    __table_args__ = (
+        Index("ix_conversation_links_entity", "entity_type", "entity_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("conversations.id"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "proposal" | "agreement" | "domain" | "conflict" | "decision"
+    entity_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+
+    # Relationships
+    conversation: Mapped["Conversation"] = relationship(back_populates="links")
