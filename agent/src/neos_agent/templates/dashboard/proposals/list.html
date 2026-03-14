@@ -25,7 +25,7 @@
 </div>
 
 {# Filter Bar #}
-<div class="bg-neos-surface border border-neos-border rounded-xl p-4 mb-6 flex flex-wrap items-center gap-3">
+<div class="bg-neos-surface border border-neos-border rounded-xl p-4 mb-6 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
   <form id="filter-form" method="get" action="/dashboard/proposals" class="contents">
     <div class="relative flex-1 min-w-44">
       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-neos-muted pointer-events-none" aria-hidden="true">&#128269;</span>
@@ -135,87 +135,139 @@
 </div>
 
 {# Proposals Table #}
-<div id="proposals-list-container" class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm" aria-label="Proposals list">
-      <thead>
-        <tr class="border-b border-neos-border bg-neos-bg">
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Title</th>
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Phase</th>
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Type</th>
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Proposer</th>
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Domain</th>
-          <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Urgency</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-neos-border">
-        {% for proposal in proposals %}
-        <tr
-          class="hover:bg-neos-bg transition-colors cursor-pointer"
-          onclick="window.location.href = '/dashboard/proposals/{{ proposal.id }}'"
-        >
-          <td class="px-4 py-3">
-            <a
-              href="/dashboard/proposals/{{ proposal.id }}"
-              class="font-semibold text-neos-text hover:text-neos-primary transition-colors"
-            >{{ proposal.title }}</a>
-            {% if proposal.proposal_id %}
-            <div class="text-xs text-neos-muted mt-0.5">{{ proposal.proposal_id }}</div>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3">
-            {% set phase = proposal.status | default('draft') %}
-            {% set status_colors = {
-              'draft': 'bg-gray-100 text-gray-600',
-              'advice': 'bg-blue-100 text-blue-700',
-              'consent': 'bg-yellow-100 text-yellow-700',
-              'test': 'bg-purple-100 text-purple-700',
-              'ratified': 'bg-green-100 text-green-700',
-              'archived': 'bg-gray-100 text-gray-400',
-            } %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ status_colors.get(phase, 'bg-gray-100 text-gray-600') }}">{{ phase }}</span>
-          </td>
-          <td class="px-4 py-3">
-            {% if proposal.type %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ proposal.type }}</span>
-            {% else %}
-            <span class="text-neos-muted">—</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3 text-neos-text">{{ proposal.proposer | default('—') }}</td>
-          <td class="px-4 py-3 text-neos-muted">{{ proposal.affected_domain | default('—') }}</td>
-          <td class="px-4 py-3">
-            {% set urgency = proposal.urgency | default('') %}
-            {% if urgency %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-              {%- if urgency == 'emergency' %} bg-red-100 text-red-700
-              {%- elif urgency == 'elevated' %} bg-orange-100 text-orange-700
-              {%- else %} bg-gray-100 text-gray-600
-              {%- endif %}">{{ urgency }}</span>
-            {% else %}
-            <span class="text-neos-muted">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6" class="px-4 py-20 text-center">
-            <div class="flex flex-col items-center gap-3 max-w-xs mx-auto">
-              <span class="text-5xl text-neos-border" aria-hidden="true">&#9998;</span>
-              <p class="font-semibold text-neos-text">No proposals found</p>
-              <p class="text-sm text-neos-muted">Try adjusting your filters or create a new proposal.</p>
+<div id="proposals-list-container">
+  {# Desktop table — hidden on mobile #}
+  <div class="hidden sm:block bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" aria-label="Proposals list">
+        <thead>
+          <tr class="border-b border-neos-border bg-neos-bg">
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Title</th>
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Phase</th>
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Type</th>
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Proposer</th>
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Domain</th>
+            <th scope="col" class="text-left px-4 py-3 font-semibold text-neos-text">Urgency</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-neos-border">
+          {% for proposal in proposals %}
+          <tr
+            class="hover:bg-neos-bg transition-colors cursor-pointer"
+            onclick="window.location.href = '/dashboard/proposals/{{ proposal.id }}'"
+          >
+            <td class="px-4 py-3">
               <a
-                href="/dashboard/proposals/new"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors"
-              >
-                &#43; New Proposal
-              </a>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+                href="/dashboard/proposals/{{ proposal.id }}"
+                class="font-semibold text-neos-text hover:text-neos-primary transition-colors"
+              >{{ proposal.title }}</a>
+              {% if proposal.proposal_id %}
+              <div class="text-xs text-neos-muted mt-0.5">{{ proposal.proposal_id }}</div>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% set phase = proposal.status | default('draft') %}
+              {% set status_colors = {
+                'draft': 'bg-gray-100 text-gray-600',
+                'advice': 'bg-blue-100 text-blue-700',
+                'consent': 'bg-yellow-100 text-yellow-700',
+                'test': 'bg-purple-100 text-purple-700',
+                'ratified': 'bg-green-100 text-green-700',
+                'archived': 'bg-gray-100 text-gray-400',
+              } %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ status_colors.get(phase, 'bg-gray-100 text-gray-600') }}">{{ phase }}</span>
+            </td>
+            <td class="px-4 py-3">
+              {% if proposal.type %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ proposal.type }}</span>
+              {% else %}
+              <span class="text-neos-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-neos-text">{{ proposal.proposer | default('—') }}</td>
+            <td class="px-4 py-3 text-neos-muted">{{ proposal.affected_domain | default('—') }}</td>
+            <td class="px-4 py-3">
+              {% set urgency = proposal.urgency | default('') %}
+              {% if urgency %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                {%- if urgency == 'emergency' %} bg-red-100 text-red-700
+                {%- elif urgency == 'elevated' %} bg-orange-100 text-orange-700
+                {%- else %} bg-gray-100 text-gray-600
+                {%- endif %}">{{ urgency }}</span>
+              {% else %}
+              <span class="text-neos-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-4 py-20 text-center">
+              <div class="flex flex-col items-center gap-3 max-w-xs mx-auto">
+                <span class="text-5xl text-neos-border" aria-hidden="true">&#9998;</span>
+                <p class="font-semibold text-neos-text">No proposals found</p>
+                <p class="text-sm text-neos-muted">Try adjusting your filters or create a new proposal.</p>
+                <a
+                  href="/dashboard/proposals/new"
+                  class="inline-flex items-center gap-2 px-4 py-2 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors"
+                >
+                  &#43; New Proposal
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Mobile card layout #}
+  <div class="sm:hidden space-y-3">
+    {% for proposal in proposals %}
+    <a href="/dashboard/proposals/{{ proposal.id }}" class="block bg-neos-surface border border-neos-border rounded-xl p-4 hover:border-neos-accent transition-colors">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div class="min-w-0">
+          <h3 class="font-semibold text-neos-text text-sm">{{ proposal.title }}</h3>
+          {% if proposal.proposal_id %}
+          <p class="text-xs text-neos-muted mt-0.5">{{ proposal.proposal_id }}</p>
+          {% endif %}
+        </div>
+        {% set phase = proposal.status | default('draft') %}
+        {% set status_colors = {
+          'draft': 'bg-gray-100 text-gray-600',
+          'advice': 'bg-blue-100 text-blue-700',
+          'consent': 'bg-yellow-100 text-yellow-700',
+          'test': 'bg-purple-100 text-purple-700',
+          'ratified': 'bg-green-100 text-green-700',
+          'archived': 'bg-gray-100 text-gray-400',
+        } %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0 {{ status_colors.get(phase, 'bg-gray-100 text-gray-600') }}">{{ phase }}</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-neos-muted">
+        {% if proposal.type %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded bg-neos-bg text-neos-text border border-neos-border">{{ proposal.type }}</span>
+        {% endif %}
+        <span>{{ proposal.proposer | default('—') }}</span>
+        {% set urgency = proposal.urgency | default('') %}
+        {% if urgency %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full font-medium
+          {%- if urgency == 'emergency' %} bg-red-100 text-red-700
+          {%- elif urgency == 'elevated' %} bg-orange-100 text-orange-700
+          {%- else %} bg-gray-100 text-gray-600
+          {%- endif %}">{{ urgency }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% else %}
+    <div class="flex flex-col items-center gap-3 py-20 text-center">
+      <span class="text-5xl text-neos-border" aria-hidden="true">&#9998;</span>
+      <p class="font-semibold text-neos-text">No proposals found</p>
+      <p class="text-sm text-neos-muted">Try adjusting your filters or create a new proposal.</p>
+      <a href="/dashboard/proposals/new" class="inline-flex items-center gap-2 px-4 py-2 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors">
+        &#43; New Proposal
+      </a>
+    </div>
+    {% endfor %}
   </div>
 </div>
 

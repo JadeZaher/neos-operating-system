@@ -85,7 +85,7 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
   {# ---- Main column (spans 2/3) ---- #}
-  <div class="lg:col-span-2 space-y-6">
+  <div class="lg:sm:col-span-2 space-y-6">
 
     {# Detail card #}
     <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
@@ -93,21 +93,21 @@
         <h2 class="text-sm font-semibold text-neos-text uppercase tracking-wider">Agreement Details</h2>
       </div>
       <dl class="divide-y divide-neos-border">
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Agreement ID</dt>
-          <dd class="text-sm text-neos-text col-span-2 font-mono">{{ agreement.agreement_id or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2 font-mono">{{ agreement.agreement_id or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Type</dt>
-          <dd class="text-sm text-neos-text col-span-2">
+          <dd class="text-sm text-neos-text sm:col-span-2">
             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 capitalize">
               {{ agreement.type | replace('_', ' ') if agreement.type else '—' }}
             </span>
           </dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Domain</dt>
-          <dd class="text-sm col-span-2">
+          <dd class="text-sm sm:col-span-2">
             {% if agreement.domain %}
               <a href="/dashboard/domains?search={{ agreement.domain }}" class="text-neos-primary hover:underline">{{ agreement.domain }}</a>
             {% else %}
@@ -115,29 +115,29 @@
             {% endif %}
           </dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Hierarchy Level</dt>
-          <dd class="text-sm text-neos-text col-span-2 capitalize">{{ agreement.hierarchy_level or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2 capitalize">{{ agreement.hierarchy_level or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Proposer</dt>
-          <dd class="text-sm text-neos-text col-span-2">{{ agreement.proposer or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2">{{ agreement.proposer or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Created</dt>
-          <dd class="text-sm text-neos-text col-span-2">{{ agreement.created_date or agreement.created_at or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2">{{ agreement.created_date or agreement.created_at or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Review Date</dt>
-          <dd class="text-sm text-neos-text col-span-2">{{ agreement.review_date or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2">{{ agreement.review_date or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Sunset Date</dt>
-          <dd class="text-sm text-neos-text col-span-2">{{ agreement.sunset_date or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2">{{ agreement.sunset_date or '—' }}</dd>
         </div>
-        <div class="px-6 py-3 grid grid-cols-3 gap-4">
+        <div class="px-6 py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4">
           <dt class="text-sm font-medium text-neos-muted">Ratification Date</dt>
-          <dd class="text-sm text-neos-text col-span-2">{{ agreement.ratification_date or '—' }}</dd>
+          <dd class="text-sm text-neos-text sm:col-span-2">{{ agreement.ratification_date or '—' }}</dd>
         </div>
       </dl>
     </div>

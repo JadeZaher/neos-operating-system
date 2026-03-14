@@ -75,8 +75,8 @@
     <span class="text-sm text-neos-muted">{{ member.onboarding.completion_percentage }}% complete</span>
     {% endif %}
   </div>
-  <div class="px-6 py-5">
-    <div class="flex items-center gap-0" role="list" aria-label="Onboarding stages">
+  <div class="px-6 py-5 overflow-x-auto">
+    <div class="flex items-center gap-0 min-w-0" role="list" aria-label="Onboarding stages">
       {% for stage in onboarding_stages %}
       {% set idx = loop.index0 %}
       {% set current_idx = onboarding_stages.index(current_stage) if current_stage in onboarding_stages else 0 %}
@@ -89,13 +89,13 @@
             {%- endif %}">
             {% if idx < current_idx %}&#10003;{% else %}{{ loop.index }}{% endif %}
           </div>
-          <span class="text-xs mt-1
+          <span class="hidden sm:inline text-xs mt-1
             {%- if idx <= current_idx %} text-neos-text font-medium
             {%- else %} text-neos-muted
             {%- endif %}">{{ stage | capitalize }}</span>
         </div>
         {% if not loop.last %}
-        <div class="flex-1 h-0.5 mx-2 mt-[-0.75rem]
+        <div class="flex-1 h-0.5 mx-2 sm:mt-[-0.75rem]
           {%- if idx < current_idx %} bg-neos-accent
           {%- else %} bg-gray-200
           {%- endif %}"></div>
@@ -203,7 +203,8 @@
       <div class="px-6 py-4 border-b border-neos-border">
         <h2 class="text-base font-semibold text-neos-text">Role Assignments</h2>
       </div>
-      <div class="overflow-x-auto">
+      {# Desktop table #}
+      <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm" aria-label="Role assignments">
           <thead>
             <tr class="border-b border-neos-border bg-gray-50">
@@ -228,6 +229,20 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+      {# Mobile card list #}
+      <div class="sm:hidden divide-y divide-neos-border">
+        {% for role in role_assignments %}
+        <div class="px-5 py-3">
+          <div class="font-medium text-sm text-neos-text">{{ role.name }}</div>
+          <div class="flex items-center gap-3 text-xs text-neos-muted mt-1">
+            {% if role.domain_id %}
+            <a href="/dashboard/domains/{{ role.domain_id }}" class="text-neos-primary hover:underline">{{ role.domain_name | default(role.domain_id) }}</a>
+            {% endif %}
+            <span>{{ role.since | default('—') }}</span>
+          </div>
+        </div>
+        {% endfor %}
       </div>
     </div>
     {% endif %}

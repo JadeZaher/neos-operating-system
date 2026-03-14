@@ -26,7 +26,7 @@
     <h1 class="text-2xl font-bold text-neos-text">{{ proposal.title }}</h1>
     <p class="text-sm text-neos-muted mt-1">{{ proposal.proposal_id }} &middot; v{{ proposal.version }}</p>
   </div>
-  <div class="flex items-center gap-2 flex-wrap shrink-0">
+  <div class="flex items-center gap-2 flex-wrap">
     <a href="/dashboard/proposals/{{ proposal.id }}/edit" class="inline-flex items-center px-4 py-2 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">Edit</a>
     {# Phase transition buttons #}
     {% if proposal.status == 'draft' %}
@@ -76,13 +76,13 @@
         {%- endif %}">
         {% if idx < current_phase_index %}&#10003;{% else %}{{ loop.index }}{% endif %}
       </div>
-      <span class="text-xs mt-1
+      <span class="hidden sm:inline text-xs mt-1
         {%- if idx <= current_phase_index %} text-neos-text font-medium
         {%- else %} text-neos-muted
         {%- endif %}">{{ phase_labels[phase] }}</span>
     </div>
     {% if not loop.last %}
-    <div class="flex-1 h-0.5 mx-2 mt-[-0.75rem]
+    <div class="flex-1 h-0.5 mx-2 sm:mt-[-0.75rem]
       {%- if idx < current_phase_index %} bg-neos-accent
       {%- else %} bg-gray-200
       {%- endif %}"></div>

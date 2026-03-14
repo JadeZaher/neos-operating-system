@@ -86,8 +86,8 @@
   </div>
 </div>
 
-{# Onboarding records table #}
-<div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+{# Desktop table — hidden on mobile #}
+<div class="hidden sm:block bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
   <div class="overflow-x-auto">
     <table class="w-full text-sm" aria-label="Onboarding records">
       <thead>
@@ -142,5 +142,42 @@
       </tbody>
     </table>
   </div>
+</div>
+
+{# Mobile card layout #}
+<div class="sm:hidden space-y-3">
+  {% for onboarding in onboardings %}
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-4">
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <span class="font-medium text-neos-text text-sm">{{ onboarding.member.display_name if onboarding.member else onboarding.member_id }}</span>
+      {% if onboarding.completion_percentage == 100 %}
+      <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">Complete</span>
+      {% elif onboarding.cooling_off_end %}
+      <span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">Cooling Off</span>
+      {% else %}
+      <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">{{ onboarding.completion_percentage or 0 }}%</span>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neos-muted mb-3">
+      <span>Started {{ onboarding.created_at.strftime('%Y-%m-%d') if onboarding.created_at else '—' }}</span>
+      {% if onboarding.cooling_off_end %}
+      <span>Cooling off ends {{ onboarding.cooling_off_end.strftime('%Y-%m-%d') }}</span>
+      {% endif %}
+    </div>
+    {% if onboarding.completion_percentage != 100 %}
+    <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}" class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-neos-primary border border-neos-border rounded-lg hover:bg-gray-50 transition-colors">Continue Ceremony</a>
+    {% else %}
+    <span class="text-xs text-green-600 font-medium">&#10003; Done</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if not onboardings %}
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <span class="text-4xl text-neos-border" aria-hidden="true">&#10003;</span>
+    <p class="text-base font-semibold text-neos-text">No onboarding records</p>
+    <p class="text-sm text-neos-muted">Start an onboarding ceremony from the Members page.</p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

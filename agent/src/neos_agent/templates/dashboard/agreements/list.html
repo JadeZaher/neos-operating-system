@@ -143,7 +143,8 @@
    Agreements Table — server-rendered on initial load
    ---------------------------------------------------------------- #}
 <div id="agreements-list">
-  <div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+  {# Desktop table — hidden on mobile #}
+  <div class="hidden sm:block bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm" aria-label="Agreements list">
         <thead>
@@ -211,6 +212,40 @@
         </tbody>
       </table>
     </div>
+  </div>
+
+  {# Mobile card layout #}
+  <div class="sm:hidden space-y-3">
+    {% for agreement in agreements %}
+    <a href="/dashboard/agreements/{{ agreement.id }}" class="block bg-neos-surface border border-neos-border rounded-xl p-4 hover:border-neos-accent transition-colors">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <h3 class="font-semibold text-neos-text text-sm">{{ agreement.title }}</h3>
+        {% set status = agreement.status | default('draft') %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize shrink-0
+          {% if status == 'active' %}bg-green-100 text-green-700
+          {% elif status == 'ratified' %}bg-blue-100 text-blue-700
+          {% elif status == 'suspended' %}bg-yellow-100 text-yellow-700
+          {% elif status == 'expired' %}bg-red-100 text-red-700
+          {% elif status == 'archived' %}bg-gray-200 text-gray-500
+          {% else %}bg-gray-100 text-gray-600{% endif %}
+        ">{{ status }}</span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-neos-muted">
+        <span class="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 capitalize">{{ agreement.type | replace('_', ' ') if agreement.type else '—' }}</span>
+        <span>{{ agreement.domain or '—' }}</span>
+        <span class="font-mono">v{{ agreement.version }}</span>
+      </div>
+    </a>
+    {% else %}
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <span class="text-4xl text-neos-border" aria-hidden="true">&#9634;</span>
+      <p class="text-base font-semibold text-neos-text">No agreements found</p>
+      <p class="text-sm text-neos-muted max-w-xs">Try adjusting your filters or create a new agreement.</p>
+      <a href="/dashboard/agreements/new" class="inline-flex items-center gap-2 mt-2 px-4 py-2 bg-neos-primary text-white text-sm font-medium rounded-lg hover:bg-neos-secondary transition-colors">
+        <span aria-hidden="true">&#43;</span> New Agreement
+      </a>
+    </div>
+    {% endfor %}
   </div>
 
   {% include "partials/pagination.html" %}
