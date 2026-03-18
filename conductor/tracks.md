@@ -196,17 +196,17 @@ Build 5 governance skills for resource requests, funding pool stewardship, parti
 **Created:** 2026-03-02
 **Depends on:** foundation_20260301, authority_role_20260302, economic_coord_20260302
 
-Build 5 governance skills for cross-AZPO requests, shared resource stewardship, federation agreements, inter-unit liaison roles, and polycentric conflict navigation. Grounded in Ostrom's polycentric governance, millet system structural pattern (minus the Sultan), and Holochain agent-centric architecture.
+Build 5 governance skills for cross-ETHOS requests, shared resource stewardship, federation agreements, inter-unit liaison roles, and polycentric conflict navigation. Grounded in Ostrom's polycentric governance, millet system structural pattern (minus the Sultan), and Holochain agent-centric architecture.
 
 **Skills (5):**
-- [x] cross-azpo-request (Layer V) -- P0 anchor
+- [x] cross-ethos-request (Layer V) -- P0 anchor
 - [x] shared-resource-stewardship (Layer V) -- P0
 - [x] federation-agreement (Layer V)
 - [x] inter-unit-liaison (Layer V)
 - [x] polycentric-conflict-navigation (Layer V)
 
 **Phases:**
-- [x] Phase 1: Scaffolding and Anchor Skill (cross-azpo-request)
+- [x] Phase 1: Scaffolding and Anchor Skill (cross-ethos-request)
 - [x] Phase 2: Shared Resources and Federation (shared-resource-stewardship, federation-agreement)
 - [x] Phase 3: Liaison Roles and Conflict Navigation (inter-unit-liaison, polycentric-conflict-navigation)
 - [x] Phase 4: Layer Integration and Finalization
@@ -340,13 +340,13 @@ Build 5 governance skills ensuring exit is a structural right with graceful degr
 - [x] voluntary-exit (Layer X) -- P0 anchor
 - [x] commitment-unwinding (Layer X)
 - [x] portable-record (Layer X) -- P0
-- [x] azpo-dissolution (Layer X)
+- [x] ethos-dissolution (Layer X)
 - [x] re-entry-integration (Layer X)
 
 **Phases:**
 - [x] Phase 1: Scaffolding and Individual Exit (voluntary-exit, commitment-unwinding)
 - [x] Phase 2: Data Portability (portable-record)
-- [x] Phase 3: Collective Exit and Re-Entry (azpo-dissolution, re-entry-integration)
+- [x] Phase 3: Collective Exit and Re-Entry (ethos-dissolution, re-entry-integration)
 - [x] Phase 4: Layer Integration and Finalization
 
 **Spec:** `conductor/tracks/exit_portability_20260302/spec.md`

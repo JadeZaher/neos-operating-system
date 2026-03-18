@@ -12,7 +12,7 @@ NEOS is not a nation-state, a DAO, a democracy, a token-governed system, a belie
 
 ## First Ecosystem: OmniOne
 
-The first ecosystem instantiating NEOS is **OmniOne**, stewarded by **Green Earth Vision (GEV)**, a 501(c)(3) non-profit based in Bali. OmniOne serves as the inline example throughout the skill stack. Its organizational structure includes Town Hall (TH), Agents of the Ecosystem (AE), the OMNI Steward Council (OSC), and AZPOs (Autonomous Zones of Purposeful Operation). Another ecosystem can fork NEOS and replace OmniOne-specific configuration blocks with its own.
+The first ecosystem instantiating NEOS is **OmniOne**, stewarded by **Green Earth Vision (GEV)**, a 501(c)(3) non-profit based in Bali. OmniOne serves as the inline example throughout the skill stack. Its organizational structure includes Town Hall (TH), Agents of the Ecosystem (AE), the OMNI Steward Council (OSC), and ETHOS (Autonomous Zones of Purposeful Operation). Another ecosystem can fork NEOS and replace OmniOne-specific configuration blocks with its own.
 
 ## The 10 Skill Layers
 
@@ -22,12 +22,12 @@ The first ecosystem instantiating NEOS is **OmniOne**, stewarded by **Green Eart
 | II | Authority & Role | 7 | Domain mapping, role assignment, role transfer, role sunset, authority boundary negotiation, domain review, member lifecycle |
 | III | ACT Decision Engine | 6 | Advice -> Consent -> Test decision protocol: proposal creation, three ACT phases, consensus check, resolution |
 | IV | Economic Coordination | 5 | Resource requests, funding pool stewardship, participatory allocation, commons monitoring, access economy transition |
-| V | Inter-Unit Coordination | 5 | Cross-AZPO requests, shared resource stewardship, federation agreements, inter-unit liaison, polycentric conflict navigation |
+| V | Inter-Unit Coordination | 5 | Cross-ETHOS requests, shared resource stewardship, federation agreements, inter-unit liaison, polycentric conflict navigation |
 | VI | Conflict & Repair | 6 | Harm circles, NVC dialogue, escalation triage, repair agreements, coaching intervention, community impact assessment |
 | VII | Safeguard & Capture | 5 | Governance health audit, capture pattern recognition, safeguard trigger design, independent monitoring, structural diversity maintenance |
 | VIII | Emergency Handling | 5 | Emergency criteria design, pre-authorization protocol, crisis coordination, emergency reversion, post-emergency review |
 | IX | Memory & Trace | 5 | Decision records, semantic tagging, precedent search, agreement versioning, precedent challenge |
-| X | Exit & Portability | 5 | Voluntary exit, commitment unwinding, portable records, AZPO dissolution, re-entry integration |
+| X | Exit & Portability | 5 | Voluntary exit, commitment unwinding, portable records, ETHOS dissolution, re-entry integration |
 
 ## Repository Structure
 
@@ -135,7 +135,7 @@ python scripts/package_zip.py
 
 | Term | Meaning |
 |------|---------|
-| AZPO | Autonomous Zone of Purposeful Operation -- a self-organizing unit |
+| ETHOS | Emergent Thriving Holonic Organizational Structure -- a self-organizing unit |
 | Current-See | Influence currency (equal allocation, not purchasable) |
 | Steward | Person who holds responsibility, not ownership |
 | ACT | Advice -> Consent -> Test decision protocol |

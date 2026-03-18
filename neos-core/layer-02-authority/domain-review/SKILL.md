@@ -14,7 +14,7 @@ Without periodic review, domains accumulate scope creep as stewards act in ways 
 
 ## B. Domain Scope
 
-This skill applies to any active domain contract that carries an evaluation schedule (element 11 of the domain contract). This includes all domains created through the domain-mapping skill, regardless of scope (circle, cross-circle, AZPO-level, or ecosystem-level). Provisional domains (incomplete, operating under the 30-day window from domain-mapping) are reviewed by completing their outstanding elements before the 30-day window expires — that is not a domain-review, it is domain-mapping completion. Sunset domains are archived records, not eligible for review. Vacant domains trigger a simplified review: the delegating body reviews whether to reassign (role-assignment), sunset (role-sunset), or temporarily absorb the domain.
+This skill applies to any active domain contract that carries an evaluation schedule (element 11 of the domain contract). This includes all domains created through the domain-mapping skill, regardless of scope (circle, cross-circle, ETHOS-level, or ecosystem-level). Provisional domains (incomplete, operating under the 30-day window from domain-mapping) are reviewed by completing their outstanding elements before the 30-day window expires — that is not a domain-review, it is domain-mapping completion. Sunset domains are archived records, not eligible for review. Vacant domains trigger a simplified review: the delegating body reviews whether to reassign (role-assignment), sunset (role-sunset), or temporarily absorb the domain.
 
 ## C. Trigger Conditions
 
@@ -33,7 +33,7 @@ This skill applies to any active domain contract that carries an evaluation sche
 
 ## E. Step-by-Step Process
 
-1. **Convene the review body.** The review body consists of: delegating body members (voting), the domain steward (participating but not voting on the outcome), and representatives from dependent domains (advisory — they provide input but do not vote). The review is chaired by a facilitator who is not the steward. For cross-AZPO domains, representatives from all affected AZPOs participate.
+1. **Convene the review body.** The review body consists of: delegating body members (voting), the domain steward (participating but not voting on the outcome), and representatives from dependent domains (advisory — they provide input but do not vote). The review is chaired by a facilitator who is not the steward. For cross-ETHOS domains, representatives from all affected ETHOS participate.
 
 2. **Element-by-element evaluation.** The review body evaluates each of the 11 domain elements against current conditions:
    - *Purpose*: Is it still relevant? Has the ecosystem's need changed?
@@ -107,7 +107,7 @@ The domain review record is a governance artifact that survives participant exit
 
 ## L. Cross-Unit Interoperability Impact
 
-**Cross-AZPO domains** — domains whose purpose, dependencies, or customers span multiple AZPOs — are reviewed with representatives from all affected AZPOs participating. Each AZPO's representative provides feedback on how the domain is performing from their perspective. The review record is registered in all affected AZPOs' registries. If the review outcome is Merge or Sunset, all affected AZPOs must reach consent from their own delegating bodies. Cross-AZPO reviews are coordinated by a neutral facilitator who is not a member of either AZPO's governance bodies.
+**Cross-ETHOS domains** — domains whose purpose, dependencies, or customers span multiple ETHOS — are reviewed with representatives from all affected ETHOS participating. Each ETHOS's representative provides feedback on how the domain is performing from their perspective. The review record is registered in all affected ETHOS' registries. If the review outcome is Merge or Sunset, all affected ETHOS must reach consent from their own delegating bodies. Cross-ETHOS reviews are coordinated by a neutral facilitator who is not a member of either ETHOS's governance bodies.
 
 ## OmniOne Walkthrough
 
@@ -146,7 +146,7 @@ The delegating body is split on the outcome of a domain review: half believe the
 
 ### 5. Large-Scale Replication
 
-OmniOne grows to 300 active domains across 20 AZPOs. At the default 6-month cadence, approximately 50 domain reviews occur each month. The domain-review process scales because it is domain-local: each review involves only the delegating body, the steward, and dependent domain representatives — not the entire ecosystem. The agreement registry tracks review dates and sends automated notices when reviews are approaching or overdue. The element-by-element structure provides consistency: a reviewer in one AZPO follows the same 11-element checklist as a reviewer in another, enabling quality-comparable reviews without central coordination. The OSC receives aggregate review reports quarterly — not individual review records — to maintain ecosystem-level visibility without micromanagement.
+OmniOne grows to 300 active domains across 20 ETHOS. At the default 6-month cadence, approximately 50 domain reviews occur each month. The domain-review process scales because it is domain-local: each review involves only the delegating body, the steward, and dependent domain representatives — not the entire ecosystem. The agreement registry tracks review dates and sends automated notices when reviews are approaching or overdue. The element-by-element structure provides consistency: a reviewer in one ETHOS follows the same 11-element checklist as a reviewer in another, enabling quality-comparable reviews without central coordination. The OSC receives aggregate review reports quarterly — not individual review records — to maintain ecosystem-level visibility without micromanagement.
 
 ### 6. External Legal Pressure
 
@@ -154,4 +154,4 @@ A government regulation requires that all governance roles with financial author
 
 ### 7. Sudden Exit of 30% of Participants
 
-A significant participant departure affects 6 of OmniOne's 20 active domains — the departed participants were stewards or delegating body members. All 6 domains trigger immediate reviews under the threshold-event rule. The delegating body for each domain is reconstituted as quickly as possible with remaining members; if a delegating body falls below quorum, the next-level body (OSC) steps in as interim reviewer. Reviews for the 6 domains are prioritized by criticality: domains with active pending commitments, active agreements, or cross-AZPO dependencies are reviewed first. The outcome for domains with departed stewards is typically Reassign (triggering role-transfer emergency handover). The sudden exit is documented as the trigger in all 6 review records, providing a clear historical record of how the ecosystem managed the transition.
+A significant participant departure affects 6 of OmniOne's 20 active domains — the departed participants were stewards or delegating body members. All 6 domains trigger immediate reviews under the threshold-event rule. The delegating body for each domain is reconstituted as quickly as possible with remaining members; if a delegating body falls below quorum, the next-level body (OSC) steps in as interim reviewer. Reviews for the 6 domains are prioritized by criticality: domains with active pending commitments, active agreements, or cross-ETHOS dependencies are reviewed first. The outcome for domains with departed stewards is typically Reassign (triggering role-transfer emergency handover). The sudden exit is documented as the trigger in all 6 review records, providing a clear historical record of how the ecosystem managed the transition.

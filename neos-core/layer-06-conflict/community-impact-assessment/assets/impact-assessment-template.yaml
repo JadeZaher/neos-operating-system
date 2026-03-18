@@ -6,19 +6,19 @@ community_impact_assessment:
   date: ""                          # ISO 8601 date of assessment completion
   status: ""                        # triggered | preparing | in-session | report-drafting | completed | deferred
 
-  scope: ""                         # azpo-wide | ecosystem-wide
+  scope: ""                         # ethos-wide | ecosystem-wide
   scope_rationale: ""               # Why this scope was determined
 
   convener:
     name: ""
     role: ""
-    azpo: ""                        # Should not be directly implicated in findings
+    ethos: ""                        # Should not be directly implicated in findings
     conflict_of_interest_check: ""
 
   analysis_team:
     - name: ""
       role: ""
-      azpo: ""                      # Should not be involved in underlying conflicts
+      ethos: ""                      # Should not be involved in underlying conflicts
       expertise: ""
 
   triggering_evidence:
@@ -65,7 +65,7 @@ community_impact_assessment:
         - id: ""                   # e.g. CIA-SHUR-2026-001-R1
           description: ""           # Specific governance change proposed
           rationale: ""             # Why this change addresses the structural gap
-          scope: ""                 # circle | azpo | ecosystem
+          scope: ""                 # circle | ethos | ecosystem
           act_proposal_id: ""       # Linked proposal once submitted
           act_status: ""            # pending | submitted | consented | rejected | amended
 

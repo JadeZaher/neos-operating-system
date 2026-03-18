@@ -88,7 +88,7 @@ When a role holder exits the ecosystem during an active emergency, their alterna
 
 ## L. Cross-Unit Interoperability Impact
 
-During an emergency affecting one AZPO, the Communications Coordinator's updates are published to all ecosystem members, providing cross-unit visibility into the crisis. Adjacent AZPOs' own pre-authorized roles may activate independently if the crisis affects their domain. Cross-AZPO mutual aid (if pre-authorized through joint ACT process) operates through each AZPO's own crisis-coordination process -- there is no unified command structure across AZPOs. The Crisis Operations Log format is identical across all AZPOs, enabling ecosystem-level analysis during post-emergency review. At federation scale, each ecosystem manages its own crisis operations independently, sharing situation reports through federation communication channels.
+During an emergency affecting one ETHOS, the Communications Coordinator's updates are published to all ecosystem members, providing cross-unit visibility into the crisis. Adjacent ETHOS' own pre-authorized roles may activate independently if the crisis affects their domain. Cross-ETHOS mutual aid (if pre-authorized through joint ACT process) operates through each ETHOS's own crisis-coordination process -- there is no unified command structure across ETHOS. The Crisis Operations Log format is identical across all ETHOS, enabling ecosystem-level analysis during post-emergency review. At federation scale, each ecosystem manages its own crisis operations independently, sharing situation reports through federation communication channels.
 
 ## OmniOne Walkthrough
 
@@ -126,7 +126,7 @@ During a resource crisis emergency, the two polarized factions attempt to influe
 
 ### 5. Large-Scale Replication
 
-At scale with 12 SHUR locations, each AZPO operates its own crisis-coordination process independently. When a regional disaster affects three adjacent SHURs simultaneously, each activates its own pre-authorized roles and follows its own compressed timelines. The Crisis Operations Log format is identical across locations, enabling the OSC to monitor three concurrent emergencies with consistent data. Cross-AZPO mutual aid operates through pre-authorized channels -- the Resource Coordinator in a non-affected AZPO can release pre-authorized mutual aid funds to an affected neighbor. No unified command structure is needed because each location's crisis-coordination is self-contained. The 24-hour communication cadence from each Communications Coordinator provides ecosystem-wide situational awareness.
+At scale with 12 SHUR locations, each ETHOS operates its own crisis-coordination process independently. When a regional disaster affects three adjacent SHURs simultaneously, each activates its own pre-authorized roles and follows its own compressed timelines. The Crisis Operations Log format is identical across locations, enabling the OSC to monitor three concurrent emergencies with consistent data. Cross-ETHOS mutual aid operates through pre-authorized channels -- the Resource Coordinator in a non-affected ETHOS can release pre-authorized mutual aid funds to an affected neighbor. No unified command structure is needed because each location's crisis-coordination is self-contained. The 24-hour communication cadence from each Communications Coordinator provides ecosystem-wide situational awareness.
 
 ### 6. External Legal Pressure
 

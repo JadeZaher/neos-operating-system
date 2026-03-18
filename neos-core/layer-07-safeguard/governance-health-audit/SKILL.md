@@ -1,6 +1,6 @@
 ---
 name: governance-health-audit
-description: "Conduct a structured, quantified review of governance health indicators across an AZPO or ecosystem -- run this whenever decision patterns, participation, or resource flows need independent assessment."
+description: "Conduct a structured, quantified review of governance health indicators across an ETHOS or ecosystem -- run this whenever decision patterns, participation, or resource flows need independent assessment."
 layer: 7
 version: 0.1.0
 depends_on: [agreement-registry, domain-mapping, role-assignment]
@@ -14,19 +14,19 @@ Governance systems degrade invisibly. Decision-making concentrates, participatio
 
 ## B. Domain Scope
 
-This skill applies to any AZPO or the full ecosystem where governance decisions are made and recorded. The audit examines decision logs, resource allocation records, participation records, proposal registries, and role-assignment histories. It operates within the boundary defined by the domain-mapping skill (Layer II) -- an audit of the Bali SHUR AZPO examines only Bali SHUR governance data, not the entire OmniOne ecosystem, unless the scope is explicitly set to ecosystem-wide. Out of scope: the audit does not interpret data into capture diagnoses (that is the capture-pattern-recognition skill) and does not design or activate safeguards (that is the safeguard-trigger-design skill).
+This skill applies to any ETHOS or the full ecosystem where governance decisions are made and recorded. The audit examines decision logs, resource allocation records, participation records, proposal registries, and role-assignment histories. It operates within the boundary defined by the domain-mapping skill (Layer II) -- an audit of the Bali SHUR ETHOS examines only Bali SHUR governance data, not the entire OmniOne ecosystem, unless the scope is explicitly set to ecosystem-wide. Out of scope: the audit does not interpret data into capture diagnoses (that is the capture-pattern-recognition skill) and does not design or activate safeguards (that is the safeguard-trigger-design skill).
 
 ## C. Trigger Conditions
 
-- **Scheduled audit**: every quarter by default (configurable per AZPO, minimum frequency: semi-annual)
+- **Scheduled audit**: every quarter by default (configurable per ETHOS, minimum frequency: semi-annual)
 - **Threshold trigger**: any governance health indicator crosses from healthy to warning or from warning to critical, as reported by independent-monitoring data
-- **Participant request**: any ecosystem member requests an audit of their AZPO or circle, with a minimum of 3 co-signers to prevent frivolous requests
+- **Participant request**: any ecosystem member requests an audit of their ETHOS or circle, with a minimum of 3 co-signers to prevent frivolous requests
 - **Post-emergency review**: following any emergency declaration (Layer VIII), an audit is triggered within 30 days of the emergency's conclusion
-- **Mass exit trigger**: when 20% or more of an AZPO's participants exit within a 30-day period, an automatic audit is triggered
+- **Mass exit trigger**: when 20% or more of an ETHOS's participants exit within a 30-day period, an automatic audit is triggered
 
 ## D. Required Inputs
 
-- **Audit scope**: the AZPO name or "ecosystem" designation, with the domain boundary confirmed via domain-mapping
+- **Audit scope**: the ETHOS name or "ecosystem" designation, with the domain boundary confirmed via domain-mapping
 - **Time period**: the start and end dates of the period under review (default: previous quarter)
 - **Governance data report**: raw data collected by the independent-monitoring skill, covering the audit period
 - **Decision logs**: all ACT process records for the scope and period, including proposal authorship, consent positions, objection records, and integration outcomes
@@ -37,8 +37,8 @@ This skill applies to any AZPO or the full ecosystem where governance decisions 
 
 ## E. Step-by-Step Process
 
-1. **Confirm audit scope and authority.** The audit initiator confirms the scope (AZPO or ecosystem) and verifies their authority to request an audit within that domain via the domain-mapping skill. The initiator is not the auditor -- separation of request and execution prevents self-assessment.
-2. **Appoint audit team.** The audit team consists of at least two participants who do not hold leadership roles within the audited scope. If no qualified participants are available within the scope, the team draws from adjacent AZPOs. Appointment follows the role-assignment skill process.
+1. **Confirm audit scope and authority.** The audit initiator confirms the scope (ETHOS or ecosystem) and verifies their authority to request an audit within that domain via the domain-mapping skill. The initiator is not the auditor -- separation of request and execution prevents self-assessment.
+2. **Appoint audit team.** The audit team consists of at least two participants who do not hold leadership roles within the audited scope. If no qualified participants are available within the scope, the team draws from adjacent ETHOS. Appointment follows the role-assignment skill process.
 3. **Collect governance data.** The audit team receives the Governance Data Report from the independent monitor (per the independent-monitoring skill). The team does not collect raw data themselves -- this separation prevents data selection bias.
 4. **Score each indicator.** The team evaluates each of the 8 governance health indicators defined in `assets/indicator-definitions.yaml` against the collected data, recording the measured value and assigning a status (healthy, warning, or critical) based on the defined thresholds.
 5. **Calculate trends.** For each indicator, compare the current score to the prior audit's score. Record the trend as improving, stable, or degrading. If no prior audit exists, mark trend as "baseline."
@@ -54,7 +54,7 @@ A Governance Health Report following `assets/governance-health-report-template.y
 
 ## G. Authority Boundary Check
 
-- **Any ecosystem member** (with 3 co-signers) can request an audit within their AZPO's domain
+- **Any ecosystem member** (with 3 co-signers) can request an audit within their ETHOS's domain
 - **The audit team** has authority to access governance data within the defined scope but cannot access data outside the domain boundary established by domain-mapping
 - **No individual or body** can suppress, delay, or redact an audit report -- suppression attempts are logged as governance health events
 - **The audit team** produces data and recommendations, never directives -- they cannot mandate governance changes
@@ -75,7 +75,7 @@ A Governance Health Report following `assets/governance-health-report-template.y
 ## I. Failure Containment Logic
 
 - **Data unavailable**: if the independent monitor has not produced a Governance Data Report for the audit period, the audit team documents the gap, escalates to the OSC for monitor accountability review, and conducts the audit with available data while noting limitations
-- **Audit team cannot be formed**: if no qualified non-leadership participants are available, the audit draws from adjacent AZPOs or, as a last resort, the OSC appoints temporary auditors from outside the ecosystem
+- **Audit team cannot be formed**: if no qualified non-leadership participants are available, the audit draws from adjacent ETHOS or, as a last resort, the OSC appoints temporary auditors from outside the ecosystem
 - **Indicator scoring disagreement**: if audit team members disagree on an indicator score, both assessments are recorded in the report with the reasoning for each -- the report does not suppress minority interpretations
 - **Report suppression attempted**: the suppression attempt itself is recorded as a critical governance event, the report is published through alternative channels (direct to ecosystem members), and the suppression is flagged in the next audit
 - **Stale or manipulated data**: if the audit team suspects data integrity issues, they document the concern, request a data verification process through the independent-monitoring skill, and publish the report with integrity caveats
@@ -90,13 +90,13 @@ When a participant who served on an audit team exits the ecosystem, their past a
 
 ## L. Cross-Unit Interoperability Impact
 
-Audit reports for one AZPO are published to all ecosystem members, not just that AZPO's members, enabling cross-unit visibility into governance health. When an ecosystem-wide audit is conducted, all AZPOs provide data through their independent monitors. Cross-AZPO comparison is informational, not competitive -- reports note structural differences between AZPOs that affect indicator scores (e.g., a new AZPO may have lower cross-unit engagement simply because it has fewer established relationships). When two NEOS ecosystems federate (Layer V, deferred), governance health audit protocols may be shared to enable cross-ecosystem transparency, but audit authority remains scoped to each ecosystem's domain.
+Audit reports for one ETHOS are published to all ecosystem members, not just that ETHOS's members, enabling cross-unit visibility into governance health. When an ecosystem-wide audit is conducted, all ETHOS provide data through their independent monitors. Cross-ETHOS comparison is informational, not competitive -- reports note structural differences between ETHOS that affect indicator scores (e.g., a new ETHOS may have lower cross-unit engagement simply because it has fewer established relationships). When two NEOS ecosystems federate (Layer V, deferred), governance health audit protocols may be shared to enable cross-ecosystem transparency, but audit authority remains scoped to each ecosystem's domain.
 
 ## OmniOne Walkthrough
 
-It is the end of Q1 2026, and the Bali SHUR AZPO is due for its quarterly governance health audit. Lina, an AE member, initiates the audit request along with three TH co-signers: Dewa, Sari, and Tomasz. The scope is confirmed as "SHUR Bali" via the domain-mapping registry, covering all governance activity from January through March 2026.
+It is the end of Q1 2026, and the Bali SHUR ETHOS is due for its quarterly governance health audit. Lina, an AE member, initiates the audit request along with three TH co-signers: Dewa, Sari, and Tomasz. The scope is confirmed as "SHUR Bali" via the domain-mapping registry, covering all governance activity from January through March 2026.
 
-The audit team is appointed: Farid, a TH member who does not hold any leadership role in SHUR Bali, and Yuki, an AE member from the SHUR Costa Rica AZPO who volunteered for cross-unit audit service. Neither Farid nor Yuki reports to or socializes primarily with SHUR Bali leadership, satisfying the independence requirement.
+The audit team is appointed: Farid, a TH member who does not hold any leadership role in SHUR Bali, and Yuki, an AE member from the SHUR Costa Rica ETHOS who volunteered for cross-unit audit service. Neither Farid nor Yuki reports to or socializes primarily with SHUR Bali leadership, satisfying the independence requirement.
 
 Farid and Yuki receive the Q1 Governance Data Report from Ratu, the current independent monitor for SHUR Bali. The report contains raw data on all 8 indicators. They score each indicator against the thresholds in `assets/indicator-definitions.yaml`:
 
@@ -119,7 +119,7 @@ The team compiles the Governance Health Report (GHR-SHUR-2026-Q1), recording ove
 
 ### 1. Capital Influx
 
-A tech philanthropist offers OmniOne $2 million in annual funding, channeled primarily through the Bali SHUR AZPO, contingent on SHUR adopting the funder's proprietary sustainability curriculum. The next quarterly governance health audit detects the shift immediately: GHI-03 (Resource Concentration Index) jumps from 35% to 68%, crossing into critical territory. The audit team documents the concentration, notes the conditional nature of the funding, and flags the associated safeguard trigger for capital capture. The audit report is published to all ecosystem members, making the funding dependency visible to everyone -- not just leadership who negotiated the deal. The report recommends activating the capital capture safeguard trigger and initiating a funding diversification campaign through structural-diversity-maintenance. Because the audit team is structurally independent of SHUR leadership (who may have been involved in the funding negotiation), the report cannot be softened or delayed to protect the relationship. The philanthropist's representatives cannot suppress or modify the audit findings.
+A tech philanthropist offers OmniOne $2 million in annual funding, channeled primarily through the Bali SHUR ETHOS, contingent on SHUR adopting the funder's proprietary sustainability curriculum. The next quarterly governance health audit detects the shift immediately: GHI-03 (Resource Concentration Index) jumps from 35% to 68%, crossing into critical territory. The audit team documents the concentration, notes the conditional nature of the funding, and flags the associated safeguard trigger for capital capture. The audit report is published to all ecosystem members, making the funding dependency visible to everyone -- not just leadership who negotiated the deal. The report recommends activating the capital capture safeguard trigger and initiating a funding diversification campaign through structural-diversity-maintenance. Because the audit team is structurally independent of SHUR leadership (who may have been involved in the funding negotiation), the report cannot be softened or delayed to protect the relationship. The philanthropist's representatives cannot suppress or modify the audit findings.
 
 ### 2. Emergency Crisis
 
@@ -135,7 +135,7 @@ Two factions within SHUR Bali are deeply divided over whether to accept a corpor
 
 ### 5. Large-Scale Replication
 
-OmniOne grows from 50 members in one SHUR location to 4,000 members across 12 SHUR locations and 60 circles. The governance health audit scales through domain-scoped execution: each AZPO conducts its own quarterly audit with its own audit team and independent monitor. Indicator definitions and thresholds remain consistent across all locations (the same `indicator-definitions.yaml`), enabling meaningful comparison without requiring centralized audit authority. The OSC receives all audit reports and can identify systemic patterns -- if 8 of 12 locations show declining proposal authorship diversity, that signals an ecosystem-level structural issue rather than a local anomaly. Audit teams are drawn from the local participant pool with cross-AZPO members when needed, scaling the auditor supply with the participant base. The audit report template remains identical at every scale; what changes is the volume of data and the number of parallel audits running each quarter. A meta-audit at the ecosystem level aggregates AZPO-level reports annually.
+OmniOne grows from 50 members in one SHUR location to 4,000 members across 12 SHUR locations and 60 circles. The governance health audit scales through domain-scoped execution: each ETHOS conducts its own quarterly audit with its own audit team and independent monitor. Indicator definitions and thresholds remain consistent across all locations (the same `indicator-definitions.yaml`), enabling meaningful comparison without requiring centralized audit authority. The OSC receives all audit reports and can identify systemic patterns -- if 8 of 12 locations show declining proposal authorship diversity, that signals an ecosystem-level structural issue rather than a local anomaly. Audit teams are drawn from the local participant pool with cross-ETHOS members when needed, scaling the auditor supply with the participant base. The audit report template remains identical at every scale; what changes is the volume of data and the number of parallel audits running each quarter. A meta-audit at the ecosystem level aggregates ETHOS-level reports annually.
 
 ### 6. External Legal Pressure
 
@@ -143,4 +143,4 @@ The Indonesian government requires all co-living operations to submit annual gov
 
 ### 7. Sudden Exit of 30% of Participants
 
-Following a contentious OSC decision to restructure AZPO boundaries, 12 of 38 SHUR Bali members exit within two weeks. The mass exit trigger (20% threshold) fires immediately, initiating an automatic governance health audit outside the normal quarterly schedule. The audit reveals cascading indicator impacts: GHI-01 (Proposal Authorship Diversity) drops to critical as several active proposers departed. GHI-04 (Participation Trend) shows a -35% decline, deep in critical territory. GHI-07 (Review Compliance Rate) degrades because several agreement stewards left without completing scheduled reviews. The audit team recalibrates quorum calculations to the current 26-member base and identifies 7 agreements where departed members constituted more than 25% of affected parties, flagging each for review through the agreement-review skill. The audit report documents the governance health impact of the mass exit and recommends immediate structural interventions: proposal encouragement for remaining members (via structural-diversity-maintenance), emergency stewardship reassignment for orphaned agreements, and a community dialogue to address the underlying grievance that caused the exodus. Existing governance structures remain valid -- the audit confirms that prior decisions were legitimately made and are not retroactively invalidated by departures.
+Following a contentious OSC decision to restructure ETHOS boundaries, 12 of 38 SHUR Bali members exit within two weeks. The mass exit trigger (20% threshold) fires immediately, initiating an automatic governance health audit outside the normal quarterly schedule. The audit reveals cascading indicator impacts: GHI-01 (Proposal Authorship Diversity) drops to critical as several active proposers departed. GHI-04 (Participation Trend) shows a -35% decline, deep in critical territory. GHI-07 (Review Compliance Rate) degrades because several agreement stewards left without completing scheduled reviews. The audit team recalibrates quorum calculations to the current 26-member base and identifies 7 agreements where departed members constituted more than 25% of affected parties, flagging each for review through the agreement-review skill. The audit report documents the governance health impact of the mass exit and recommends immediate structural interventions: proposal encouragement for remaining members (via structural-diversity-maintenance), emergency stewardship reassignment for orphaned agreements, and a community dialogue to address the underlying grievance that caused the exodus. Existing governance structures remain valid -- the audit confirms that prior decisions were legitimately made and are not retroactively invalidated by departures.

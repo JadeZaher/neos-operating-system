@@ -54,7 +54,7 @@ For each relationship:
 - [ ] What the relationship involves (dependency, collaboration, coordination point)
 - [ ] Current dynamics (any tensions, outstanding negotiations, informal arrangements)
 - [ ] How often contact typically occurs
-- [ ] Any cross-AZPO contacts listed separately
+- [ ] Any cross-ETHOS contacts listed separately
 
 ---
 

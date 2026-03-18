@@ -752,14 +752,14 @@ async def seed(database_url: str) -> None:
              "not_integrated", "Kitchen already has separate bins; adding another label may cause confusion."),
         ]
 
-        for (log_id, advisor, role, azpo, dt, advice, response,
+        for (log_id, advisor, role, ethos, dt, advice, response,
              integration, rationale) in advice_entries_spec:
             session.add(AdviceEntry(
                 id=uuid.uuid4(),
                 advice_log_id=log_id,
                 advisor=advisor,
                 role=role,
-                azpo=azpo,
+                ethos=ethos,
                 date=dt,
                 advice_text=advice,
                 proposer_response=response,
@@ -828,13 +828,13 @@ async def seed(database_url: str) -> None:
              "time for a full training session. Suggest a shorter orientation option.", 1),
         ]
 
-        for name, role, azpo, position, reason, rnd in consent_participants_spec:
+        for name, role, ethos, position, reason, rnd in consent_participants_spec:
             session.add(ConsentParticipant(
                 id=uuid.uuid4(),
                 consent_record_id=consent_record_id,
                 name=name,
                 role=role,
-                azpo=azpo,
+                ethos=ethos,
                 position=position,
                 reason=reason,
                 round=rnd,

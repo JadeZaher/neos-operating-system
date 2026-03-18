@@ -39,7 +39,7 @@ Agreements and decisions are co-dependent:
 - **Consent vs. consensus**: Standard agreements use consent mode ("no reasoned objection"). UAF amendments and ecosystem-level decisions use consensus mode ("all actively agree").
 - **Expiry by default**: Every agreement has a mandatory review date. No agreement is permanent without periodic revalidation.
 - **Registry as single source of truth**: If it is not in the registry, it is not an agreement. Informal commitments have no standing.
-- **Hierarchy with override rule**: Universal, Ecosystem, Access, Stewardship, AZPO Agreement Field, Culture Code, Personal. No lower-level agreement may contradict a higher-level one.
+- **Hierarchy with override rule**: Universal, Ecosystem, Access, Stewardship, ETHOS Agreement Field, Culture Code, Personal. No lower-level agreement may contradict a higher-level one.
 
 ## Dependencies
 

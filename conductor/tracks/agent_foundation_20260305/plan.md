@@ -419,10 +419,10 @@ Implement all 27 models organized by section:
 
 12. `Proposal` -- id, ecosystem_id (FK), proposal_id (business key), type, decision_type, title, version, status, proposer, co_sponsors (JSONB), affected_domain, impacted_parties (JSONB), urgency, proposed_change, rationale, created_date, advice_deadline, consent_deadline, test_duration, related_proposals (JSONB), synergy_check (JSONB)
 13. `AdviceLog` -- id, proposal_id (FK to Proposal), advice_window_start, advice_window_end, urgency, summary, proposer_modifications
-14. `AdviceEntry` -- id, advice_log_id (FK to AdviceLog), advisor, role, azpo, date, advice_text, proposer_response, integration_status, rationale
+14. `AdviceEntry` -- id, advice_log_id (FK to AdviceLog), advisor, role, ethos, date, advice_text, proposer_response, integration_status, rationale
 15. `AdviceNonRespondent` -- id, advice_log_id (FK to AdviceLog), name, notified_date, follow_up_sent (bool)
 16. `ConsentRecord` -- id, proposal_id (FK to Proposal), consent_mode, weighting_model, facilitator, date, quorum_required, quorum_met (bool), outcome, escalation_level, final_proposal_version
-17. `ConsentParticipant` -- id, consent_record_id (FK to ConsentRecord), name, role, azpo, position, reason, round (int)
+17. `ConsentParticipant` -- id, consent_record_id (FK to ConsentRecord), name, role, ethos, position, reason, round (int)
 18. `ConsentIntegrationRound` -- id, consent_record_id (FK to ConsentRecord), round_number (int), modifications_made, outcome
 19. `ConsentObjectionAddressed` -- id, integration_round_id (FK to ConsentIntegrationRound), objector, objection, resolution
 20. `TestReport` -- id, proposal_id (FK to Proposal), test_start_date, test_end_date, midpoint_checkin_date, revert_procedure, observations, midpoint_findings, outcome, extension_end_date, modifications, next_action, agreement_registry_id

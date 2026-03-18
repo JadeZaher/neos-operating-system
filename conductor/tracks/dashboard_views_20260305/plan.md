@@ -362,8 +362,8 @@ All file paths are relative to `agent/src/neos_agent/` unless otherwise noted.
     - GET `/dashboard/members/new` returns 200 with create form.
   - **Green:** Write `views/members.py` with:
     - `members_bp = Blueprint("members", url_prefix="/dashboard/members")`
-    - `member_directory` -- queries members with filters for status, profile, AZPO.
-    - `member_detail` -- queries member with roles, AZPO memberships, participation history.
+    - `member_directory` -- queries members with filters for status, profile, ETHOS.
+    - `member_detail` -- queries member with roles, ETHOS memberships, participation history.
     - `member_create_form` and `member_create` -- form and create handler.
     - `member_edit_form` and `member_update` -- edit form and update handler.
     - `member_transition` -- POST endpoint for status transitions with validation of valid transitions.
@@ -380,11 +380,11 @@ All file paths are relative to `agent/src/neos_agent/` unless otherwise noted.
   Create member directory and detail templates with onboarding stepper.
 
   **TDD Cycle:**
-  - **Red:** Write template rendering tests asserting: (1) list.html renders member cards with name, profile badge, status, AZPO, (2) detail.html shows member info, roles, onboarding stepper, (3) form.html has fields for name, profile type, AZPO, facilitator.
+  - **Red:** Write template rendering tests asserting: (1) list.html renders member cards with name, profile badge, status, ETHOS, (2) detail.html shows member info, roles, onboarding stepper, (3) form.html has fields for name, profile type, ETHOS, facilitator.
   - **Green:**
-    - `members/list.html`: extends base, search bar with `data-bind="searchText"` and `data-on:input.debounce_300ms`, filter bar (status, profile type, AZPO), member cards/table with name, profile type badge, lifecycle status badge, primary AZPO, role count, join date.
-    - `members/detail.html`: extends base, member header (name, profile badge, status badge), onboarding stepper component, current roles section (list of role cards linking to domain detail), AZPO memberships list, participation summary (total actions, last active date), status transition buttons (contextual based on current status), edit link.
-    - `members/form.html`: extends base, name input, profile type selector (Co-creator, Builder, Collaborator, TownHall), AZPO assignment dropdown, onboarding facilitator dropdown (filtered to AE members), submit.
+    - `members/list.html`: extends base, search bar with `data-bind="searchText"` and `data-on:input.debounce_300ms`, filter bar (status, profile type, ETHOS), member cards/table with name, profile type badge, lifecycle status badge, primary ETHOS, role count, join date.
+    - `members/detail.html`: extends base, member header (name, profile badge, status badge), onboarding stepper component, current roles section (list of role cards linking to domain detail), ETHOS memberships list, participation summary (total actions, last active date), status transition buttons (contextual based on current status), edit link.
+    - `members/form.html`: extends base, name input, profile type selector (Co-creator, Builder, Collaborator, TownHall), ETHOS assignment dropdown, onboarding facilitator dropdown (filtered to AE members), submit.
   - **Refactor:** Ensure profile type labels use NEOS terminology. Status transition buttons show only valid transitions.
 
   **Files:**
@@ -432,7 +432,7 @@ All file paths are relative to `agent/src/neos_agent/` unless otherwise noted.
 - [ ] **Verification: Phase 3** [checkpoint marker]
 
   1. Navigate to `/dashboard/members` -- verify directory displays with search and filters.
-  2. View a member detail -- verify profile info, roles, AZPO memberships display correctly.
+  2. View a member detail -- verify profile info, roles, ETHOS memberships display correctly.
   3. Verify onboarding stepper shows correct progress for members in different lifecycle stages.
   4. Verify role assignments link to the correct domain detail pages.
   5. Test status transitions (e.g., active -> inactive) and verify the update is reflected.

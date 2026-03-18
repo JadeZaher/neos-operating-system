@@ -29,9 +29,9 @@ I will keep my circles informed and honor my commitments. I will do what I said 
 
 I agree to honor others' time and show up to meetings I have committed to attend. When I fall short of this, I take responsibility for the impact.
 
-I agree to use the designated communication channels and workspaces chosen by my circle or AZPO for project-related interactions, keeping important information organized and accessible.
+I agree to use the designated communication channels and workspaces chosen by my circle or ETHOS for project-related interactions, keeping important information organized and accessible.
 
-I agree to use existing channels and processes within my AZPO to propose new initiatives or solutions. If unresolved through normal channels, I will seek coaching before escalating to the broader community.
+I agree to use existing channels and processes within my ETHOS to propose new initiatives or solutions. If unresolved through normal channels, I will seek coaching before escalating to the broader community.
 
 I agree to utilize consent-based decision-making within organizational workspaces, and to respect the outcomes of collective decisions made through legitimate process. I may propose amendments through proper channels but will honor existing decisions while they stand.
 
@@ -79,17 +79,17 @@ I will not take non-public emergent works outside the ecosystem without consent 
 
 ## 5. Sovereignty and Evolution
 
-Each AZPO is sovereign and continues beyond individual members. The generative plan (GenPlan) carries its vision and purpose.
+Each ETHOS is sovereign and continues beyond individual members. The generative plan (GenPlan) carries its vision and purpose.
 
-If my ideas do not align with my AZPO's GenPlan, I will consider forming a new AZPO rather than forcing changes that contradict the founding vision.
+If my ideas do not align with my ETHOS's GenPlan, I will consider forming a new ETHOS rather than forcing changes that contradict the founding vision.
 
-Participants may co-create across multiple AZPOs, provided all roles, entry requirements, and agreements are honored in each.
+Participants may co-create across multiple ETHOS, provided all roles, entry requirements, and agreements are honored in each.
 
 When collaborating with entities outside the ecosystem, new agreements must be created to ensure alignment with existing plans.
 
 The ecosystem prioritizes insourcing over outsourcing. I will consult resource stewards before seeking external providers.
 
-An AZPO that privatizes collective assets may lose its status within the ecosystem. Economic structures follow wealth distribution principles that rebuild the collective commons and prevent extractive practices.
+An ETHOS that privatizes collective assets may lose its status within the ecosystem. Economic structures follow wealth distribution principles that rebuild the collective commons and prevent extractive practices.
 
 > **[ECOSYSTEM: OmniOne]** ETHOS members may co-create across multiple ETHOS. ETHOS financial agreements must align with broader ecosystem stewardship approaches, including intellectual property agreements approved upon entry.
 
@@ -101,9 +101,9 @@ I will not impose my will upon others, as they are sovereign. I will not use thr
 
 I will uphold freedom as a core principle while maintaining integrity and accountability to my agreements.
 
-If I break a law, I alone am accountable for the legal repercussions. The ecosystem and its AZPOs are not responsible for my personal actions.
+If I break a law, I alone am accountable for the legal repercussions. The ecosystem and its ETHOS are not responsible for my personal actions.
 
-I understand that agreements fractalize according to this hierarchy: **Universal → Ecosystem → Access → Stewardship → AZPO Agreement Field → Culture Code → Personal**. No agreement at a lower level may contradict a higher-level agreement. Conflicts are resolved upward.
+I understand that agreements fractalize according to this hierarchy: **Universal → Ecosystem → Access → Stewardship → ETHOS Agreement Field → Culture Code → Personal**. No agreement at a lower level may contradict a higher-level agreement. Conflicts are resolved upward.
 
 > **[ECOSYSTEM: OmniOne]** I will consider the Agreement Fields the source of authority and not agreements made by outside sources. Physical force and matters not covered in ETHOS or Ecosystem agreements are handled by local legislation.
 
@@ -116,7 +116,7 @@ Universal Agreement Field (UAF)
   └── Ecosystem Agreement (e.g., OmniOne Master Plan)
        └── Access Agreement (e.g., SHUR space agreement)
             └── Stewardship Agreement (role-specific commitments)
-                 └── AZPO Agreement Field (e.g., ETHOS agreements)
+                 └── ETHOS Agreement Field (e.g., ETHOS agreements)
                       └── Culture Code (circle-internal norms)
                            └── Personal Commitments
 ```

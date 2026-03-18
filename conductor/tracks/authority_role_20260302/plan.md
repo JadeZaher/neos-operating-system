@@ -62,7 +62,7 @@ Domain-mapping is the anchor -- every other skill references the 11-element doma
   - **I. Failure Containment Logic:** Incomplete domain contract (any missing element flags the domain as "provisional" -- it can operate for 30 days but must be completed or it reverts to its delegating body). Contested domain (two bodies claim authority to create the same domain -- routes to authority-boundary-negotiation). Abandoned domain (steward stops fulfilling responsibilities -- domain-review triggers reassignment or sunset).
   - **J. Expiry / Review Condition:** Every domain contract must include an evaluation schedule (element 12 of the S3 model, incorporated as element 11 here). Default: 6-month evaluation cycle. Domains without evaluation schedules are flagged by validate_skill.py as incomplete. If the evaluation date passes without review: 30-day grace period with escalation notice, then the delegating body is required to convene a review.
   - **K. Exit Compatibility Check:** When a domain steward exits the ecosystem, the domain does not dissolve. It enters "vacant" status. The delegating body has 30 days to assign a new steward (via role-assignment) or trigger role-sunset. Pending commitments held by the exiting steward are inventoried and transferred.
-  - **L. Cross-Unit Interoperability Impact:** Domains in one AZPO may have dependencies on domains in another AZPO. The domain contract's dependencies element must explicitly list cross-unit dependencies. When a domain is created or refined in one AZPO, dependent domains in other AZPOs are notified.
+  - **L. Cross-Unit Interoperability Impact:** Domains in one ETHOS may have dependencies on domains in another ETHOS. The domain contract's dependencies element must explicitly list cross-unit dependencies. When a domain is created or refined in one ETHOS, dependent domains in other ETHOS are notified.
   **Acceptance:** Sections G-L are substantive and structurally precise. Meta-authority for domain creation is explicitly addressed.
 
 - [x] **Task 1.4: Write domain-mapping OmniOne walkthrough**
@@ -70,7 +70,7 @@ Domain-mapping is the anchor -- every other skill references the 11-element doma
   - Scenario: The AE decides to create a new Economics circle. The AE (delegating body) drafts a domain contract:
     - Purpose: Steward the ecosystem's economic coordination, including resource allocation, funding pool management, and economic policy proposals.
     - Key Responsibilities: Manage funding requests, maintain economic transparency, propose resource distribution changes, coordinate with external partners on economic matters.
-    - Customers: All ecosystem participants who request or receive resources, AZPOs with budgets.
+    - Customers: All ecosystem participants who request or receive resources, ETHOS with budgets.
     - Deliverables: Monthly economic transparency reports, funding request decisions, economic policy proposals.
     - Dependencies: Depends on OSC for ecosystem-level economic policy approval, depends on agreement-registry for tracking economic agreements.
     - Constraints: Cannot approve funding above 10% of total pool without OSC consent. Cannot create economic agreements that contradict the UAF. Cannot grant Current-See advantages to any role.
@@ -266,7 +266,7 @@ Domain-mapping is the anchor -- every other skill references the 11-element doma
   - **I.** Stalled negotiation: after 3 sessions without resolution, automatic escalation to GAIA Level 4. Contested resolution: one party does not consent -- escalation to delegating bodies or GAIA Level 5. Post-resolution relapse: same boundary dispute recurs within 6 months -- triggers a structural review of whether the domains should be merged.
   - **J.** Boundary resolutions are reviewed alongside the domain-review of either involved domain. If a resolution is older than 12 months and neither domain has been reviewed, a standalone review is triggered.
   - **K.** If a steward in a boundary dispute exits, their domain enters vacant status. The dispute is paused until a new steward is assigned or the domain is sunset.
-  - **L.** Cross-AZPO boundary disputes follow the same process but require facilitators from neither AZPO. Resolution records are shared with both AZPOs' registries.
+  - **L.** Cross-ETHOS boundary disputes follow the same process but require facilitators from neither ETHOS. Resolution records are shared with both ETHOS' registries.
   Include YAML frontmatter with `depends_on: [domain-mapping]`.
   **Acceptance:** Passes validation. Under 500 lines.
 

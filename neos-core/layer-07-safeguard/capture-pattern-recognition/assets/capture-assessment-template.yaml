@@ -3,7 +3,7 @@
 
 report:
   report_id: ""              # e.g. CAR-SHUR-2026-Q1
-  assessment_scope: ""       # AZPO name or "ecosystem"
+  assessment_scope: ""       # ETHOS name or "ecosystem"
   assessment_period:
     start: ""                # ISO date
     end: ""                  # ISO date

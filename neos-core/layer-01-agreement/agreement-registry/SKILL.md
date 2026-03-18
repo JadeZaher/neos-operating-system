@@ -14,7 +14,7 @@ Without a registry, participants cannot determine what agreements exist, which o
 
 ## B. Domain Scope
 
-The entire ecosystem. The registry holds every agreement at every level of the hierarchy: UAF, ecosystem agreements, access agreements, stewardship agreements, AZPO agreement fields, culture codes, and personal commitments (where formally registered). The registry spans all AZPOs within the ecosystem and maintains links to cross-AZPO agreements.
+The entire ecosystem. The registry holds every agreement at every level of the hierarchy: UAF, ecosystem agreements, access agreements, stewardship agreements, ETHOS agreement fields, culture codes, and personal commitments (where formally registered). The registry spans all ETHOS within the ecosystem and maintains links to cross-ETHOS agreements.
 
 ## C. Trigger Conditions
 
@@ -92,8 +92,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO agreements are maintained in each affected AZPO's registry with linked entries. A change in one registry automatically triggers a synchronization notification to the other registries.
-- When two AZPOs merge or split, their registry entries are migrated according to the reorganization agreement.
+- Cross-ETHOS agreements are maintained in each affected ETHOS's registry with linked entries. A change in one registry automatically triggers a synchronization notification to the other registries.
+- When two ETHOS merge or split, their registry entries are migrated according to the reorganization agreement.
 - **Federation:** when two NEOS ecosystems share governance space, each maintains its own registry. Cross-ecosystem agreements are entered in both registries with a federation link. Query access between ecosystems is defined by the inter-unit coordination protocol (Layer V, deferred). The registry schema includes a federation_link field (not active in this version) to support future cross-ecosystem queries.
 
 ## OmniOne Walkthrough

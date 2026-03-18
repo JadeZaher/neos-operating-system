@@ -80,7 +80,7 @@ Layer IX interacts with every other layer because it records decisions from all 
 | **II (Authority)** | Domain contracts, boundary resolutions, and sunset records become decision records; domain-mapping defines the governance memory steward role |
 | **III (ACT Engine)** | Consent records and advice logs are wrapped in decision records; ACT processes drive precedent challenges |
 | **IV (Onboarding)** | New member orientation includes governance memory access; onboarding decisions are recorded |
-| **V (Inter-Unit)** | Cross-AZPO decisions are tagged with ecosystem_scope; federation protocol extensibility point |
+| **V (Inter-Unit)** | Cross-ETHOS decisions are tagged with ecosystem_scope; federation protocol extensibility point |
 | **VI (Economics)** | Resource allocation decisions are recorded and searchable; financial precedent is classifiable |
 | **VII (Conflict)** | Conflict resolution outcomes become searchable precedent; GAIA escalation is referenced in challenges |
 | **VIII (Ecology)** | Environmental governance decisions are recorded with domain-specific tags |

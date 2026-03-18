@@ -54,7 +54,7 @@ The GAIA 6-level escalation (attributed to the Futurist Playground Value Decisio
 - *Entry*: Level 3 produces irreconcilable competing options — the advice phase revealed a genuine tension that cannot be resolved by choosing one side
 - *Process*: a neutral coach (not a party to the proposal) maps the competing positions against three domains:
   - *Collective domain*: what serves the whole ecosystem
-  - *Community domain*: what serves the affected circle or AZPO
+  - *Community domain*: what serves the affected circle or ETHOS
   - *Private domain*: what serves individual participants
   The coach facilitates synthesis — a "Doing Both Solution" that addresses the core concerns of both positions without simply compromising between them. The coach has process authority to restructure the conversation but has zero authority over the outcome
 - *Exit*: third solution found → return to act-consent-phase with the synthesized proposal. No synthesis possible → escalate to Level 5
@@ -120,8 +120,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO proposals that escalate through GAIA levels involve representatives from each affected AZPO at every level. The escalation is not conducted separately per AZPO — it is a unified escalation with multi-AZPO representation.
-- The resolution record is entered in all affected AZPOs' registries.
+- Cross-ETHOS proposals that escalate through GAIA levels involve representatives from each affected ETHOS at every level. The escalation is not conducted separately per ETHOS — it is a unified escalation with multi-ETHOS representation.
+- The resolution record is entered in all affected ETHOS' registries.
 - Federation extensibility: cross-ecosystem proposals that reach Level 6 require a deciding body with representation from both ecosystems. This coordination is deferred to Layer V but the structural slot exists in the Level 6 process.
 
 ## OmniOne Walkthrough
@@ -158,7 +158,7 @@ A deeply polarizing proposal about OmniOne's expansion strategy escalates throug
 
 ### 5. Large-Scale Replication
 
-At 5,000 members, GAIA escalation handles volume through domain scoping. Most proposals that escalate do so within their circle or AZPO — they never reach Level 5 or 6 because the coaching process at Level 4 resolves most tensions. Ecosystem-level escalations to Level 5-6 remain rare (perhaps 2-3 per year) because most governance happens at lower scope. The coaching capacity scales through trained coaches in each AZPO. The OSC's Level 6 function is reserved for truly ecosystem-wide decisions where lower-level synthesis has been exhausted.
+At 5,000 members, GAIA escalation handles volume through domain scoping. Most proposals that escalate do so within their circle or ETHOS — they never reach Level 5 or 6 because the coaching process at Level 4 resolves most tensions. Ecosystem-level escalations to Level 5-6 remain rare (perhaps 2-3 per year) because most governance happens at lower scope. The coaching capacity scales through trained coaches in each ETHOS. The OSC's Level 6 function is reserved for truly ecosystem-wide decisions where lower-level synthesis has been exhausted.
 
 ### 6. External Legal Pressure
 

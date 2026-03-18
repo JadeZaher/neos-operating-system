@@ -1,5 +1,5 @@
 # Safeguard Trigger Registry Template -- output artifact of safeguard-trigger-design
-# One entry per trigger. Maintain as a living registry for each AZPO.
+# One entry per trigger. Maintain as a living registry for each ETHOS.
 
 triggers:
 
@@ -35,7 +35,7 @@ starter_triggers:
     monitored_indicator: GHI-03 Resource Concentration Index
     threshold: "Single source >= 40% of total resources for 2 consecutive quarters"
     safeguard_action: "Initiate mandatory funding diversification review via structural-diversity-maintenance. Freeze new funding commitments from concentrated source above threshold until review completes."
-    notification_recipients: [all AZPO members, OSC, financial steward]
+    notification_recipients: [all ETHOS members, OSC, financial steward]
     review_date: "annual"
 
   - trigger_id: SGT-STARTER-CAP-02
@@ -44,7 +44,7 @@ starter_triggers:
     monitored_indicator: "Approval rate differential: funder-aligned vs. non-funder-aligned proposals"
     threshold: "Funder-aligned proposals approved at rate 25%+ above baseline for 2 consecutive quarters"
     safeguard_action: "Flag all funder-related proposals for enhanced ACT scrutiny. Publish a funding influence report to all ecosystem members."
-    notification_recipients: [all AZPO members, OSC]
+    notification_recipients: [all ETHOS members, OSC]
     review_date: "annual"
 
   # Charisma Capture Triggers
@@ -54,7 +54,7 @@ starter_triggers:
     monitored_indicator: GHI-02 Approval Rate by Author Role
     threshold: "Individual proposal approval rate exceeds baseline by 25%+ AND objection withdrawal rate for that individual exceeds baseline by 40%+"
     safeguard_action: "Initiate anonymous objection round for the individual's next 3 proposals. Publish approval disparity data to all ecosystem members."
-    notification_recipients: [all AZPO members, OSC]
+    notification_recipients: [all ETHOS members, OSC]
     review_date: "annual"
 
   - trigger_id: SGT-STARTER-CHR-02
@@ -63,7 +63,7 @@ starter_triggers:
     monitored_indicator: GHI-05 Leadership Tenure
     threshold: ">= 4 consecutive cycles in same leadership role"
     safeguard_action: "Initiate mandatory leadership review and rotation process via role-assignment. The incumbent steps into advisory role during review."
-    notification_recipients: [all AZPO members, OSC, role-assignment steward]
+    notification_recipients: [all ETHOS members, OSC, role-assignment steward]
     review_date: "annual"
 
   # Emergency Capture Triggers
@@ -73,7 +73,7 @@ starter_triggers:
     monitored_indicator: "Percentage of emergency decisions outside declared scope"
     threshold: "> 20% of decisions made under emergency authority fall outside the declared emergency scope"
     safeguard_action: "Flag out-of-scope decisions for post-emergency ACT review. Notify all members of scope boundary violations."
-    notification_recipients: [all AZPO members, OSC]
+    notification_recipients: [all ETHOS members, OSC]
     review_date: "annual"
 
   - trigger_id: SGT-STARTER-EMG-02
@@ -82,7 +82,7 @@ starter_triggers:
     monitored_indicator: "Days between emergency conclusion and authority return"
     threshold: "Emergency authority not returned within 14 days of declared emergency conclusion"
     safeguard_action: "Initiate mandatory authority return process. Suspend further emergency decision-making until authority is formally returned through ACT process."
-    notification_recipients: [all AZPO members, OSC, emergency coordinator]
+    notification_recipients: [all ETHOS members, OSC, emergency coordinator]
     review_date: "annual"
 
   # Ossification Capture Triggers
@@ -92,7 +92,7 @@ starter_triggers:
     monitored_indicator: GHI-04 Participation Trend
     threshold: "Non-leadership participation declines > 15% over 2 consecutive quarters while leadership participation remains stable"
     safeguard_action: "Initiate community engagement review. Publish participation disparity data. Recommend structural-diversity-maintenance assessment."
-    notification_recipients: [all AZPO members, OSC]
+    notification_recipients: [all ETHOS members, OSC]
     review_date: "annual"
 
   - trigger_id: SGT-STARTER-OSS-02
@@ -101,5 +101,5 @@ starter_triggers:
     monitored_indicator: "Approval rate differential: leadership-authored vs. non-leadership-authored proposals"
     threshold: "Non-leadership proposal approval rate < 55% while leadership approval rate > 85% for 2 consecutive quarters"
     safeguard_action: "Initiate proposal process review via ACT. Publish approval inequity data. Recommend proposal mentorship program through structural-diversity-maintenance."
-    notification_recipients: [all AZPO members, OSC]
+    notification_recipients: [all ETHOS members, OSC]
     review_date: "annual"

@@ -132,7 +132,7 @@ def test_foundation_prompt_contains_terminology():
     for term, _ in _TERMINOLOGY:
         assert term in prompt, f"Term {term!r} missing from foundation prompt"
     # Explicitly check the spec-required terms
-    for required in ("AZPO", "Current-See", "Steward", "ACT"):
+    for required in ("ETHOS", "Current-See", "Steward", "ACT"):
         assert required in prompt
 
 

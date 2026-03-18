@@ -23,7 +23,7 @@ NEOS designs for genuine choice: exit is always possible, but it involves an ord
 
 GDPR Article 20 establishes the right to receive personal data "in a structured, commonly used and machine-readable format." NEOS extends this principle beyond legal compliance to governance philosophy: a participant's governance history -- their proposals, votes, agreements, conflict resolution participation, resource contributions, and role tenure -- belongs to them. This portable record functions as governance reputation across NEOS ecosystems.
 
-In OmniOne specifically, Current-See records, SHUR participation history, and AZPO membership records travel with the departing member.
+In OmniOne specifically, Current-See records, SHUR participation history, and ETHOS membership records travel with the departing member.
 
 ### Graceful Degradation
 
@@ -79,22 +79,22 @@ The Exit to Community model reframes organizational departure as transition rath
 - AC-3.4: The authority boundary check specifies that no one can prevent a member from exporting their own participation record. The ecosystem can choose what data it maintains, but the member's right to export their own history is absolute.
 - AC-3.5: The capture resistance check addresses data hostage-taking (using data retention as leverage to prevent exit), selective record export (ecosystem filtering unfavorable records from the export -- the member controls what they export, not the ecosystem), and record falsification (the verification mechanism prevents modification after export).
 - AC-3.6: The cross-unit interoperability section defines how a portable record from one ecosystem is recognized by another NEOS ecosystem -- the record format is standardized, but the importing ecosystem decides what weight to give it.
-- AC-3.7: An OmniOne walkthrough demonstrates a departing member exporting their 2-year participation record, including Current-See transaction history, and presenting it when joining a new AZPO in Costa Rica.
+- AC-3.7: An OmniOne walkthrough demonstrates a departing member exporting their 2-year participation record, including Current-See transaction history, and presenting it when joining a new ETHOS in Costa Rica.
 - AC-3.8: All 7 stress-test scenarios documented.
 
 **Priority:** P0 -- Enables genuine portability across ecosystems.
 
-### FR-4: AZPO Dissolution (`azpo-dissolution`)
+### FR-4: ETHOS Dissolution (`ethos-dissolution`)
 
-**Description:** Define the formal process for dissolving an AZPO (Autonomous Zone of Purposeful Operation). Dissolution is the collective exit -- when an entire organizational unit ceases to exist. The skill handles the supermajority vote, asset disposition, commitment settlement, member transition, and record preservation.
+**Description:** Define the formal process for dissolving an ETHOS (Emergent Thriving Holonic Organizational Structure). Dissolution is the collective exit -- when an entire organizational unit ceases to exist. The skill handles the supermajority vote, asset disposition, commitment settlement, member transition, and record preservation.
 
 **Acceptance Criteria:**
-- AC-4.1: The skill defines dissolution triggers: supermajority vote of AZPO members (recommended: 2/3 consent), governance incapacity (the AZPO cannot achieve decision-making quorum for a defined period), ecosystem-level intervention (only under extreme circumstances through full ecosystem ACT process -- this is not a unilateral ecosystem power).
-- AC-4.2: The step-by-step process specifies: dissolution proposal (submitted through normal ACT process with extended advice period), impact assessment (what happens to members, agreements, assets, commitments, inter-unit relationships), consent round (supermajority threshold), asset disposition (ordered process: settle debts, return stewarded assets to stewards, distribute remaining assets per pre-agreed formula or consent of remaining members), commitment settlement (all active agreements reviewed: transfer to receiving entities, sunset with notice, or formally close), member transition (each member follows voluntary-exit or transfers to another AZPO), record preservation (all AZPO governance records are archived and accessible), formal dissolution record (registered in ecosystem records).
+- AC-4.1: The skill defines dissolution triggers: supermajority vote of ETHOS members (recommended: 2/3 consent), governance incapacity (the ETHOS cannot achieve decision-making quorum for a defined period), ecosystem-level intervention (only under extreme circumstances through full ecosystem ACT process -- this is not a unilateral ecosystem power).
+- AC-4.2: The step-by-step process specifies: dissolution proposal (submitted through normal ACT process with extended advice period), impact assessment (what happens to members, agreements, assets, commitments, inter-unit relationships), consent round (supermajority threshold), asset disposition (ordered process: settle debts, return stewarded assets to stewards, distribute remaining assets per pre-agreed formula or consent of remaining members), commitment settlement (all active agreements reviewed: transfer to receiving entities, sunset with notice, or formally close), member transition (each member follows voluntary-exit or transfers to another ETHOS), record preservation (all ETHOS governance records are archived and accessible), formal dissolution record (registered in ecosystem records).
 - AC-4.3: The output artifact is a Dissolution Record documenting: the dissolution vote record, asset disposition ledger, commitment settlement ledger, member transition records, and archive reference.
-- AC-4.4: The authority boundary check specifies that no external body can unilaterally dissolve an AZPO. Even ecosystem-level intervention requires a full ACT process with the AZPO's members as affected parties with voice in the decision.
-- AC-4.5: The failure containment logic addresses: contested dissolution (a minority objects -- the supermajority threshold protects minority voice but does not give it veto), incomplete asset settlement (unsettled assets enter escrow managed by the ecosystem until resolved), members who refuse to transition (they are treated as voluntary exits from the dissolving AZPO), and cascading effects on other AZPOs (inter-unit agreements with the dissolving AZPO trigger review in affected AZPOs).
-- AC-4.6: An OmniOne walkthrough demonstrates the dissolution of a small AZPO in Bali that has dwindled to 4 members and can no longer sustain operations.
+- AC-4.4: The authority boundary check specifies that no external body can unilaterally dissolve an ETHOS. Even ecosystem-level intervention requires a full ACT process with the ETHOS's members as affected parties with voice in the decision.
+- AC-4.5: The failure containment logic addresses: contested dissolution (a minority objects -- the supermajority threshold protects minority voice but does not give it veto), incomplete asset settlement (unsettled assets enter escrow managed by the ecosystem until resolved), members who refuse to transition (they are treated as voluntary exits from the dissolving ETHOS), and cascading effects on other ETHOS (inter-unit agreements with the dissolving ETHOS trigger review in affected ETHOS).
+- AC-4.6: An OmniOne walkthrough demonstrates the dissolution of a small ETHOS in Bali that has dwindled to 4 members and can no longer sustain operations.
 - AC-4.7: All 7 stress-test scenarios documented.
 
 **Priority:** P1 -- Important but less frequent than individual exit.
@@ -109,7 +109,7 @@ The Exit to Community model reframes organizational departure as transition rath
 - AC-5.3: The output artifact is a Re-Entry Record documenting: the returning member's identity, verified portable record reference, agreements consented to, initial role assignments (if any), and linked departure record.
 - AC-5.4: The authority boundary check specifies that re-entry cannot be denied arbitrarily. Rejection requires a specific, stated reason that is subject to Layer VI conflict resolution if contested.
 - AC-5.5: The capture resistance check addresses: re-entry as gatekeeping (using the re-entry process to selectively exclude returning members based on political alignment), re-entry as preferential treatment (fast-tracking allies while slow-walking others -- the process timelines are standardized), and history erasure (ignoring the member's portable record and treating them as a completely new participant).
-- AC-5.6: The cross-unit interoperability section defines how a member can use a portable record from one AZPO to enter a different AZPO within the same or different ecosystem.
+- AC-5.6: The cross-unit interoperability section defines how a member can use a portable record from one ETHOS to enter a different ETHOS within the same or different ecosystem.
 - AC-5.7: An OmniOne walkthrough demonstrates a former AE member returning after 18 months, presenting their portable record, discovering the UAF has been amended, consenting to the current UAF, and being integrated into a circle where their previous expertise is relevant.
 - AC-5.8: All 7 stress-test scenarios documented.
 
@@ -129,7 +129,7 @@ Each SKILL.md must be under 500 lines. Record schemas, unwinding protocol detail
 
 ### NFR-3: Portability
 
-All skills are NEOS-generic at the structural level. OmniOne-specific elements (Current-See records, SHUR membership, AZPO names) appear as clearly marked examples.
+All skills are NEOS-generic at the structural level. OmniOne-specific elements (Current-See records, SHUR membership, ETHOS names) appear as clearly marked examples.
 
 ### NFR-4: Exit as Right, Not Failure
 
@@ -178,14 +178,14 @@ Every SKILL.md must pass automated validation via `scripts/validate_skill.py`.
 **When** they follow the portable-record skill to compile and export,
 **Then** they receive a structured record with a human-readable summary, with privacy choices respected and verification integrity maintained.
 
-### US-4: AZPO Members Vote to Dissolve
-**As** a member of a small AZPO that can no longer sustain operations,
+### US-4: ETHOS Members Vote to Dissolve
+**As** a member of a small ETHOS that can no longer sustain operations,
 **I want** a structured dissolution process that settles all obligations fairly,
-**So that** the dissolution does not harm other AZPOs, creditors, or departing members.
+**So that** the dissolution does not harm other ETHOS, creditors, or departing members.
 
-**Given** the AZPO has 4 remaining members and cannot achieve quorum for decisions,
+**Given** the ETHOS has 4 remaining members and cannot achieve quorum for decisions,
 **When** a dissolution proposal is submitted and achieves supermajority consent,
-**Then** assets are disposed of in order, commitments are settled, members transition to other AZPOs or exit, and records are archived.
+**Then** assets are disposed of in order, commitments are settled, members transition to other ETHOS or exit, and records are archived.
 
 ### US-5: Former Member Requests Re-Entry
 **As** a former member who left 18 months ago and now wishes to return,
@@ -236,7 +236,7 @@ neos-core/
         portable-record-example.yaml
       references/
       scripts/
-    azpo-dissolution/
+    ethos-dissolution/
       SKILL.md
       assets/
         dissolution-record-template.yaml
@@ -271,7 +271,7 @@ Layer X is the capstone and references all earlier layers:
 - **Layer II (Authority):** Departure requires role transfer. Dissolution requires authority redistribution.
 - **Layer III (ACT Engine):** Pending proposals must be withdrawn or transferred. Dissolution uses ACT process.
 - **Layer IV (Economic):** Economic commitments must be settled. Stewarded assets must be returned.
-- **Layer V (Inter-Unit):** Inter-AZPO relationships affected by departure or dissolution must be notified.
+- **Layer V (Inter-Unit):** Inter-ETHOS relationships affected by departure or dissolution must be notified.
 - **Layer VI (Conflict):** Active conflicts involving the departing member must be resolved or formally paused.
 - **Layer VII (Safeguard):** Mass departure triggers governance health audit. Departure of a monitor requires succession.
 - **Layer VIII (Emergency):** Departure of an emergency role holder requires succession update.
@@ -304,7 +304,7 @@ The portable record format is defined in `assets/portable-record-schema.yaml` an
 
 2. **Portable record privacy vs. verification**: How do you verify a portable record's authenticity while respecting the member's choice to redact certain participation details? The current design uses a hash against source registries, but this may reveal what was redacted through differential analysis.
 
-3. **Dissolution of the last AZPO**: If all AZPOs dissolve, what happens to the ecosystem-level agreements and infrastructure? This edge case touches on ecosystem dissolution, which may need a separate skill or be addressed as a configuration of AZPO dissolution at ecosystem scale.
+3. **Dissolution of the last ETHOS**: If all ETHOS dissolve, what happens to the ecosystem-level agreements and infrastructure? This edge case touches on ecosystem dissolution, which may need a separate skill or be addressed as a configuration of ETHOS dissolution at ecosystem scale.
 
 4. **Re-entry after conflict-based removal**: The spec states that members removed through conflict resolution may have re-entry conditions. Who defines those conditions, and are they time-limited? Recommendation: conditions are defined by the conflict resolution outcome, are time-limited (maximum 2 years), and are reviewable through normal ACT process.
 

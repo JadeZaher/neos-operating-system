@@ -56,7 +56,7 @@ repair_agreement:
     agreement_registry_id: ""       # Registration in agreement registry
     escalation_triage_id: ""        # If escalation was needed
     supplementary_agreements: []    # IDs of any supplementary repair agreements
-    domain_reference: ""            # AZPO and circle context
+    domain_reference: ""            # ETHOS and circle context
 
   privacy_note: >
     This agreement documents commitments and completion criteria.

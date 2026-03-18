@@ -190,7 +190,7 @@ After all Layer II skills are complete, the foundation track's skills must be up
 ## User Stories
 
 ### US-1: Circle Defines Its Domain
-**As** a newly formed circle within an AZPO,
+**As** a newly formed circle within an ETHOS,
 **I want** a structured process for defining our domain with clear boundaries, responsibilities, and constraints,
 **So that** every member of the ecosystem knows what we are responsible for and what we cannot do.
 

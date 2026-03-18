@@ -1,12 +1,12 @@
 # Federation Agreement Template
 # Layer V -- Inter-Unit Coordination
-# Use for bilateral or multilateral agreements between AZPOs
+# Use for bilateral or multilateral agreements between ETHOS
 
 agreement_id: "FED-[Ecosystem]-[YYYY]-[Seq]"
 
 type: ""  # bilateral-cooperation | multilateral-protocol | service-level | mutual-recognition | graduated-engagement-compact
 
-participating_azpos:
+participating_ethos:
   - name: ""
     negotiator: ""
     negotiation_mandate_reference: ""
@@ -17,7 +17,7 @@ engagement_tier: ""  # observe | cooperate | federate | integrate
 
 terms:
   commitments:
-    - azpo: ""
+    - ethos: ""
       commitment: ""
       conditions: []
   shared_protocols: []
@@ -26,17 +26,17 @@ terms:
 review_schedule:
   next_review_date: ""
   review_interval: ""  # 6-months | 12-months | 18-months
-  review_process: "all-azpo-consent"
+  review_process: "all-ethos-consent"
 
 amendment_procedures:
   process: "same as original ratification"
   simplified_for_minor_clarifications: true
-  requires_all_azpo_consent: true
+  requires_all_ethos_consent: true
 
 exit_terms:
   notice_period: "90 days"
   commitment_wind_down: "30 days after notice period"
   no_retaliation: true
-  multilateral_impact: "remaining AZPOs convene review"
+  multilateral_impact: "remaining ETHOS convene review"
 
-registry_entries: []  # list of registry IDs per AZPO
+registry_entries: []  # list of registry IDs per ETHOS

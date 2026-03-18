@@ -1,6 +1,6 @@
 ---
 name: commitment-unwinding
-description: "Systematically resolve every outstanding commitment held by a departing member -- run this during any voluntary exit or AZPO dissolution to ensure no obligation is orphaned, trapped, or weaponized."
+description: "Systematically resolve every outstanding commitment held by a departing member -- run this during any voluntary exit or ETHOS dissolution to ensure no obligation is orphaned, trapped, or weaponized."
 layer: 10
 version: 0.1.0
 depends_on: [agreement-creation, role-assignment]
@@ -14,13 +14,13 @@ Departing members accumulate commitments like sediment: roles, agreements, resou
 
 ## B. Domain Scope
 
-This skill applies to every commitment held by a departing member within the scope of their departure (single AZPO or full ecosystem). It covers five commitment categories: role obligations, agreement obligations, economic commitments, pending proposals, and active conflict resolutions. The skill is triggered by the voluntary-exit skill (individual departure) or the azpo-dissolution skill (collective departure). It interacts with role-assignment (Layer II) for role transfer, agreement-creation (Layer I) for agreement amendment, and resource allocation processes (Layer IV) for economic settlement. Out of scope: the decision to depart (that is voluntary-exit) and the generation of the portable record (that is portable-record).
+This skill applies to every commitment held by a departing member within the scope of their departure (single ETHOS or full ecosystem). It covers five commitment categories: role obligations, agreement obligations, economic commitments, pending proposals, and active conflict resolutions. The skill is triggered by the voluntary-exit skill (individual departure) or the ethos-dissolution skill (collective departure). It interacts with role-assignment (Layer II) for role transfer, agreement-creation (Layer I) for agreement amendment, and resource allocation processes (Layer IV) for economic settlement. Out of scope: the decision to depart (that is voluntary-exit) and the generation of the portable record (that is portable-record).
 
 ## C. Trigger Conditions
 
 - **Voluntary exit initiated**: the voluntary-exit skill generates a commitment inventory and triggers this skill for systematic resolution
-- **AZPO dissolution initiated**: the azpo-dissolution skill triggers commitment unwinding for all members of the dissolving unit
-- **Partial departure**: a member leaves one circle or AZPO but remains in the ecosystem, requiring unwinding of commitments specific to that unit
+- **ETHOS dissolution initiated**: the ethos-dissolution skill triggers commitment unwinding for all members of the dissolving unit
+- **Partial departure**: a member leaves one circle or ETHOS but remains in the ecosystem, requiring unwinding of commitments specific to that unit
 - **Role reassignment**: when a major role reassignment requires unwinding the outgoing holder's accumulated commitments (even without ecosystem departure)
 
 ## D. Required Inputs
@@ -75,7 +75,7 @@ A Commitment Unwinding Ledger following `assets/commitment-unwinding-ledger-temp
 
 ## J. Expiry / Review Condition
 
-The Commitment Unwinding Ledger does not expire -- it is a permanent governance record attached to the Departure Record. The unwinding process itself is reviewed annually through the ACT consent process to ensure the five commitment categories remain comprehensive and the resolution protocols remain practical. If a new type of commitment emerges that does not fit existing categories (e.g., a new economic instrument), the unwinding protocols are updated through an agreement amendment. Emergency-queue items are reviewed weekly by the AZPO governance facilitator until resolved.
+The Commitment Unwinding Ledger does not expire -- it is a permanent governance record attached to the Departure Record. The unwinding process itself is reviewed annually through the ACT consent process to ensure the five commitment categories remain comprehensive and the resolution protocols remain practical. If a new type of commitment emerges that does not fit existing categories (e.g., a new economic instrument), the unwinding protocols are updated through an agreement amendment. Emergency-queue items are reviewed weekly by the ETHOS governance facilitator until resolved.
 
 ## K. Exit Compatibility Check
 
@@ -83,7 +83,7 @@ This skill is a core component of the exit process -- it is triggered by volunta
 
 ## L. Cross-Unit Interoperability Impact
 
-When a member departs a single AZPO but remains in the ecosystem, only commitments scoped to that AZPO are unwound. Ecosystem-level commitments (e.g., participation in cross-AZPO agreements) remain active. When a member departs the entire ecosystem, all commitments across all AZPOs are unwound in a coordinated process. The ledger template is standardized across all NEOS ecosystems, enabling a receiving ecosystem to understand how commitments were resolved during a previous departure. Cross-AZPO role transfers (e.g., transferring a role from SHUR Bali to SHUR Costa Rica) follow the same unwinding protocol with cross-unit coordinator consultation.
+When a member departs a single ETHOS but remains in the ecosystem, only commitments scoped to that ETHOS are unwound. Ecosystem-level commitments (e.g., participation in cross-ETHOS agreements) remain active. When a member departs the entire ecosystem, all commitments across all ETHOS are unwound in a coordinated process. The ledger template is standardized across all NEOS ecosystems, enabling a receiving ecosystem to understand how commitments were resolved during a previous departure. Cross-ETHOS role transfers (e.g., transferring a role from SHUR Bali to SHUR Costa Rica) follow the same unwinding protocol with cross-unit coordinator consultation.
 
 ## OmniOne Walkthrough
 
@@ -111,7 +111,7 @@ A departing member manages a significant funding relationship -- they are the ec
 
 ### 2. Emergency Crisis
 
-A natural disaster strikes during an active commitment unwinding process. Three members are mid-departure when the Bali SHUR enters emergency mode. The commitment-unwinding skill adapts: time-sensitive unwinding steps (economic settlements, role transfers for critical functions) are prioritized, while routine items (agreement amendments, proposal transfers) are deferred until post-emergency. The ledger records each commitment's status: "completed," "emergency-deferred," or "transferred to emergency queue." The departing members are not recalled to service during the emergency -- their departure timelines hold. Post-emergency, the AZPO governance facilitator resolves deferred items using the emergency-queue review process. The skill's structured ledger ensures nothing is lost in the chaos; every commitment has a documented status even if resolution is delayed.
+A natural disaster strikes during an active commitment unwinding process. Three members are mid-departure when the Bali SHUR enters emergency mode. The commitment-unwinding skill adapts: time-sensitive unwinding steps (economic settlements, role transfers for critical functions) are prioritized, while routine items (agreement amendments, proposal transfers) are deferred until post-emergency. The ledger records each commitment's status: "completed," "emergency-deferred," or "transferred to emergency queue." The departing members are not recalled to service during the emergency -- their departure timelines hold. Post-emergency, the ETHOS governance facilitator resolves deferred items using the emergency-queue review process. The skill's structured ledger ensures nothing is lost in the chaos; every commitment has a documented status even if resolution is delayed.
 
 ### 3. Leadership Charisma Capture
 
@@ -123,7 +123,7 @@ A departing member is a central figure in an ongoing factional dispute. Both fac
 
 ### 5. Large-Scale Replication
 
-At 4,000 members across 12 SHUR locations, the commitment-unwinding skill processes dozens of departures monthly. The standardized five-category framework and ledger template scale without modification -- every AZPO uses the same protocol. Coordinator training is straightforward because the process is categorical, not discretionary. Cross-AZPO commitments (e.g., a member who holds roles in two SHUR locations) are unwound through coordinated processes with a coordinator at each affected AZPO. The ledger format enables ecosystem-wide analysis of unwinding patterns: if one AZPO consistently has high emergency-queue rates, it signals under-staffing or role concentration issues that can be addressed through governance health mechanisms. Batch processing efficiencies emerge naturally for mass-departure events.
+At 4,000 members across 12 SHUR locations, the commitment-unwinding skill processes dozens of departures monthly. The standardized five-category framework and ledger template scale without modification -- every ETHOS uses the same protocol. Coordinator training is straightforward because the process is categorical, not discretionary. Cross-ETHOS commitments (e.g., a member who holds roles in two SHUR locations) are unwound through coordinated processes with a coordinator at each affected ETHOS. The ledger format enables ecosystem-wide analysis of unwinding patterns: if one ETHOS consistently has high emergency-queue rates, it signals under-staffing or role concentration issues that can be addressed through governance health mechanisms. Batch processing efficiencies emerge naturally for mass-departure events.
 
 ### 6. External Legal Pressure
 

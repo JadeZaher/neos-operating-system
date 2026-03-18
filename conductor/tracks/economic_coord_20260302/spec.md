@@ -87,7 +87,7 @@ Funding pools operate at circle and ecosystem levels. The H.A.R.T. (Holistic All
 **Description:** Define the governance structure for managing circle and ecosystem-level resource pools. This includes pool creation, boundary definition, inflow/outflow rules, transparency requirements, and steward accountability. Every funding pool is an agreement -- creating one invokes the agreement-creation skill from Layer I.
 
 **Acceptance Criteria:**
-- AC-2.1: The skill defines pool types (circle operational, ecosystem strategic, cross-AZPO shared, project-specific, emergency reserve) with governance rules for each.
+- AC-2.1: The skill defines pool types (circle operational, ecosystem strategic, cross-ETHOS shared, project-specific, emergency reserve) with governance rules for each.
 - AC-2.2: The step-by-step process covers pool creation through ACT, steward appointment through authority-assignment (Layer II), reporting cycles, and pool sunset procedures.
 - AC-2.3: The output artifact is a funding pool governance document specifying boundaries, inflow sources, outflow rules, steward roles, transparency schedule, and review date.
 - AC-2.4: The authority boundary check prevents any steward from unilateral allocation decisions above a defined threshold and prevents pool capture through steward collusion.

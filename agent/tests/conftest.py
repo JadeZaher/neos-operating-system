@@ -52,7 +52,7 @@ Without this skill, decisions could be made outside the formal process.
 
 ## B. Domain Scope
 
-This skill applies to all domains within a single AZPO.
+This skill applies to all domains within a single ETHOS.
 It covers governance decisions related to agreement management.
 Out of scope: cross-ecosystem decisions (handled by Layer V skills).
 
@@ -119,7 +119,7 @@ Exit does not retroactively invalidate previously consented decisions.
 
 ## L. Cross-Unit Interoperability Impact
 
-Cross-AZPO effects require notification to affected units.
+Cross-ETHOS effects require notification to affected units.
 Outputs are registered in a shared cross-unit registry.
 Federation extensibility is noted but deferred to Layer V.
 Inter-unit disputes follow the inter-unit resolution skill.

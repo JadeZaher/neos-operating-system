@@ -5,7 +5,7 @@ urgency: normal  # normal | elevated | emergency
 entries:
   - advisor: ""
     role: ""
-    azpo: ""
+    ethos: ""
     date: ""
     advice_text: ""
     proposer_response: ""

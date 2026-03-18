@@ -9,14 +9,14 @@ coaching_plan:
   participant:
     name: ""
     governance_role: ""             # TH, AE, OSC, steward, etc.
-    azpo: ""
+    ethos: ""
     experience_level: ""            # Relevant governance experience
     self_assessment: ""             # Participant's own perspective on the skill gaps
 
   coach:
     name: ""
     governance_role: ""
-    azpo: ""                        # Must differ from participant's direct authority
+    ethos: ""                        # Must differ from participant's direct authority
     relevant_skills: ""             # Why this coach was selected
     independence_verified: true     # Confirms no authority relationship with participant
 

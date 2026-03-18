@@ -14,7 +14,7 @@ Not every conflict is a values conflict, and not every disruptive behavior is in
 
 ## B. Domain Scope
 
-This skill applies to conflicts within any AZPO where the escalation-triage process has identified a skill gap as the primary root cause. Coaching-eligible situations include: facilitation skill deficits (a steward who cannot manage speaking time), communication patterns imported from other organizational cultures (a participant who defaults to top-down directives), governance knowledge gaps (a member who does not understand the consent process), and behavioral patterns that are disruptive but not intentionally harmful (habitual interrupting, unilateral decision-making from habit). Out of scope: intentional harm (route to harm-circle), values conflicts (the participant understands the skill but disagrees with it), structural disputes between AZPOs (Layer V), and clinical or therapeutic needs (professional support referral).
+This skill applies to conflicts within any ETHOS where the escalation-triage process has identified a skill gap as the primary root cause. Coaching-eligible situations include: facilitation skill deficits (a steward who cannot manage speaking time), communication patterns imported from other organizational cultures (a participant who defaults to top-down directives), governance knowledge gaps (a member who does not understand the consent process), and behavioral patterns that are disruptive but not intentionally harmful (habitual interrupting, unilateral decision-making from habit). Out of scope: intentional harm (route to harm-circle), values conflicts (the participant understands the skill but disagrees with it), structural disputes between ETHOS (Layer V), and clinical or therapeutic needs (professional support referral).
 
 ## C. Trigger Conditions
 
@@ -83,7 +83,7 @@ When a participant exits the ecosystem during active coaching, the coaching plan
 
 ## L. Cross-Unit Interoperability Impact
 
-When a participant's skill-gap behavior affects multiple AZPOs, the coaching plan is designed to address the cross-unit impact. The coach may be selected from a third AZPO to maintain neutrality. Affected parties from all impacted AZPOs provide input on the coaching plan targets. Check-in feedback is gathered across units. The coaching record is stored in the participant's home AZPO with notification to affected AZPOs (outcome summary only, not private coaching content). If the coaching reveals that the skill gap is common across AZPOs (multiple participants from different units exhibiting similar gaps), the coaching facilitator escalates to community-impact-assessment to examine whether the ecosystem's onboarding or training processes have a structural deficit.
+When a participant's skill-gap behavior affects multiple ETHOS, the coaching plan is designed to address the cross-unit impact. The coach may be selected from a third ETHOS to maintain neutrality. Affected parties from all impacted ETHOS provide input on the coaching plan targets. Check-in feedback is gathered across units. The coaching record is stored in the participant's home ETHOS with notification to affected ETHOS (outcome summary only, not private coaching content). If the coaching reveals that the skill gap is common across ETHOS (multiple participants from different units exhibiting similar gaps), the coaching facilitator escalates to community-impact-assessment to examine whether the ecosystem's onboarding or training processes have a structural deficit.
 
 ## OmniOne Walkthrough
 
@@ -91,7 +91,7 @@ Nadia, a facilitator in the AE circle at SHUR Bali, flags a recurring pattern to
 
 Coaching facilitator Amara reviews the triage record and confirms the coaching eligibility. She approaches Dmitri: "Kai's assessment identified that some collaborative governance skills could strengthen your stewardship. Coaching is available -- would you be interested?" Dmitri is initially defensive: "I get things done. That is what stewards do." Amara clarifies: "Coaching is voluntary. It is about building collaborative decision-making skills that the NEOS consent framework relies on. If you are not interested, that is your choice -- though the concerns from your circle members would remain unaddressed." Dmitri agrees to explore coaching.
 
-Amara selects coach Javier, a steward from a different AZPO (the food production circle) who has strong collaborative facilitation skills and no authority relationship with Dmitri. Dmitri is comfortable with the selection.
+Amara selects coach Javier, a steward from a different ETHOS (the food production circle) who has strong collaborative facilitation skills and no authority relationship with Dmitri. Dmitri is comfortable with the selection.
 
 Javier and Dmitri co-design the coaching plan over two sessions. The plan identifies three skill gaps: (1) distinguishing between delegated authority decisions and consent-required decisions, (2) implementing the advice process before decisions, and (3) presenting decisions as proposals rather than announcements. Amara consults Suki and Ravi, who add a fourth target: (4) actively soliciting input from quieter circle members during meetings. The coaching plan timeline is 8 weeks with bi-weekly check-ins.
 

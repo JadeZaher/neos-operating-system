@@ -97,13 +97,13 @@ Do not write abstract summaries. Do not list bullets. Narrate the scenario playi
 
 ### 5. Large-Scale Replication
 
-**Setup conditions:** The ecosystem grows from 50 active participants to 5,000 across dozens of AZPOs spanning multiple geographic locations. The volume of proposals, agreements, and decisions increases by two orders of magnitude. Not every participant can engage with every governance action.
+**Setup conditions:** The ecosystem grows from 50 active participants to 5,000 across dozens of ETHOS spanning multiple geographic locations. The volume of proposals, agreements, and decisions increases by two orders of magnitude. Not every participant can engage with every governance action.
 
-**Pressures applied:** Information overload on participants. Consent fatigue from excessive decision volume. Coordination overhead between AZPOs. Pressure to centralize decision-making for efficiency. Divergent interpretations of skills across locations.
+**Pressures applied:** Information overload on participants. Consent fatigue from excessive decision volume. Coordination overhead between ETHOS. Pressure to centralize decision-making for efficiency. Divergent interpretations of skills across locations.
 
-**Evaluation criteria:** The skill scales through domain-scoped action -- participants engage only with decisions in their domain. The agreement-registry and decision-record systems handle high volume through semantic tagging and precedent search (Layer IX). Cross-AZPO coordination (Layer V) manages inter-unit effects without requiring global participation. The skill's process does not require all participants to participate in every instance.
+**Evaluation criteria:** The skill scales through domain-scoped action -- participants engage only with decisions in their domain. The agreement-registry and decision-record systems handle high volume through semantic tagging and precedent search (Layer IX). Cross-ETHOS coordination (Layer V) manages inter-unit effects without requiring global participation. The skill's process does not require all participants to participate in every instance.
 
-**Strong response example:** The skill operates within domain scope, routing decisions to affected participants only. The registry handles volume through structured metadata. Precedent search reduces redundant deliberation. Cross-AZPO effects trigger notification rather than global consent. New AZPOs adopt the skill by configuring their own domain contracts.
+**Strong response example:** The skill operates within domain scope, routing decisions to affected participants only. The registry handles volume through structured metadata. Precedent search reduces redundant deliberation. Cross-ETHOS effects trigger notification rather than global consent. New ETHOS adopt the skill by configuring their own domain contracts.
 
 **Weak response example:** The skill requires ecosystem-wide consent for every decision. Participation rates collapse under volume. Informal shortcuts emerge to manage overload. The registry becomes unusable without search and tagging.
 
@@ -121,7 +121,7 @@ Do not write abstract summaries. Do not list bullets. Narrate the scenario playi
 
 ### 7. Sudden Exit of 30% of Participants
 
-**Setup conditions:** Thirty percent of the ecosystem's active participants exit within a short period (days to weeks). The departing participants include key role-holders, domain stewards, and participants with institutional knowledge. Multiple AZPOs lose quorum simultaneously. In-progress agreements and decisions are partially complete.
+**Setup conditions:** Thirty percent of the ecosystem's active participants exit within a short period (days to weeks). The departing participants include key role-holders, domain stewards, and participants with institutional knowledge. Multiple ETHOS lose quorum simultaneously. In-progress agreements and decisions are partially complete.
 
 **Pressures applied:** Quorum failure across multiple domains. Loss of institutional knowledge. Orphaned roles and unfulfilled commitments. Pressure to consolidate authority among remaining participants. Emotional strain and morale loss on those who stay.
 

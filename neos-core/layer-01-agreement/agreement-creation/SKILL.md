@@ -20,7 +20,7 @@ This skill applies to any domain where binding commitments between participants 
 2. **Ecosystem Agreement** — e.g., OmniOne Master Plan
 3. **Access Agreement** — e.g., SHUR space agreements
 4. **Stewardship Agreement** — role-specific commitments
-5. **AZPO Agreement Field** — organizational unit agreements (called "ETHOS" in OmniOne)
+5. **ETHOS Agreement Field** — organizational unit agreements (called "ETHOS" in OmniOne)
 6. **Culture Code** — circle-internal norms
 7. **Personal Commitments** — individual-level agreements
 
@@ -29,9 +29,9 @@ The skill covers creation of agreements at every level. UAF creation is rare (ty
 ## C. Trigger Conditions
 
 - A participant identifies a need for a new binding commitment that does not yet exist in the agreement registry
-- A new space, circle, or AZPO is formed and needs founding agreements
+- A new space, circle, or ETHOS is formed and needs founding agreements
 - An ecosystem is established and needs its initial UAF (one-time event, uses this skill)
-- A cross-AZPO interaction requires a new agreement to govern shared resources or access
+- A cross-ETHOS interaction requires a new agreement to govern shared resources or access
 - An emergency requires temporary agreements under compressed timelines
 
 ## D. Required Inputs
@@ -51,7 +51,7 @@ The skill covers creation of agreements at every level. UAF creation is rare (ty
 3. **Synergy check.** The proposer queries the agreement registry for existing agreements in the same domain. If a related agreement exists, the proposer must document the relationship (complements, supersedes, or conflicts) and resolve any conflicts before proceeding.
 4. **Route to ACT level.** Based on agreement type and scope:
    - *Space or access agreement* (single circle): circle-level ACT with affected parties consenting
-   - *Organizational agreement field* (AZPO-wide): full ACT cycle with all circle members in the AZPO
+   - *Organizational agreement field* (ETHOS-wide): full ACT cycle with all circle members in the ETHOS
    - *Ecosystem-level agreement*: OSC-level ACT with consensus mode
    - *UAF*: OSC consensus — used only at ecosystem founding; amendments use agreement-amendment
 5. **Enter Advice phase.** Per the act-advice-phase skill: the proposal is announced to all affected parties, an advice window opens, and input is gathered and documented.
@@ -118,9 +118,9 @@ Agreements the departing participant proposed remain valid — authorship does n
 
 ## L. Cross-Unit Interoperability Impact
 
-- Agreements created in one AZPO that affect participants or resources in another AZPO trigger **cross-unit notification** — the affected AZPO must be informed before the consent phase begins
-- The affected AZPO must consent through their own ACT process before the agreement can bind their members
-- Cross-AZPO agreements are registered in both AZPOs' registries with linked entries
+- Agreements created in one ETHOS that affect participants or resources in another ETHOS trigger **cross-unit notification** — the affected ETHOS must be informed before the consent phase begins
+- The affected ETHOS must consent through their own ACT process before the agreement can bind their members
+- Cross-ETHOS agreements are registered in both ETHOS' registries with linked entries
 - When two NEOS ecosystems share a physical or digital space, agreements governing that space use the inter-unit coordination protocol (Layer V, deferred). This skill notes the extensibility point: the routing logic in Step 4 can be extended to include cross-ecosystem routing when Layer V is available.
 
 ## OmniOne Walkthrough
@@ -151,7 +151,7 @@ A severe flood damages the SHUR Bali main building, displacing 8 residents who n
 
 ### 3. Leadership Charisma Capture
 
-A charismatic OmniOne leader, respected for founding one of the most successful AZPOs, proposes a new organizational agreement that would centralize resource allocation decisions under a single "Resource Council" they would chair. They frame objections from smaller circles as "not understanding the big picture" and privately pressure hesitant participants to withdraw their concerns. The agreement-creation process structurally resists this: during the consent phase, every objection is formally recorded before any discussion occurs — once recorded, an objection cannot be erased, only addressed through an integration round. The facilitator (who must be neutral and cannot be the proposer) explicitly states that objections are valued structural contributions. When two participants raise objections about centralization contradicting NEOS's distributed authority principle, the integration rounds require the proposer to substantively modify the proposal, not just reframe objections as misunderstandings. Social pressure to withdraw objections is itself flagged as a capture risk by the facilitator. After three integration rounds fail to resolve the core objection (centralized resource authority contradicts scoped authority), the proposal escalates to GAIA Level 4 coaching.
+A charismatic OmniOne leader, respected for founding one of the most successful ETHOS, proposes a new organizational agreement that would centralize resource allocation decisions under a single "Resource Council" they would chair. They frame objections from smaller circles as "not understanding the big picture" and privately pressure hesitant participants to withdraw their concerns. The agreement-creation process structurally resists this: during the consent phase, every objection is formally recorded before any discussion occurs — once recorded, an objection cannot be erased, only addressed through an integration round. The facilitator (who must be neutral and cannot be the proposer) explicitly states that objections are valued structural contributions. When two participants raise objections about centralization contradicting NEOS's distributed authority principle, the integration rounds require the proposer to substantively modify the proposal, not just reframe objections as misunderstandings. Social pressure to withdraw objections is itself flagged as a capture risk by the facilitator. After three integration rounds fail to resolve the core objection (centralized resource authority contradicts scoped authority), the proposal escalates to GAIA Level 4 coaching.
 
 ### 4. High Conflict / Polarization
 
@@ -159,7 +159,7 @@ Two factions within the OmniOne AE have deeply opposed views on a new stewardshi
 
 ### 5. Large-Scale Replication
 
-OmniOne grows from 50 members in one location to 5,000 members across 15 SHUR locations and 80 circles. Agreement creation scales through domain-scoped routing: a kitchen agreement at SHUR Costa Rica involves only the 20 residents of that location, not all 5,000 members. The synergy check becomes more critical at scale — with hundreds of active agreements, the registry query prevents duplication and conflict. Cross-circle agreements are routed through domain matching rather than manual identification, using the registry's domain taxonomy. Ecosystem-level agreements (requiring OSC involvement) remain rare — most governance happens at the circle and AZPO level. The agreement-template.yaml structure remains the same at every scale; what changes is the routing logic and the size of the affected-parties list. Facilitator capacity scales through a train-the-trainer model within each circle, ensuring every SHUR location has multiple trained facilitators.
+OmniOne grows from 50 members in one location to 5,000 members across 15 SHUR locations and 80 circles. Agreement creation scales through domain-scoped routing: a kitchen agreement at SHUR Costa Rica involves only the 20 residents of that location, not all 5,000 members. The synergy check becomes more critical at scale — with hundreds of active agreements, the registry query prevents duplication and conflict. Cross-circle agreements are routed through domain matching rather than manual identification, using the registry's domain taxonomy. Ecosystem-level agreements (requiring OSC involvement) remain rare — most governance happens at the circle and ETHOS level. The agreement-template.yaml structure remains the same at every scale; what changes is the routing logic and the size of the affected-parties list. Facilitator capacity scales through a train-the-trainer model within each circle, ensuring every SHUR location has multiple trained facilitators.
 
 ### 6. External Legal Pressure
 

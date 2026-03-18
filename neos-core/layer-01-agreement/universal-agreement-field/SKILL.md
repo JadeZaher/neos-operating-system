@@ -14,9 +14,9 @@ Without a root agreement, participants operate on assumed norms that vary by ind
 
 ## B. Domain Scope
 
-The entire ecosystem. The UAF applies to every participant regardless of role, circle, or AZPO. It is the root node of the agreement hierarchy:
+The entire ecosystem. The UAF applies to every participant regardless of role, circle, or ETHOS. It is the root node of the agreement hierarchy:
 
-**Universal Agreement Field (UAF)** → Ecosystem Agreement → Access Agreement → Stewardship Agreement → AZPO Agreement Field → Culture Code → Personal Commitments
+**Universal Agreement Field (UAF)** → Ecosystem Agreement → Access Agreement → Stewardship Agreement → ETHOS Agreement Field → Culture Code → Personal Commitments
 
 **Override rule:** No agreement at a lower level may contradict the UAF. When a conflict is discovered, the UAF prevails until the lower-level agreement is formally amended. The UAF itself can only be amended through OSC consensus via the agreement-amendment skill.
 
@@ -104,7 +104,7 @@ Dex presents the OmniOne UAF (version 2.1.0, ratified January 2026, next review 
 
 In Section 3 (Conflict), Priya raises a deeper concern: "What if I fundamentally disagree with the mediation process itself?" Dex explains that consent to the UAF is consent to the process, not to every future outcome the process produces. If Priya finds the mediation process inadequate after experiencing it, she can propose amendments through the ACT process — the UAF itself contains the mechanism for its own evolution. This satisfies Priya's concern about being locked into an unchangeable system.
 
-Dex provides Priya with a digital copy of the UAF and confirms the 48-hour reflection period. Two days later, Priya returns with one additional question about Section 4 (Stewardship): how are "original works" distinguished from "emergent works" for her permaculture designs? Dex clarifies: designs Priya creates independently are her original works and she retains credit and specified rights. Designs she co-creates with other OmniOne members are emergent works, co-stewarded by the relevant AZPO. Priya is satisfied.
+Dex provides Priya with a digital copy of the UAF and confirms the 48-hour reflection period. Two days later, Priya returns with one additional question about Section 4 (Stewardship): how are "original works" distinguished from "emergent works" for her permaculture designs? Dex clarifies: designs Priya creates independently are her original works and she retains credit and specified rights. Designs she co-creates with other OmniOne members are emergent works, co-stewarded by the relevant ETHOS. Priya is satisfied.
 
 Priya signs the consent record: her name, the date, UAF version 2.1.0, Dex as facilitator, and confirmation that the 48-hour cooling-off period was honored. The registry records her consent. She has 7 days to withdraw if she reconsiders.
 
@@ -114,7 +114,7 @@ Edge case: Three months later, a new member named Theo claims he was pressured i
 
 ### 1. Capital Influx
 
-A major investor offers OmniOne $2 million contingent on weakening the UAF's Section 4 stewardship commitments — specifically, allowing investors to retain exclusive commercial rights to emergent works produced within funded AZPOs. The amendment proposal enters the normal process and reaches the OSC. The consensus requirement means all 7 OSC members must actively agree. OSC member Ayo objects: the change would contradict the foundational principle that capital contribution does not grant governance authority over collective creations. Because consensus requires unanimity, Ayo's single objection blocks the amendment. The investor's offer is documented in the registry as context. The UAF remains unchanged. The investor may still contribute without the condition — their financial support is welcome but does not purchase governance modification rights.
+A major investor offers OmniOne $2 million contingent on weakening the UAF's Section 4 stewardship commitments — specifically, allowing investors to retain exclusive commercial rights to emergent works produced within funded ETHOS. The amendment proposal enters the normal process and reaches the OSC. The consensus requirement means all 7 OSC members must actively agree. OSC member Ayo objects: the change would contradict the foundational principle that capital contribution does not grant governance authority over collective creations. Because consensus requires unanimity, Ayo's single objection blocks the amendment. The investor's offer is documented in the registry as context. The UAF remains unchanged. The investor may still contribute without the condition — their financial support is welcome but does not purchase governance modification rights.
 
 ### 2. Emergency Crisis
 

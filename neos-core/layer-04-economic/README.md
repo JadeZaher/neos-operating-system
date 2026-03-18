@@ -43,13 +43,13 @@ Resources enter through **resource-request**. Pools are governed by **funding-po
 | Ostrom Principle | Layer IV Implementation |
 |------------------|----------------------|
 | 1. Clearly defined boundaries | Every funding pool has explicit domain boundaries, eligible participants, and resource scope defined in its governance agreement |
-| 2. Congruence with local conditions | Pool governance rules are configured per circle/AZPO; thresholds, inflow sources, and outflow rules match local context |
+| 2. Congruence with local conditions | Pool governance rules are configured per circle/ETHOS; thresholds, inflow sources, and outflow rules match local context |
 | 3. Collective-choice arrangements | Participatory allocation assemblies ensure those affected by resource rules participate in making them |
 | 4. Monitoring by community members | Commons monitoring is performed by rotating community members, not external auditors or algorithms |
 | 5. Graduated sanctions | Commons monitoring triggers a 4-level graduated response: notification, review, restriction, investigation |
 | 6. Accessible conflict resolution | Resource disputes route through GAIA escalation levels; third-solution rounds in allocation assemblies |
 | 7. Recognition of self-governance | External legal requirements are absorbed locally; no external authority overrides pool governance |
-| 8. Nested enterprises | Pools operate at circle, AZPO, and ecosystem levels with consistent governance at each scale |
+| 8. Nested enterprises | Pools operate at circle, ETHOS, and ecosystem levels with consistent governance at each scale |
 
 ## Cross-Layer References
 

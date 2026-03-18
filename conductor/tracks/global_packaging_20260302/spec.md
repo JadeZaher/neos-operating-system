@@ -36,7 +36,7 @@ The 7 stress-test scenarios are not just documentation -- they are the primary q
 **Acceptance Criteria:**
 - AC-1.1: The README includes: project title and one-paragraph summary, what NEOS is and what it is not (the "middleware" framing), the first ecosystem (OmniOne) with brief context, the 10 skill layers listed with one-sentence descriptions, repository structure with directory guide, how to use the skill stack (for AI agents: load a skill, follow sections A-L; for architects: fork, configure, validate), how to validate skills (`scripts/validate_skill.py`), how to run the stress test report (`scripts/stress_test_report.py`), how to package for distribution (`scripts/package_zip.py`), licensing and attribution, and a link to the NEOS Principles and Stress Test Protocol documents.
 - AC-1.2: The README is under 200 lines. It is a navigation document, not a treatise.
-- AC-1.3: The README uses the correct terminology from product-guidelines.md (AZPO, Current-See, Steward, ACT, etc.).
+- AC-1.3: The README uses the correct terminology from product-guidelines.md (ETHOS, Current-See, Steward, ACT, etc.).
 - AC-1.4: The README does not contain philosophical arguments -- it points to the Principles document for that. It is functional and navigational.
 
 **Priority:** P0

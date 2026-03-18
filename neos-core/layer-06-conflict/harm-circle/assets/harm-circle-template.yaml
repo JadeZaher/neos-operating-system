@@ -9,7 +9,7 @@ harm_circle:
 
   convener:
     name: ""
-    role: ""                      # Facilitation role and AZPO affiliation
+    role: ""                      # Facilitation role and ETHOS affiliation
     authority_scope: ""           # Domain-mapping reference
 
   participants:
@@ -51,7 +51,7 @@ harm_circle:
   linked_records:
     escalation_triage_id: ""      # Triage record that routed to this circle
     community_impact_id: ""       # If a CIA was triggered
-    domain_reference: ""          # AZPO and circle context
+    domain_reference: ""          # ETHOS and circle context
 
   created_at: ""                  # ISO 8601 timestamp
   created_by: ""                  # Convener who finalized the record

@@ -14,13 +14,13 @@ Returning members fall into a structural gap. New-member onboarding assumes no h
 
 ## B. Domain Scope
 
-This skill applies to any former ecosystem member who requests to rejoin, whether returning to the same AZPO, a different AZPO, or the ecosystem at large. The scope covers: re-entry request, record verification, current-agreement review, consent to current agreements, role integration, and the formal re-entry record. It interacts with the voluntary-exit skill (which originally processed the departure), the portable-record skill (which provides the member's governance history), and the member-lifecycle skill (which manages ongoing membership transitions). Out of scope: initial onboarding of members who have never participated (that is the member-lifecycle skill's territory), and forced re-admission of expelled or conflicted members (which requires Layer VI resolution first).
+This skill applies to any former ecosystem member who requests to rejoin, whether returning to the same ETHOS, a different ETHOS, or the ecosystem at large. The scope covers: re-entry request, record verification, current-agreement review, consent to current agreements, role integration, and the formal re-entry record. It interacts with the voluntary-exit skill (which originally processed the departure), the portable-record skill (which provides the member's governance history), and the member-lifecycle skill (which manages ongoing membership transitions). Out of scope: initial onboarding of members who have never participated (that is the member-lifecycle skill's territory), and forced re-admission of expelled or conflicted members (which requires Layer VI resolution first).
 
 ## C. Trigger Conditions
 
 - **Former member request**: a former member contacts any steward or governance facilitator expressing intent to rejoin
-- **AZPO invitation**: an AZPO identifies a former member whose skills or experience match a current need and extends an invitation (the former member retains full right to decline)
-- **Post-dissolution return**: a member who departed during AZPO dissolution seeks to join a successor or different AZPO within the same ecosystem
+- **ETHOS invitation**: an ETHOS identifies a former member whose skills or experience match a current need and extends an invitation (the former member retains full right to decline)
+- **Post-dissolution return**: a member who departed during ETHOS dissolution seeks to join a successor or different ETHOS within the same ecosystem
 - **Federation transfer**: a member of a federated NEOS ecosystem requests transfer to another federated ecosystem (treated as a new entry with portable record context)
 
 ## D. Required Inputs
@@ -28,23 +28,23 @@ This skill applies to any former ecosystem member who requests to rejoin, whethe
 - **Former member identity**: confirmed identity of the person requesting re-entry, matched against the departure record in governance memory
 - **Portable governance record**: the member's portable record from their previous membership (generated during departure or requested from archive)
 - **Departure record**: the original Departure Record filed during the member's exit, including departure reason, commitment unwinding status, and re-entry eligibility
-- **Current agreement set**: the ecosystem's current foundational agreements (UAF and any AZPO-specific agreements) for the member to review and consent to
-- **Change summary**: a documented summary of significant governance changes since the member's departure (agreement amendments, structural changes, new or dissolved AZPOs, policy updates)
+- **Current agreement set**: the ecosystem's current foundational agreements (UAF and any ETHOS-specific agreements) for the member to review and consent to
+- **Change summary**: a documented summary of significant governance changes since the member's departure (agreement amendments, structural changes, new or dissolved ETHOS, policy updates)
 
 ## E. Step-by-Step Process
 
-1. **Receive re-entry request.** The former member contacts any steward or governance facilitator. The facilitator acknowledges the request within 48 hours and assigns a re-entry coordinator. The coordinator is drawn from the receiving AZPO (unlike departure coordinators, who are drawn from outside).
+1. **Receive re-entry request.** The former member contacts any steward or governance facilitator. The facilitator acknowledges the request within 48 hours and assigns a re-entry coordinator. The coordinator is drawn from the receiving ETHOS (unlike departure coordinators, who are drawn from outside).
 2. **Verify departure record and eligibility.** The re-entry coordinator retrieves the former member's Departure Record from governance memory (Layer IX). The record confirms: the member departed through the voluntary-exit process, re-entry eligibility was not explicitly declined by the member, and no unresolved governance matters bar re-entry. If the departure record shows unresolved commitment-unwinding items, the coordinator assesses whether they affect re-entry eligibility.
 3. **Verify portable record.** If the returning member presents a portable governance record, the coordinator verifies its integrity using the embedded verification hash against archived registry data. Verified records inform the integration process. Unverifiable or absent records do not block re-entry -- the member simply enters without historical context weighting.
 4. **Present current agreements and change summary.** The coordinator presents the ecosystem's current foundational agreements and the change summary documenting what has changed since the member's departure. The returning member reviews these at their own pace. The coordinator is available for questions but does not pressure a timeline.
 5. **Obtain consent to current agreements.** The returning member must explicitly consent to all current foundational agreements (e.g., the UAF as currently amended). Consent is to the current version, not the version the member originally signed. If the member objects to specific terms, they may raise objections through the standard ACT process -- but they cannot rejoin under the old terms. Consent is documented.
-6. **Determine integration pathway.** Based on the member's portable record, their current interests, and the ecosystem's current needs, the coordinator and the member agree on an integration plan: which AZPO and circle to join, whether previous role experience qualifies them for immediate role consideration (but not automatic reinstatement), and a 30-day orientation period during which the member participates in governance before taking on formal roles.
-7. **Formalize re-entry.** The re-entry coordinator files a Re-Entry Record using `assets/re-entry-record-template.yaml`. The record documents the verification results, consents given, integration pathway, and links to both the departure record and portable record. The returning member is formally added to the ecosystem membership roster and the receiving AZPO.
-8. **Communicate re-entry.** A factual notice is published to the receiving AZPO and relevant circles: the member's name, return date, and assigned circle. Previous role tenure is noted as historical context, not as a status marker. The member enters the ecosystem as a full member, not on probation.
+6. **Determine integration pathway.** Based on the member's portable record, their current interests, and the ecosystem's current needs, the coordinator and the member agree on an integration plan: which ETHOS and circle to join, whether previous role experience qualifies them for immediate role consideration (but not automatic reinstatement), and a 30-day orientation period during which the member participates in governance before taking on formal roles.
+7. **Formalize re-entry.** The re-entry coordinator files a Re-Entry Record using `assets/re-entry-record-template.yaml`. The record documents the verification results, consents given, integration pathway, and links to both the departure record and portable record. The returning member is formally added to the ecosystem membership roster and the receiving ETHOS.
+8. **Communicate re-entry.** A factual notice is published to the receiving ETHOS and relevant circles: the member's name, return date, and assigned circle. Previous role tenure is noted as historical context, not as a status marker. The member enters the ecosystem as a full member, not on probation.
 
 ## F. Output Artifact
 
-A Re-Entry Record following `assets/re-entry-record-template.yaml`. The record contains: re-entry ID, member identity, departure record reference, portable record reference (if available), verification results, change summary acknowledgment date, agreements consented to (with version numbers), integration pathway (receiving AZPO, circle, orientation period), coordinator identity, and effective re-entry date. The record is accessible to the returning member and ecosystem governance records.
+A Re-Entry Record following `assets/re-entry-record-template.yaml`. The record contains: re-entry ID, member identity, departure record reference, portable record reference (if available), verification results, change summary acknowledgment date, agreements consented to (with version numbers), integration pathway (receiving ETHOS, circle, orientation period), coordinator identity, and effective re-entry date. The record is accessible to the returning member and ecosystem governance records.
 
 ## G. Authority Boundary Check
 
@@ -70,8 +70,8 @@ A Re-Entry Record following `assets/re-entry-record-template.yaml`. The record c
 - **Departure record missing**: if governance memory does not contain the former member's departure record (e.g., due to system migration or data loss), the coordinator reconstructs the departure context from available records and the member's portable record; absence of a departure record does not block re-entry
 - **Portable record unverifiable**: the re-entry proceeds without historical context weighting; the member enters as if their portable record is informational only -- no verification means no formal credit, but also no penalty
 - **Member objects to current agreements**: the member may raise objections through the standard ACT process; their re-entry is paused (not denied) until the objection is resolved through integration or the member withdraws the objection
-- **Receiving AZPO at capacity**: if the AZPO the member wishes to join has a membership cap, the member may join a waitlist or choose a different AZPO; capacity limits are not used as pretextual rejection -- they must be documented and consistently applied
-- **Coordinator conflict of interest**: if the assigned coordinator has a prior relationship with the returning member that could affect objectivity (positive or negative), a replacement coordinator is assigned from a different circle within the receiving AZPO
+- **Receiving ETHOS at capacity**: if the ETHOS the member wishes to join has a membership cap, the member may join a waitlist or choose a different ETHOS; capacity limits are not used as pretextual rejection -- they must be documented and consistently applied
+- **Coordinator conflict of interest**: if the assigned coordinator has a prior relationship with the returning member that could affect objectivity (positive or negative), a replacement coordinator is assigned from a different circle within the receiving ETHOS
 
 ## J. Expiry / Review Condition
 
@@ -83,19 +83,19 @@ This skill closes the exit loop. The voluntary-exit skill creates the right to l
 
 ## L. Cross-Unit Interoperability Impact
 
-When a former member returns to a different AZPO than the one they left, the re-entry process is identical -- the receiving AZPO processes the re-entry using the same template. Cross-ecosystem re-entry (joining a different NEOS ecosystem) follows the same process with the portable record serving as the primary historical context. The receiving ecosystem decides how much weight to give the portable record independently -- a member's experience in OmniOne does not automatically translate to seniority in a different NEOS ecosystem. The standardized Re-Entry Record format enables receiving ecosystems to understand how re-entry was processed in source ecosystems, building cross-ecosystem trust in governance record integrity.
+When a former member returns to a different ETHOS than the one they left, the re-entry process is identical -- the receiving ETHOS processes the re-entry using the same template. Cross-ecosystem re-entry (joining a different NEOS ecosystem) follows the same process with the portable record serving as the primary historical context. The receiving ecosystem decides how much weight to give the portable record independently -- a member's experience in OmniOne does not automatically translate to seniority in a different NEOS ecosystem. The standardized Re-Entry Record format enables receiving ecosystems to understand how re-entry was processed in source ecosystems, building cross-ecosystem trust in governance record integrity.
 
 ## OmniOne Walkthrough
 
 Eighteen months after departing OmniOne's Bali SHUR, Rina contacts Wayan, an AE governance facilitator, expressing her wish to rejoin. She has been living in Costa Rica, participated briefly in a NEOS-governed cooperative there, and now returns to Bali. She carries her portable governance record from her original OmniOne departure (PGR-OMNI-2026-RINA).
 
-Wayan acknowledges within 24 hours and assigns Sari, an AE member in the Food Systems Circle, as Rina's re-entry coordinator. Sari is part of the receiving AZPO and has no prior close relationship with Rina.
+Wayan acknowledges within 24 hours and assigns Sari, an AE member in the Food Systems Circle, as Rina's re-entry coordinator. Sari is part of the receiving ETHOS and has no prior close relationship with Rina.
 
 Sari retrieves Departure Record DR-SHUR-2026-031 from governance memory. The record confirms: Rina departed voluntarily, all commitments were fully unwound, re-entry eligibility is "indefinite," and no unresolved governance matters exist. Sari verifies Rina's portable record using the embedded hash -- the hash validates against archived registry data. Rina's 14 months of governance experience (2 circle roles, 4 proposals, 18 ACT decisions) are confirmed as authentic.
 
 Sari prepares a change summary covering the 18 months since Rina's departure. Significant changes include: the UAF was amended twice (once to add a digital-privacy clause, once to update the resource allocation formula), the Welcome Circle merged with the Outreach Circle to form the Community Engagement Circle, two new circles were formed (Water Systems and Digital Infrastructure), and 8 new members joined while 5 departed. Sari presents the current UAF (version 3.2) and the change summary to Rina.
 
-Rina reviews the documents over four days. She notices the digital-privacy clause is new and asks Sari to explain the rationale. Sari connects Rina with the clause's original proposer for context. Rina is satisfied and consents to UAF v3.2 and all current AZPO-specific agreements. Her consent is documented.
+Rina reviews the documents over four days. She notices the digital-privacy clause is new and asks Sari to explain the rationale. Sari connects Rina with the clause's original proposer for context. Rina is satisfied and consents to UAF v3.2 and all current ETHOS-specific agreements. Her consent is documented.
 
 **Edge case**: Rina discovers that the resource allocation formula change reduced the per-person Current-See allocation from 111 to 95, a change she would have objected to as a member. Sari explains that the change went through a full ACT consent process during Rina's absence. Rina may raise the issue as a new proposal once she is a member, but she cannot condition her re-entry on reverting the change. She consents to the current terms and plans to propose an amendment through the standard ACT process after her orientation period.
 
@@ -123,7 +123,7 @@ A former member whose departure was connected to a factional dispute requests re
 
 ### 5. Large-Scale Replication
 
-At scale with 4,000 members, re-entry becomes a regular governance operation. The standardized process handles volume without modification: each re-entry is independent, coordinators are drawn from receiving AZPOs, and change summaries are maintained as living documents updated with each significant governance change. Automated portable record verification scales linearly with re-entry volume. The ecosystem develops a library of change summaries covering different departure periods, reducing coordinator effort for each individual re-entry. Cross-AZPO re-entry (returning to a different AZPO than the one departed) uses the same process with the receiving AZPO's coordinator. The re-entry record format is identical across all locations, enabling ecosystem-wide analysis of return patterns.
+At scale with 4,000 members, re-entry becomes a regular governance operation. The standardized process handles volume without modification: each re-entry is independent, coordinators are drawn from receiving ETHOS, and change summaries are maintained as living documents updated with each significant governance change. Automated portable record verification scales linearly with re-entry volume. The ecosystem develops a library of change summaries covering different departure periods, reducing coordinator effort for each individual re-entry. Cross-ETHOS re-entry (returning to a different ETHOS than the one departed) uses the same process with the receiving ETHOS's coordinator. The re-entry record format is identical across all locations, enabling ecosystem-wide analysis of return patterns.
 
 ### 6. External Legal Pressure
 

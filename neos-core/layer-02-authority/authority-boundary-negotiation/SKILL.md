@@ -14,7 +14,7 @@ Without a negotiation process, domain overlaps are resolved by informal power --
 
 ## B. Domain Scope
 
-This skill applies to any situation where two or more domain contracts claim authority over the same area, or where a decision or action falls in ambiguous territory between two or more domains. It applies within a single AZPO and across AZPOs (with additional facilitator requirements). It does not apply to disagreements about how a steward performs within their domain -- that is handled by domain-review. It does not apply to personal conflicts between stewards -- that is Layer VI (Conflict & Repair). The scope is structural: the unit of analysis is the domain contract, not the people holding the roles.
+This skill applies to any situation where two or more domain contracts claim authority over the same area, or where a decision or action falls in ambiguous territory between two or more domains. It applies within a single ETHOS and across ETHOS (with additional facilitator requirements). It does not apply to disagreements about how a steward performs within their domain -- that is handled by domain-review. It does not apply to personal conflicts between stewards -- that is Layer VI (Conflict & Repair). The scope is structural: the unit of analysis is the domain contract, not the people holding the roles.
 
 ## C. Trigger Conditions
 
@@ -34,7 +34,7 @@ This skill applies to any situation where two or more domain contracts claim aut
 
 1. **Identify the specific overlap.** Using the 11-element domain contract structure, identify exactly which elements are in conflict: which key responsibilities, deliverables, or customers are claimed by both domains? Which constraints are absent or vague enough to permit dual claims? The overlap must be stated precisely before the negotiation opens -- a vague "we do the same things" framing is not sufficient.
 
-2. **Convene affected domain stewards and their delegating bodies.** All stewards whose domain contracts are in the overlap are required to participate. Their respective delegating bodies are invited observers with consent authority in Step 6. A neutral facilitator (not a steward of any involved domain, and not a member of any involved domain's delegating body) is appointed. Cross-AZPO disputes require a facilitator from neither AZPO.
+2. **Convene affected domain stewards and their delegating bodies.** All stewards whose domain contracts are in the overlap are required to participate. Their respective delegating bodies are invited observers with consent authority in Step 6. A neutral facilitator (not a steward of any involved domain, and not a member of any involved domain's delegating body) is appointed. Cross-ETHOS disputes require a facilitator from neither ETHOS.
 
 3. **Map each domain's claim against the 11 elements.** The facilitator guides each steward through their domain contract, identifying precisely which elements generate the overlap. This step is analytical, not argumentative -- it produces a shared map of where the contracts conflict. The map is documented in writing before discussion begins.
 
@@ -96,7 +96,7 @@ When a steward exits the ecosystem during an active boundary negotiation, the ne
 
 ## L. Cross-Unit Interoperability Impact
 
-Cross-AZPO boundary disputes follow the same 8-step process with two modifications: the neutral facilitator must be from neither AZPO involved, and the resolution record is registered in both AZPOs' boundary resolution registries with linked entries. Notification of the resolution goes to all adjacent domains across both AZPOs. Cross-AZPO resolutions carry higher structural weight as precedent because they establish inter-AZPO boundary norms. When a cross-AZPO resolution requires amending a domain contract in both AZPOs, both AZPOs' delegating bodies must consent to the respective amendments.
+Cross-ETHOS boundary disputes follow the same 8-step process with two modifications: the neutral facilitator must be from neither ETHOS involved, and the resolution record is registered in both ETHOS' boundary resolution registries with linked entries. Notification of the resolution goes to all adjacent domains across both ETHOS. Cross-ETHOS resolutions carry higher structural weight as precedent because they establish inter-ETHOS boundary norms. When a cross-ETHOS resolution requires amending a domain contract in both ETHOS, both ETHOS' delegating bodies must consent to the respective amendments.
 
 ## OmniOne Walkthrough
 
@@ -138,7 +138,7 @@ The Governance Infrastructure circle and the Community Experience circle have be
 
 ### 5. Large-Scale Replication
 
-OmniOne grows to 200 circles across 12 AZPOs. Boundary disputes are inevitable at this scale -- with 200 domain contracts and thousands of element combinations, some overlap will always exist. The boundary-resolution registry becomes the primary tool for scale management: before a negotiation begins, the facilitator queries the registry for precedent records with matching tags. In 60% of cases, a prior resolution addresses the same structural source in a similar domain type, and the integrative discussion can begin from the prior resolution as a starting proposal rather than from scratch. The 3-role cap and the domain-review cycle prevent the most common structural source (scope creep) from accumulating silently. At scale, cross-AZPO disputes are the most complex -- but the process scales because the structural analysis (11-element mapping, source identification, integrative options) is the same regardless of the number of people affected.
+OmniOne grows to 200 circles across 12 ETHOS. Boundary disputes are inevitable at this scale -- with 200 domain contracts and thousands of element combinations, some overlap will always exist. The boundary-resolution registry becomes the primary tool for scale management: before a negotiation begins, the facilitator queries the registry for precedent records with matching tags. In 60% of cases, a prior resolution addresses the same structural source in a similar domain type, and the integrative discussion can begin from the prior resolution as a starting proposal rather than from scratch. The 3-role cap and the domain-review cycle prevent the most common structural source (scope creep) from accumulating silently. At scale, cross-ETHOS disputes are the most complex -- but the process scales because the structural analysis (11-element mapping, source identification, integrative options) is the same regardless of the number of people affected.
 
 ### 6. External Legal Pressure
 

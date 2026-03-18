@@ -91,8 +91,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO consent requires each affected AZPO's deciding body to conduct its own consent round. One AZPO's consent does not bind another.
-- The consent records from each AZPO are linked in the proposal tracking system. The proposal proceeds only when all affected AZPOs have reached consent.
+- Cross-ETHOS consent requires each affected ETHOS's deciding body to conduct its own consent round. One ETHOS's consent does not bind another.
+- The consent records from each ETHOS are linked in the proposal tracking system. The proposal proceeds only when all affected ETHOS have reached consent.
 - Federation extensibility: when two ecosystems share governance space, each ecosystem conducts its own consent round under its own consent rules, and results are linked in both registries.
 
 ## OmniOne Walkthrough

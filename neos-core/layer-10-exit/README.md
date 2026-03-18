@@ -21,7 +21,7 @@ When exit is clean and painless, voice becomes more powerful -- members who rais
 Layer X is built on the principle of graceful degradation: the ecosystem must be designed so that any departure -- individual or collective -- degrades operations gradually, never catastrophically. This means:
 
 - No single member's departure can collapse governance (sole critical roles trigger emergency coverage, not exit prevention)
-- No AZPO's dissolution can orphan ecosystem-level commitments (structured asset disposition and agreement amendment)
+- No ETHOS's dissolution can orphan ecosystem-level commitments (structured asset disposition and agreement amendment)
 - No mass departure can invalidate prior governance decisions (decisions stand on their own legitimacy)
 - No departure can trap a member's governance experience (portable records ensure knowledge travels with the person)
 
@@ -33,14 +33,14 @@ If a departure causes catastrophic failure, the structural fragility is the ecos
 INDIVIDUAL EXIT                         COLLECTIVE EXIT
     |                                       |
     v                                       v
-voluntary-exit                         azpo-dissolution
+voluntary-exit                         ethos-dissolution
   (declaration,                          (trigger, consent,
    coordinator,                           impact assessment)
    timeline)                                |
     |                                       |
     v                                       v
 commitment-unwinding  <---- shared ---->  commitment-unwinding
-  (roles, agreements,                     (AZPO-level settlement,
+  (roles, agreements,                     (ETHOS-level settlement,
    economic, proposals,                    member transitions)
    conflicts)                               |
     |                                       |
@@ -75,7 +75,7 @@ RETURNED
 | 1 | [voluntary-exit](voluntary-exit/SKILL.md) | P0 | Complete individual departure with commitment handoff, data export, and clean governance record | agreement-registry, role-assignment, commitment-unwinding |
 | 2 | [commitment-unwinding](commitment-unwinding/SKILL.md) | P0 | Systematic resolution of every outstanding commitment held by a departing member | voluntary-exit, agreement-creation, role-assignment |
 | 3 | [portable-record](portable-record/SKILL.md) | P0 | Structured, machine-readable governance participation history owned by the member | decision-record, semantic-tagging, voluntary-exit |
-| 4 | [azpo-dissolution](azpo-dissolution/SKILL.md) | P1 | Orderly dissolution of an entire AZPO with asset settlement, member transition, and record archival | voluntary-exit, commitment-unwinding, agreement-amendment |
+| 4 | [ethos-dissolution](ethos-dissolution/SKILL.md) | P1 | Orderly dissolution of an entire ETHOS with asset settlement, member transition, and record archival | voluntary-exit, commitment-unwinding, agreement-amendment |
 | 5 | [re-entry-integration](re-entry-integration/SKILL.md) | P1 | Structured return with historical context, current-agreement consent, and equitable integration | voluntary-exit, portable-record, member-lifecycle |
 
 ## Design Principles
@@ -88,7 +88,7 @@ RETURNED
 
 **Return is not second-class.** Returning members follow a standardized process that acknowledges their history without granting preferential treatment. They consent to current agreements, complete a standard orientation, and enter as full members.
 
-**Dissolution is not punishment.** AZPOs that can no longer sustain themselves dissolve with dignity. No external body can unilaterally force dissolution, and the process ensures every member transitions cleanly.
+**Dissolution is not punishment.** ETHOS that can no longer sustain themselves dissolve with dignity. No external body can unilaterally force dissolution, and the process ensures every member transitions cleanly.
 
 ## Relationship to Other Layers
 
@@ -104,4 +104,4 @@ RETURNED
 
 ## Cross-Layer References
 
-Departure Record template: `voluntary-exit/assets/departure-record-template.yaml`. Commitment Unwinding Ledger template: `commitment-unwinding/assets/commitment-unwinding-ledger-template.yaml`. Portable Record schema: `portable-record/assets/portable-record-schema.yaml`. Dissolution Record template: `azpo-dissolution/assets/dissolution-record-template.yaml`. Re-Entry Record template: `re-entry-integration/assets/re-entry-record-template.yaml`.
+Departure Record template: `voluntary-exit/assets/departure-record-template.yaml`. Commitment Unwinding Ledger template: `commitment-unwinding/assets/commitment-unwinding-ledger-template.yaml`. Portable Record schema: `portable-record/assets/portable-record-schema.yaml`. Dissolution Record template: `ethos-dissolution/assets/dissolution-record-template.yaml`. Re-Entry Record template: `re-entry-integration/assets/re-entry-record-template.yaml`.

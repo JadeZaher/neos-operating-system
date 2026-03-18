@@ -4,7 +4,7 @@ Blueprint: members_bp, url_prefix="/dashboard/members"
 
 Manages the Steward directory — listing, creation, detail, editing,
 and lifecycle status transitions for ecosystem members. Supports
-filtering by status, profile type, AZPO, and text search.
+filtering by status, profile type, ETHOS, and text search.
 
 ASYNC SESSION SAFETY NOTES:
 - request.ctx.member (current_user) is loaded in auth middleware and is DETACHED
@@ -175,7 +175,7 @@ async def create_member(request: Request):
 
 @members_bp.get("/<member_id:uuid>")
 async def detail(request: Request, member_id: uuid.UUID):
-    """GET /dashboard/members/{member_id} -- detail view with lifecycle, roles, AZPO."""
+    """GET /dashboard/members/{member_id} -- detail view with lifecycle, roles, ETHOS."""
     try:
         async with request.app.ctx.db() as session:
             member = await get_scoped_entity(session, Member, member_id, request)

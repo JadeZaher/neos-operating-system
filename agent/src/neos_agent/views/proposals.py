@@ -311,7 +311,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
                 advice_log_id=advice_log.id,
                 advisor=form.get("advisor", ""),
                 role=form.get("role"),
-                azpo=form.get("azpo"),
+                ethos=form.get("ethos"),
                 date=date.today(),
                 advice_text=form.get("advice_text", ""),
                 integration_status="pending",
@@ -425,7 +425,7 @@ async def record_consent(request: Request, proposal_id: uuid.UUID):
                 consent_record_id=consent_record.id,
                 name=form.get("name", ""),
                 role=form.get("role"),
-                azpo=form.get("azpo"),
+                ethos=form.get("ethos"),
                 position=form.get("position", ""),
                 reason=form.get("reason"),
             )

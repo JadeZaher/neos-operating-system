@@ -45,7 +45,7 @@ Any proposal that has passed the synergy check and entered the ACT process. The 
 
 ## F. Output Artifact
 
-An advice log following `assets/advice-log-template.yaml` containing: proposal ID, advice window dates, urgency level, all advice entries (advisor identity, role, AZPO, date, advice text, proposer response, integration status, rationale), non-respondent list with notification dates, summary of modifications, and proposer's overall integration narrative.
+An advice log following `assets/advice-log-template.yaml` containing: proposal ID, advice window dates, urgency level, all advice entries (advisor identity, role, ETHOS, date, advice text, proposer response, integration status, rationale), non-respondent list with notification dates, summary of modifications, and proposer's overall integration narrative.
 
 ## G. Authority Boundary Check
 
@@ -86,8 +86,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO proposals require advice from representatives of each affected AZPO. The advice log includes the AZPO affiliation of each advisor.
-- When a proposal affects multiple AZPOs, the advice window applies to all simultaneously — there is no sequential AZPO-by-AZPO process unless the AZPOs operate in significantly different time zones, in which case a 24-hour buffer is added.
+- Cross-ETHOS proposals require advice from representatives of each affected ETHOS. The advice log includes the ETHOS affiliation of each advisor.
+- When a proposal affects multiple ETHOS, the advice window applies to all simultaneously — there is no sequential ETHOS-by-ETHOS process unless the ETHOS operate in significantly different time zones, in which case a 24-hour buffer is added.
 - Federation extensibility: when two ecosystems share governance space, the advice phase can include advisors from both ecosystems with their ecosystem affiliation recorded.
 
 ## OmniOne Walkthrough

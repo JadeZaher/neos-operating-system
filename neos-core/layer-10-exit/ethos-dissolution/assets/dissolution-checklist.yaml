@@ -17,24 +17,24 @@ checklist:
         notes: "Consent records, quorum failure logs, ACT decision, or empty membership roster."
 
       - step: 3
-        action: "Appoint dissolution coordinator from outside the dissolving AZPO"
+        action: "Appoint dissolution coordinator from outside the dissolving ETHOS"
         responsible: "OSC or ecosystem governance facilitator"
         completed: false
-        notes: "Coordinator must have no stake in the AZPO's assets."
+        notes: "Coordinator must have no stake in the ETHOS's assets."
 
   - phase: "impact-assessment"
     steps:
       - step: 4
-        action: "Inventory all AZPO assets (resources, property, equipment)"
+        action: "Inventory all ETHOS assets (resources, property, equipment)"
         responsible: "dissolution coordinator"
         completed: false
         notes: "Include both formal and informal assets."
 
       - step: 5
-        action: "List all active agreements involving the AZPO"
+        action: "List all active agreements involving the ETHOS"
         responsible: "dissolution coordinator"
         completed: false
-        notes: "Both AZPO-internal and ecosystem-level agreements."
+        notes: "Both ETHOS-internal and ecosystem-level agreements."
 
       - step: 6
         action: "Compile current member roster with commitment inventories"
@@ -43,7 +43,7 @@ checklist:
         notes: "Cross-reference agreement-registry, role-assignment, resource ledger."
 
       - step: 7
-        action: "Identify all cross-AZPO and external relationships affected"
+        action: "Identify all cross-ETHOS and external relationships affected"
         responsible: "dissolution coordinator"
         completed: false
         notes: "Include informal community relationships for documentation."
@@ -99,7 +99,7 @@ checklist:
         action: "Present three transition options to each member"
         responsible: "dissolution coordinator"
         completed: false
-        notes: "Transfer to existing AZPO, form new AZPO, or depart ecosystem."
+        notes: "Transfer to existing ETHOS, form new ETHOS, or depart ecosystem."
 
       - step: 16
         action: "Process each member's transition choice"
@@ -121,7 +121,7 @@ checklist:
   - phase: "agreement-amendment"
     steps:
       - step: 19
-        action: "Amend all ecosystem-level agreements referencing the dissolving AZPO"
+        action: "Amend all ecosystem-level agreements referencing the dissolving ETHOS"
         responsible: "dissolution coordinator + agreement stewards"
         completed: false
 

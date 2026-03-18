@@ -1,57 +1,57 @@
 # Graduated Engagement Tiers
 # Layer V -- Inter-Unit Coordination
-# Defines the four levels of inter-AZPO engagement
+# Defines the four levels of inter-ETHOS engagement
 
 tiers:
   - name: observe
     label: "Observe"
-    description: "Mutual acknowledgment. No commitments. AZPOs recognize each other's existence and governance legitimacy."
+    description: "Mutual acknowledgment. No commitments. ETHOS recognize each other's existence and governance legitimacy."
     requirements:
-      - "Both AZPOs are recognized within the ecosystem"
+      - "Both ETHOS are recognized within the ecosystem"
     commitments: []
     coordination_mechanisms:
       - "No formal coordination required"
-      - "AZPOs may exchange public information voluntarily"
+      - "ETHOS may exchange public information voluntarily"
     transition_to_cooperate:
-      requires: "Either AZPO submits a cross-AZPO request"
+      requires: "Either ETHOS submits a cross-ETHOS request"
       process: "No formal agreement needed -- cooperation is per-request"
 
   - name: cooperate
     label: "Cooperate"
-    description: "Case-by-case collaboration through cross-AZPO requests. No standing commitments. Each interaction is individually authorized."
+    description: "Case-by-case collaboration through cross-ETHOS requests. No standing commitments. Each interaction is individually authorized."
     requirements:
       - "Mutual acknowledgment (observe tier) established"
-      - "At least one completed cross-AZPO request between the AZPOs"
+      - "At least one completed cross-ETHOS request between the ETHOS"
     commitments:
-      - "Respond to cross-AZPO requests within stated timelines"
+      - "Respond to cross-ETHOS requests within stated timelines"
       - "Designate an inbound contact for request routing"
     coordination_mechanisms:
-      - "Cross-AZPO requests per cross-azpo-request skill"
+      - "Cross-ETHOS requests per cross-ethos-request skill"
       - "No standing liaison or shared governance"
     transition_to_federate:
-      requires: "Both AZPOs ratify a federation agreement"
+      requires: "Both ETHOS ratify a federation agreement"
       process: "Full federation-agreement skill process"
 
   - name: federate
     label: "Federate"
     description: "Formal agreement with shared protocols, regular coordination, and designated liaisons. Standing commitments for defined domains."
     requirements:
-      - "Ratified federation agreement between participating AZPOs"
+      - "Ratified federation agreement between participating ETHOS"
       - "Designated liaison roles established"
       - "Regular coordination cadence defined"
     commitments:
       - "Maintain liaison roles per inter-unit-liaison skill"
       - "Report per agreed cadence"
       - "Honor shared protocols defined in the agreement"
-      - "Process cross-AZPO requests related to federated domains with priority"
+      - "Process cross-ETHOS requests related to federated domains with priority"
     coordination_mechanisms:
       - "Standing liaison relationships"
       - "Regular coordination meetings"
       - "Shared resource stewardship (if applicable)"
       - "Joint advice phases for federated-domain decisions"
     transition_to_integrate:
-      requires: "All AZPOs ratify an integration amendment to their federation agreement"
-      process: "Full amendment process with all-AZPO consent"
+      requires: "All ETHOS ratify an integration amendment to their federation agreement"
+      process: "Full amendment process with all-ETHOS consent"
 
   - name: integrate
     label: "Integrate"
@@ -59,7 +59,7 @@ tiers:
     requirements:
       - "Existing federation agreement at 'federate' tier"
       - "At least 12 months of successful federated coordination"
-      - "All participating AZPOs ratify integration terms"
+      - "All participating ETHOS ratify integration terms"
     commitments:
       - "Participate in shared governance bodies for integrated domains"
       - "Pool resources for integrated functions"
@@ -71,13 +71,13 @@ tiers:
       - "Pooled resource stewardship"
       - "Integrated reporting and accountability"
     transition_down:
-      requires: "Any AZPO may request tier reduction through agreement amendment"
+      requires: "Any ETHOS may request tier reduction through agreement amendment"
       process: "Full amendment process -- tier reduction is a legitimate structural choice, not a failure"
 
 default_tier: observe
 notes:
-  - "New AZPOs default to 'observe' tier with all existing AZPOs"
+  - "New ETHOS default to 'observe' tier with all existing ETHOS"
   - "Tier transitions require formal federation agreement amendment"
-  - "AZPOs may hold different tiers with different partner AZPOs"
+  - "ETHOS may hold different tiers with different partner ETHOS"
   - "Tier reduction is a legitimate governance choice, not a penalty"
-  - "Integration does not merge AZPOs -- each maintains internal autonomy for non-integrated domains"
+  - "Integration does not merge ETHOS -- each maintains internal autonomy for non-integrated domains"

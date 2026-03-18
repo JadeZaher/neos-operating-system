@@ -102,7 +102,7 @@ The ACT process follows a graduated escalation. This model is attributed to the 
 - AC-4.1: The skill defines the registry schema (agreement ID, type, status, version, parent agreement, affected parties, domain, created date, review date, sunset date).
 - AC-4.2: Query capabilities include: by type, by domain, by affected party, by status, by date range.
 - AC-4.3: Write operations are restricted to outputs of agreement-creation, agreement-amendment, and agreement-review skills.
-- AC-4.4: The cross-unit interoperability section defines how registries federate across AZPOs.
+- AC-4.4: The cross-unit interoperability section defines how registries federate across ETHOS.
 - AC-4.5: An OmniOne walkthrough demonstrates an AE member querying the registry to find all active agreements affecting the Economics circle.
 - AC-4.6: All 7 stress-test scenarios documented.
 
@@ -442,7 +442,7 @@ The following concepts from the OmniOne source documents are explicitly **not** 
 
 ### Terminology Notes
 
-- **ETHOS**: Used in OmniOne source docs as the term for an organizational unit's agreement field. In NEOS-generic context, this maps to "AZPO Agreement Field." Skills should use the NEOS-generic term with OmniOne's "ETHOS" noted in the example blocks.
+- **ETHOS**: Used in OmniOne source docs as the term for an organizational unit's agreement field. In NEOS-generic context, this maps to "ETHOS Agreement Field." Skills should use the NEOS-generic term with OmniOne's "ETHOS" noted in the example blocks.
 - **Moneyless Society**: Predecessor organization referenced in `fieldagreementexample.md`. OmniOne skills should acknowledge this lineage where relevant but not depend on it structurally.
 
 ### Agreement Hierarchy (Load-Bearing)

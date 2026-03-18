@@ -69,7 +69,7 @@ indicators:
 
   - id: GHI-08
     name: Cross-Unit Engagement Frequency
-    description: Number of cross-circle or cross-AZPO interactions per quarter.
+    description: Number of cross-circle or cross-ETHOS interactions per quarter.
     data_source: cross-unit coordination logs
     measurement: cross_unit_interactions_per_quarter
     healthy: ">= 4 per quarter"

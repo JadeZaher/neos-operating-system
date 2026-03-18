@@ -76,7 +76,7 @@ The client uses declarative attributes:
 
 ### FR-2: Agreement Views
 
-**Description:** Full CRUD views for governance agreements (UAF, ecosystem, access, stewardship, AZPO, culture code, personal commitment). Agreements follow a 7-level hierarchy where no lower-level agreement may contradict a higher-level one.
+**Description:** Full CRUD views for governance agreements (UAF, ecosystem, access, stewardship, ETHOS, culture code, personal commitment). Agreements follow a 7-level hierarchy where no lower-level agreement may contradict a higher-level one.
 
 **Acceptance Criteria:**
 - AC-2.1: List view at `/dashboard/agreements` displays agreements in a table/card layout with columns: title, type, status, domain, review date, last modified.
@@ -125,13 +125,13 @@ The client uses declarative attributes:
 **Description:** Views for ecosystem participant management following the member-lifecycle skill. Members transition through states: prospective -> onboarding -> active -> inactive -> reactivating -> active (loop), or active -> exiting -> exited.
 
 **Acceptance Criteria:**
-- AC-4.1: Directory view at `/dashboard/members` shows a searchable, filterable list of members with: name, profile type (Co-creator, Builder, Collaborator, TownHall), lifecycle status, primary AZPO, role count, and join date.
-- AC-4.2: Directory supports filtering by lifecycle status (prospective, onboarding, active, inactive, reactivating, exiting, exited), profile type, and AZPO.
+- AC-4.1: Directory view at `/dashboard/members` shows a searchable, filterable list of members with: name, profile type (Co-creator, Builder, Collaborator, TownHall), lifecycle status, primary ETHOS, role count, and join date.
+- AC-4.2: Directory supports filtering by lifecycle status (prospective, onboarding, active, inactive, reactivating, exiting, exited), profile type, and ETHOS.
 - AC-4.3: Directory supports text search across member names.
-- AC-4.4: Detail view at `/dashboard/members/{id}` shows: member information (name, profile type, contact), current lifecycle status with transition timestamp, all current role assignments (linked to domain detail views), AZPO memberships, participation history summary (governance actions count, last active date), and onboarding status tracker.
+- AC-4.4: Detail view at `/dashboard/members/{id}` shows: member information (name, profile type, contact), current lifecycle status with transition timestamp, all current role assignments (linked to domain detail views), ETHOS memberships, participation history summary (governance actions count, last active date), and onboarding status tracker.
 - AC-4.5: Onboarding status tracker is a visual stepper showing the member's progress through: orientation (UAF reading), discovery (ecosystem exploration), integration (first governance participation), active (full participant). Each step shows completion date or current status.
 - AC-4.6: Status transition buttons are available on the detail view for valid transitions (e.g., onboarding -> active, active -> inactive) with confirmation and rationale input.
-- AC-4.7: Create/edit form at `/dashboard/members/new` and `/dashboard/members/{id}/edit` includes: name, profile type selector, AZPO assignment, and onboarding facilitator assignment.
+- AC-4.7: Create/edit form at `/dashboard/members/new` and `/dashboard/members/{id}/edit` includes: name, profile type selector, ETHOS assignment, and onboarding facilitator assignment.
 
 **Priority:** P0
 
@@ -412,7 +412,7 @@ The UI must use NEOS terminology consistently (per product-guidelines.md):
 - "ACT" not "voting" or "approval process"
 - "Current-See" not "token" or "vote"
 - "Agreement Field" not "contract" or "rules"
-- "AZPO" not "department" or "team"
+- "ETHOS" not "department" or "team"
 
 ### CSS Architecture: Tailwind Only
 

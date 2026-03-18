@@ -38,7 +38,7 @@ Teal adds the "advice process": anyone can make any decision within their domain
 - **Blanket authority within scope**: Roles act freely within their domain without needing permission; restrictions are listed explicitly, not implied.
 - **Advice process**: Role-holders consult before acting on decisions that affect others' domains, but retain final authority in their own scope.
 - **Evaluation cadence**: Every domain has a scheduled review date, preventing roles from fossilizing through neglect.
-- **Separation of role and person**: NEOS AZPOs should track roles as entities distinct from the members filling them, allowing easy transfer or dissolution.
+- **Separation of role and person**: NEOS ETHOS should track roles as entities distinct from the members filling them, allowing easy transfer or dissolution.
 
 ### Anti-Patterns to Avoid
 
@@ -49,7 +49,7 @@ Teal adds the "advice process": anyone can make any decision within their domain
 
 ### OmniOne-Specific Considerations
 
-NEOS AZPOs (Autonomous Zone of Participatory Operations) need a domain registry — a live document mapping every active role's scope, authority limits, dependencies, and next review date. Councils (the multi-stakeholder deliberative bodies) should function as domain delegators for AZPO-level roles, with SHUR network nodes as potential domain auditors. Current-Sees (influence currencies) should not be attached to roles directly — attaching status currency to a named role creates incentives for role hoarding.
+NEOS ETHOS (Autonomous Zone of Participatory Operations) need a domain registry — a live document mapping every active role's scope, authority limits, dependencies, and next review date. Councils (the multi-stakeholder deliberative bodies) should function as domain delegators for ETHOS-level roles, with SHUR network nodes as potential domain auditors. Current-Sees (influence currencies) should not be attached to roles directly — attaching status currency to a named role creates incentives for role hoarding.
 
 ### Suggested Skills for Layer II
 
@@ -91,7 +91,7 @@ Ostrom demonstrated empirically that shared resources can be sustainably managed
 
 **Participatory Budgeting (Porto Alegre Model) — Secondary**
 
-PB gives sub-jurisdictions (neighborhoods, teams) authority over broader budget allocation, not just their local slice. Since 1989 it has spread to 7,000+ cities. The key mechanisms: neighborhood popular assemblies propose needs, delegate representatives negotiate cross-unit priorities, and final allocation is decided collectively with full visibility. Bologna's extension of PB produced "pacts for shared management of commons" signed by 500+ civic organizations — an exact analog to AZPO funding pools.
+PB gives sub-jurisdictions (neighborhoods, teams) authority over broader budget allocation, not just their local slice. Since 1989 it has spread to 7,000+ cities. The key mechanisms: neighborhood popular assemblies propose needs, delegate representatives negotiate cross-unit priorities, and final allocation is decided collectively with full visibility. Bologna's extension of PB produced "pacts for shared management of commons" signed by 500+ civic organizations — an exact analog to ETHOS funding pools.
 
 **Link**: [Participatory Budgeting — Wikipedia](https://en.wikipedia.org/wiki/Participatory_budgeting)
 
@@ -119,7 +119,7 @@ For NEOS specifically, Current-Sees as "influence currencies" map to Benkler's r
 
 ### Key Design Patterns to Adopt
 
-- **Nested funding pools**: Global NEOS pool sets AZPO-level caps; AZPOs set circle-level caps; circles allocate to individuals. Each level governs its own domain.
+- **Nested funding pools**: Global NEOS pool sets ETHOS-level caps; ETHOS set circle-level caps; circles allocate to individuals. Each level governs its own domain.
 - **Participatory allocation assemblies**: Major funding decisions should involve those most affected (Ostrom Principle 3), not just representatives.
 - **Graduated access tiers**: Resource access tied to contribution history (not token balance), with graduated tiers: new member access, sustaining member access, steward access.
 - **Monitoring with full transparency**: All resource flows visible to all members — this is Ostrom Principle 4 applied.
@@ -128,14 +128,14 @@ For NEOS specifically, Current-Sees as "influence currencies" map to Benkler's r
 ### Anti-Patterns to Avoid
 
 - **Tokenizing influence before it's stable**: Premature financialization of Current-Sees will create speculative behavior and undermine their legitimacy as governance signals.
-- **Majority-controlled pooling**: If one AZPO or coalition controls the majority of a funding pool, the commons degrades to private control with communal aesthetics.
-- **Zero-sum framing**: Resource allocation processes that pit AZPOs against each other destroy inter-unit trust. The process itself must generate integrative solutions.
+- **Majority-controlled pooling**: If one ETHOS or coalition controls the majority of a funding pool, the commons degrades to private control with communal aesthetics.
+- **Zero-sum framing**: Resource allocation processes that pit ETHOS against each other destroy inter-unit trust. The process itself must generate integrative solutions.
 - **Complexity at the expense of transparency**: Any member should be able to understand and audit how resources flow. Opaque allocation formulas create power asymmetries.
 
 ### Suggested Skills for Layer IV
 
 1. **Funding Pool Stewardship** — Managing a circle's resource allocation: tracking inflows, stewarding outflows, maintaining transparency logs.
-2. **Participatory Allocation Facilitation** — Running a PB-style allocation assembly within an AZPO or between AZPOs.
+2. **Participatory Allocation Facilitation** — Running a PB-style allocation assembly within an ETHOS or between ETHOS.
 3. **Commons Monitoring** — Applying Ostrom's Principle 4: tracking resource use patterns and detecting over-draw or under-contribution.
 4. **Current-See Literacy** — Understanding what Current-Sees measure, what they do not measure, and when using them distorts rather than informs decisions.
 5. **Graduated Sanction Application** — Applying Ostrom's Principle 5: graduated response to resource misuse, from acknowledgment to reduced access to formal review.
@@ -156,13 +156,13 @@ Real-world examples from research: river basin management across state lines use
 
 **The Ottoman Millet System — Analogical Reference**
 
-The millet system granted distinct religious/cultural communities (millets) internal autonomy over education, law, family matters, and tax collection, while remaining nominal subjects of the Ottoman sovereign. The NEOS analogy inverts this: AZPOs are like millets but with no sovereign above them. The millet model's lesson is that strong internal autonomy combined with explicit inter-community protocols can sustain multi-community coexistence. Its failure mode — that communities could not negotiate between themselves without appealing to the Ottoman center — is exactly what NEOS must design away from.
+The millet system granted distinct religious/cultural communities (millets) internal autonomy over education, law, family matters, and tax collection, while remaining nominal subjects of the Ottoman sovereign. The NEOS analogy inverts this: ETHOS are like millets but with no sovereign above them. The millet model's lesson is that strong internal autonomy combined with explicit inter-community protocols can sustain multi-community coexistence. Its failure mode — that communities could not negotiate between themselves without appealing to the Ottoman center — is exactly what NEOS must design away from.
 
 **Link**: [The Ottoman Millet System — Wikipedia](https://en.wikipedia.org/wiki/Millet_(Ottoman_Empire)) | [Non-Territorial Autonomy — Tandfonline](https://www.tandfonline.com/doi/full/10.1080/17449057.2015.1101845)
 
 **Holochain Agent-Centric Architecture — Technical Reference**
 
-Holochain's design gives each agent its own sovereign source chain while enabling coordination through a Distributed Hash Table (DHT). Inter-agent coordination happens through: mutual signing of multi-party interactions (both parties record the transaction on their respective chains), bridging between hApps (translating one context into another), and importing validated datasets across applications. This is a technical architecture that mirrors NEOS's governance need: AZPO-level sovereignty with protocols for cross-AZPO transactions that don't require a central ledger.
+Holochain's design gives each agent its own sovereign source chain while enabling coordination through a Distributed Hash Table (DHT). Inter-agent coordination happens through: mutual signing of multi-party interactions (both parties record the transaction on their respective chains), bridging between hApps (translating one context into another), and importing validated datasets across applications. This is a technical architecture that mirrors NEOS's governance need: ETHOS-level sovereignty with protocols for cross-ETHOS transactions that don't require a central ledger.
 
 **Link**: [Holochain White Paper Alpha](https://www.holochain.org/documents/holochain-white-paper-alpha.pdf) | [Holochain — P2P Foundation](https://wiki.p2pfoundation.net/Holochain)
 
@@ -174,26 +174,26 @@ Federated models decouple policy-setting from execution: a central governance la
 
 ### Key Design Patterns to Adopt
 
-- **Mutual-signature cross-AZPO agreements**: Any resource transfer or shared commitment between AZPOs requires explicit consent from both units, recorded in both units' governance logs. No unilateral extraction.
-- **Inter-AZPO liaison roles**: Dedicated roles (not ad-hoc representatives) responsible for maintaining cross-unit coordination protocols and monitoring shared resource flows.
-- **Interoperability standards at the SHUR layer**: The SHUR (Shared Human Utility Resources) network should define the protocols for how AZPOs exchange resources, not the content of what they exchange.
-- **Graduated engagement tiers**: AZPOs should be able to engage at different intensities — information sharing, resource sharing, joint decision-making — without being forced into full federation.
+- **Mutual-signature cross-ETHOS agreements**: Any resource transfer or shared commitment between ETHOS requires explicit consent from both units, recorded in both units' governance logs. No unilateral extraction.
+- **Inter-ETHOS liaison roles**: Dedicated roles (not ad-hoc representatives) responsible for maintaining cross-unit coordination protocols and monitoring shared resource flows.
+- **Interoperability standards at the SHUR layer**: The SHUR (Shared Human Utility Resources) network should define the protocols for how ETHOS exchange resources, not the content of what they exchange.
+- **Graduated engagement tiers**: ETHOS should be able to engage at different intensities — information sharing, resource sharing, joint decision-making — without being forced into full federation.
 - **Intermediate collaborative forums**: The research on polycentric governance identifies "intermediate collaborative forums" as essential for coordinating across units without centralizing authority. NEOS Councils may serve this function.
 
 ### Anti-Patterns to Avoid
 
-- **Hub-and-spoke inter-unit coordination**: If all cross-AZPO requests must route through a central node (even nominally neutral), that node becomes de facto sovereign. Build direct peer-to-peer protocols.
-- **Silent defaults**: If an AZPO does not explicitly respond to a cross-unit request, that silence should not be interpreted as consent. Default to non-action.
+- **Hub-and-spoke inter-unit coordination**: If all cross-ETHOS requests must route through a central node (even nominally neutral), that node becomes de facto sovereign. Build direct peer-to-peer protocols.
+- **Silent defaults**: If an ETHOS does not explicitly respond to a cross-unit request, that silence should not be interpreted as consent. Default to non-action.
 - **Jurisdiction ambiguity**: Shared resources without a clearly assigned custodian degrade toward either conflict or abandonment. Every shared resource needs a named steward role.
-- **Millet failure mode**: Designing inter-AZPO coordination that only works when mediated by a third AZPO or council — this recreates the Ottoman center dependency.
+- **Millet failure mode**: Designing inter-ETHOS coordination that only works when mediated by a third ETHOS or council — this recreates the Ottoman center dependency.
 
 ### Suggested Skills for Layer V
 
-1. **Cross-AZPO Request Protocol** — Initiating, formatting, tracking, and closing a resource request or coordination ask across AZPO boundaries.
-2. **Shared Resource Stewardship** — Managing a resource owned jointly by two or more AZPOs: governance rules, usage tracking, conflict handling.
-3. **Federation Agreement Design** — Drafting a bilateral or multilateral agreement between AZPOs that defines mutual obligations, exit terms, and dispute resolution.
-4. **Inter-Unit Liaison Practice** — Maintaining ongoing coordination relationships across AZPO boundaries: regular check-ins, signal sharing, escalation.
-5. **Polycentric Conflict Navigation** — Resolving disputes where two AZPOs' legitimate authority claims conflict, without recourse to a central arbiter.
+1. **Cross-ETHOS Request Protocol** — Initiating, formatting, tracking, and closing a resource request or coordination ask across ETHOS boundaries.
+2. **Shared Resource Stewardship** — Managing a resource owned jointly by two or more ETHOS: governance rules, usage tracking, conflict handling.
+3. **Federation Agreement Design** — Drafting a bilateral or multilateral agreement between ETHOS that defines mutual obligations, exit terms, and dispute resolution.
+4. **Inter-Unit Liaison Practice** — Maintaining ongoing coordination relationships across ETHOS boundaries: regular check-ins, signal sharing, escalation.
+5. **Polycentric Conflict Navigation** — Resolving disputes where two ETHOS' legitimate authority claims conflict, without recourse to a central arbiter.
 
 ---
 
@@ -229,7 +229,7 @@ Laloux's teal model: (1) direct conversation between parties; (2) peer mediation
 
 - **Three-tier escalation without coercive authority at any tier**: Tier 1 (direct dialogue), Tier 2 (invited peer witness), Tier 3 (community circle). No tier has the authority to punish — each has the authority to name what happened and propose repair.
 - **Harm-centered framing**: Conflict protocols should begin with the question "what harm occurred and for whom?" not "who was wrong?" This shifts from adjudication to repair.
-- **Community as affected party**: Following TJ principles, the AZPO or circle in which the conflict occurred is treated as a party to the harm, not merely a bystander.
+- **Community as affected party**: Following TJ principles, the ETHOS or circle in which the conflict occurred is treated as a party to the harm, not merely a bystander.
 - **Repair agreements as formal governance artifacts**: Repair agreements should be logged in the NEOS governance memory system (Layer IX), creating accountability and precedent.
 - **Coaching escalation**: The "Solutionary Culture" framing in OmniOne docs suggests coaching as a distinct intervention — not therapy, not mediation, but structured support for building the skills the conflict revealed were missing.
 
@@ -251,7 +251,7 @@ The "Solutionary Culture" framework in OmniOne docs implies that conflict is tre
 3. **Repair Agreement Drafting** — Formalizing the outcomes of a conflict process into a concrete, trackable agreement with accountability built in.
 4. **Escalation Triage** — Assessing which tier of the conflict protocol is appropriate and how to move between tiers when needed.
 5. **Coaching Intervention Design** — Identifying when a conflict reflects a skill gap and designing a coaching response rather than a mediation response.
-6. **Community Impact Assessment** — Facilitating the broader AZPO's processing of a conflict that affected the community, not just the direct parties.
+6. **Community Impact Assessment** — Facilitating the broader ETHOS's processing of a conflict that affected the community, not just the direct parties.
 
 ---
 
@@ -271,7 +271,7 @@ Critically, the research identifies conditions that resist oligarchization: enga
 
 NEOS identifies three capture vectors:
 
-1. **Capital capture**: A funding source (or AZPO with disproportionate resource access) gains de facto veto power through economic dependency.
+1. **Capital capture**: A funding source (or ETHOS with disproportionate resource access) gains de facto veto power through economic dependency.
 2. **Charisma capture**: A single personality becomes so central to identity and decision-making that challenging them becomes psychologically unsafe. The research confirms: "when movements become monopolized by one personality, energy orbits charisma rather than purpose."
 3. **Emergency capture**: Temporary crisis authority becomes permanent through institutional habit and the difficulty of unwinding emergency norms.
 
@@ -376,11 +376,11 @@ The research on cooperative emergency management points to continuity of operati
 
 ### OmniOne-Specific Considerations
 
-NEOS, as non-sovereign infrastructure, cannot rely on external enforcement even during emergencies. This means emergency protocols must be designed around coordination, not command. The circuit breaker analogy is apt: when a crisis disrupts normal AZPO coordination, the system should degrade gracefully to a predefined emergency coordination mode rather than improvising centralized authority. The SHUR network as infrastructure layer should have predefined emergency routing protocols that activate without requiring governance decisions.
+NEOS, as non-sovereign infrastructure, cannot rely on external enforcement even during emergencies. This means emergency protocols must be designed around coordination, not command. The circuit breaker analogy is apt: when a crisis disrupts normal ETHOS coordination, the system should degrade gracefully to a predefined emergency coordination mode rather than improvising centralized authority. The SHUR network as infrastructure layer should have predefined emergency routing protocols that activate without requiring governance decisions.
 
 ### Suggested Skills for Layer VIII
 
-1. **Emergency Criteria Design** — Specifying objective, measurable trigger criteria for emergency mode activation, for a specific AZPO or for NEOS-wide conditions.
+1. **Emergency Criteria Design** — Specifying objective, measurable trigger criteria for emergency mode activation, for a specific ETHOS or for NEOS-wide conditions.
 2. **Pre-Authorization Protocol Writing** — Drafting the emergency role definitions, authority scopes, and expiration conditions that govern crisis response.
 3. **Crisis Coordination Facilitation** — Running a governance process under emergency conditions: faster, more constrained, with explicit authority boundaries.
 4. **Emergency Reversion Management** — Managing the transition back from emergency mode: verifying criteria clearance, restoring normal governance, archiving emergency infrastructure.
@@ -397,7 +397,7 @@ NEOS, as non-sovereign infrastructure, cannot rely on external enforcement even 
 The legal system's precedent architecture provides the most developed model for searchable governance memory. Key features:
 
 - **Ratio decidendi** (the holding): The specific reasoning that creates binding precedent, separated from obiter dicta (non-binding commentary). In NEOS terms: the decision principle, distinct from the context and discussion.
-- **Hierarchical precedent**: Decisions from higher-authority bodies bind lower ones. For NEOS: decisions made at the Council level bind AZPO interpretations of the same principle.
+- **Hierarchical precedent**: Decisions from higher-authority bodies bind lower ones. For NEOS: decisions made at the Council level bind ETHOS interpretations of the same principle.
 - **Selective publication**: Not every decision merits archiving as precedent — a publication decision distinguishes routine operations from governance-shaping decisions.
 - **Evolution through overruling**: Precedents can be explicitly overturned with justification. The overturning is itself a governance artifact. This prevents ossification without eliminating memory.
 
@@ -422,8 +422,8 @@ Version control systems (Git) provide the pattern for agreement versioning: ever
 
 - **Two-layer memory**: Deliberation layer (reasoning, objections raised, amendments proposed) plus Decision layer (final text, vote record, signatories). Both are preserved; they are linked but distinct.
 - **Ratio/context separation**: Every recorded decision should explicitly tag its holding (the principle that applies to future cases) separately from the contextual details of the specific case.
-- **Precedent classification**: Not every decision is precedent. A classification system identifies: routine operations records (archived but not searchable as precedent), governance decisions (searchable, citable), and constitutional-level decisions (binding on all AZPO interpretations).
-- **Semantic tagging for search**: Decisions should be tagged with domain, AZPO, date, type, and linked to any decisions they modify or supersede. This enables query: "show me all decisions about resource allocation in agricultural AZPOs since year 3."
+- **Precedent classification**: Not every decision is precedent. A classification system identifies: routine operations records (archived but not searchable as precedent), governance decisions (searchable, citable), and constitutional-level decisions (binding on all ETHOS interpretations).
+- **Semantic tagging for search**: Decisions should be tagged with domain, ETHOS, date, type, and linked to any decisions they modify or supersede. This enables query: "show me all decisions about resource allocation in agricultural ETHOS since year 3."
 - **Mandatory overrule documentation**: When a decision supersedes a prior decision, the new decision must explicitly cite what it overrules and why. Silent overruling is prohibited.
 
 ### Anti-Patterns to Avoid
@@ -463,7 +463,7 @@ GDPR Article 20 establishes the right to receive personal data in a structured, 
 
 **Platform Cooperative Exit-to-Community Model — Applied Reference**
 
-The "Exit to Community" movement in platform cooperativism provides a design pattern for organizational transitions: converting a company from investor-owned to member-owned is modeled as a dignified exit from one governance structure that is also an entry into another. Applied to NEOS: member departure from an AZPO should be designed as an exit-to-elsewhere, not an exit-to-void. The departing member's record, contributions, and commitments travel with them.
+The "Exit to Community" movement in platform cooperativism provides a design pattern for organizational transitions: converting a company from investor-owned to member-owned is modeled as a dignified exit from one governance structure that is also an entry into another. Applied to NEOS: member departure from an ETHOS should be designed as an exit-to-elsewhere, not an exit-to-void. The departing member's record, contributions, and commitments travel with them.
 
 **Links**: [Exit to Community — Noema](https://www.noemamag.com/exit-to-community/) | [Platform Cooperative — Wikipedia](https://en.wikipedia.org/wiki/Platform_cooperative)
 
@@ -475,7 +475,7 @@ Twin Oaks community requires a two-thirds-plus-one supermajority vote with 10-50
 
 **Graceful Degradation Design — Technical Principle**
 
-Graceful degradation in systems design means: when a component fails or exits, the remaining system continues functioning at reduced but acceptable capacity, rather than collapsing. For NEOS AZPOs: the departure of any member, role-holder, or even a sub-circle should trigger defined handoff protocols that maintain continuity. No single departure should be catastrophic. This requires designed redundancy: critical roles shared by at least two members, all critical knowledge in governance memory, all commitments documented before departure.
+Graceful degradation in systems design means: when a component fails or exits, the remaining system continues functioning at reduced but acceptable capacity, rather than collapsing. For NEOS ETHOS: the departure of any member, role-holder, or even a sub-circle should trigger defined handoff protocols that maintain continuity. No single departure should be catastrophic. This requires designed redundancy: critical roles shared by at least two members, all critical knowledge in governance memory, all commitments documented before departure.
 
 ### Key Design Patterns to Adopt
 
@@ -491,19 +491,19 @@ Graceful degradation in systems design means: when a component fails or exits, t
 - **Exit as punishment**: Treating departure as betrayal, or making the exit process painful, produces the worst outcome: members who stay trapped and resentful rather than genuinely committed.
 - **Data hostage-taking**: Refusing to export member data, or exporting it in proprietary formats that require specific tools to read, violates data sovereignty and creates vendor-like lock-in in a governance context.
 - **Silent departure**: When a member exits without a formal process, critical knowledge, relationships, and commitments evaporate. Governance systems should not allow silent exits from roles with responsibilities.
-- **Dissolution without precedent**: Community or AZPO dissolution without documented protocol leads to chaos and contested claims. The dissolution procedure must be written before it is needed.
+- **Dissolution without precedent**: Community or ETHOS dissolution without documented protocol leads to chaos and contested claims. The dissolution procedure must be written before it is needed.
 
 ### OmniOne-Specific Considerations
 
-In NEOS, members' participation histories — including Current-See records, agreements signed, decisions participated in, and any conflict/repair records — constitute a governance reputation that belongs to the member, not the AZPO. This portable reputation is an asset in the NEOS ecosystem: a member re-entering or moving between AZPOs should be able to present their governance history as context for re-establishing relationships. The SHUR network should enable cross-AZPO reputation portability without centralizing that data.
+In NEOS, members' participation histories — including Current-See records, agreements signed, decisions participated in, and any conflict/repair records — constitute a governance reputation that belongs to the member, not the ETHOS. This portable reputation is an asset in the NEOS ecosystem: a member re-entering or moving between ETHOS should be able to present their governance history as context for re-establishing relationships. The SHUR network should enable cross-ETHOS reputation portability without centralizing that data.
 
 ### Suggested Skills for Layer X
 
 1. **Voluntary Exit Protocol Facilitation** — Managing the member exit process: identifying outstanding commitments, coordinating handoffs, completing data export, and acknowledging contribution.
 2. **Commitment Unwinding** — Systematically mapping and closing or transferring a departing member's active obligations across roles, agreements, and resource accountabilities.
-3. **Portable Record Maintenance** — Maintaining a member's participation record in exportable format; understanding what data is portable and what remains with the AZPO.
-4. **AZPO Dissolution Governance** — Running the formal process for dissolving an AZPO: supermajority vote, asset and commitment resolution, archiving, and graceful handoff to the broader NEOS network.
-5. **Re-entry Integration** — Welcoming a returning member: reviewing their portable history, negotiating re-entry terms, and re-establishing their standing within the AZPO.
+3. **Portable Record Maintenance** — Maintaining a member's participation record in exportable format; understanding what data is portable and what remains with the ETHOS.
+4. **ETHOS Dissolution Governance** — Running the formal process for dissolving an ETHOS: supermajority vote, asset and commitment resolution, archiving, and graceful handoff to the broader NEOS network.
+5. **Re-entry Integration** — Welcoming a returning member: reviewing their portable history, negotiating re-entry terms, and re-establishing their standing within the ETHOS.
 
 ---
 
@@ -521,7 +521,7 @@ From circuit breakers to sunset clauses to domain review schedules, durable syst
 Legal stare decisis, DAO on-chain records, and agreement versioning all treat governance memory as a structural component, not a clerical function. Decisions are only as trustworthy as their documentation.
 
 **4. Exit quality determines voice quality**
-Hirschman's core insight: if exit is genuinely available and dignified, Voice becomes more credible and more effective. Members who stay in a NEOS AZPO should be there by genuine choice. That choice is only meaningful if the alternative is real.
+Hirschman's core insight: if exit is genuinely available and dignified, Voice becomes more credible and more effective. Members who stay in a NEOS ETHOS should be there by genuine choice. That choice is only meaningful if the alternative is real.
 
 ---
 

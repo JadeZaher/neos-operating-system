@@ -14,7 +14,7 @@ When a crisis hits, governance systems face a structural dilemma: normal deliber
 
 ## B. Domain Scope
 
-This skill applies to any AZPO or ecosystem that has defined emergency criteria (per emergency-criteria-design). Pre-authorized roles are scoped to the domain boundary defined by domain-mapping (Layer II) -- roles designed for SHUR Bali operate only within Bali's governance domain. The skill covers the design, consent, and registry of pre-authorized emergency roles, not the activation of those roles during a crisis (that is crisis-coordination) or the reversion of authority after a crisis (that is emergency-reversion). Out of scope: this skill does not define how emergency decisions are made -- it defines who holds what bounded authority and for how long.
+This skill applies to any ETHOS or ecosystem that has defined emergency criteria (per emergency-criteria-design). Pre-authorized roles are scoped to the domain boundary defined by domain-mapping (Layer II) -- roles designed for SHUR Bali operate only within Bali's governance domain. The skill covers the design, consent, and registry of pre-authorized emergency roles, not the activation of those roles during a crisis (that is crisis-coordination) or the reversion of authority after a crisis (that is emergency-reversion). Out of scope: this skill does not define how emergency decisions are made -- it defines who holds what bounded authority and for how long.
 
 ## C. Trigger Conditions
 
@@ -22,14 +22,14 @@ This skill applies to any AZPO or ecosystem that has defined emergency criteria 
 - **Role vacancy**: when a pre-authorized emergency role holder exits the ecosystem or becomes unavailable, a replacement must be designated through the ACT process
 - **Post-emergency review recommendation**: when a post-emergency review identifies gaps in pre-authorized roles or authority scopes
 - **Scheduled review**: pre-authorization registries are reviewed annually, aligned with emergency criteria review
-- **Authority scope change**: when an AZPO's governance structure changes (new domains, new resources, new operational scope), pre-authorized roles may need recalibration
+- **Authority scope change**: when an ETHOS's governance structure changes (new domains, new resources, new operational scope), pre-authorized roles may need recalibration
 
 ## D. Required Inputs
 
 - **Emergency Criteria Registry**: the active criteria that pre-authorized roles will respond to (from emergency-criteria-design)
 - **Role framework**: the ecosystem's role-assignment structure (Layer II), defining how roles are created and filled
 - **Authority boundary definitions**: the ecosystem's authority-boundary-negotiation framework (Layer II), defining how authority scopes are set
-- **Resource inventory**: the AZPO's available resources (financial, physical, operational) that emergency roles may need to access
+- **Resource inventory**: the ETHOS's available resources (financial, physical, operational) that emergency roles may need to access
 - **ACT process access**: all pre-authorizations must be consented to through the Advice-Consent-Test protocol (Layer III)
 - **Irreducible constraints list**: the boundaries that no emergency authority can cross, defined in `assets/irreducible-constraints.yaml`
 
@@ -39,7 +39,7 @@ This skill applies to any AZPO or ecosystem that has defined emergency criteria 
 2. **Define authority scope per role.** For each role, specify exactly what the role holder can do during an active emergency: decisions they can make, resources they can access, communications they can issue, and contracts they can execute. Authority scopes must follow the minimum necessary authority principle -- the smallest scope required for effective crisis response.
 3. **Set hard ceilings.** Each role includes quantified limits: maximum spending authority (e.g., "up to $5,000 per decision without additional consent"), maximum commitment duration (e.g., "contracts up to 30 days"), maximum scope (e.g., "facility safety decisions only, not programmatic decisions"). Ceilings are absolute -- they cannot be exceeded during an emergency, even with good intentions.
 4. **Define auto-expiration.** Each pre-authorization includes an automatic expiration timer that begins when the emergency is declared. Default: role authority expires when exit criteria are met OR at maximum duration, whichever comes first. Authority cannot extend beyond the emergency criteria's maximum duration without emergency ACT consent (per crisis-coordination).
-5. **Verify irreducible constraints.** Cross-reference each role's authority scope against the irreducible constraints in `assets/irreducible-constraints.yaml`. No pre-authorization can grant authority to: amend the UAF, dissolve an AZPO, expel a member, or modify emergency criteria during an active emergency. Any proposed authority that touches these constraints is rejected at the design stage.
+5. **Verify irreducible constraints.** Cross-reference each role's authority scope against the irreducible constraints in `assets/irreducible-constraints.yaml`. No pre-authorization can grant authority to: amend the UAF, dissolve an ETHOS, expel a member, or modify emergency criteria during an active emergency. Any proposed authority that touches these constraints is rejected at the design stage.
 6. **Designate role holders and alternates.** Identify primary and alternate holders for each role. Role holders must be ecosystem members in good standing. No individual holds more than one emergency role (separation of emergency powers). The criteria designer cannot be the emergency role holder for their own criteria (separation of design and execution).
 7. **Enter ACT Advice phase.** Share the pre-authorization design with affected stakeholders. Advisors evaluate: Is the authority scope sufficient for effective response? Are the ceilings appropriate? Do irreducible constraints hold? Are role holders appropriately independent? Timeline: 5-10 days.
 8. **Enter ACT Consent phase.** Present the pre-authorization for consent. Consent means "no reasoned objection." Objections must reference specific structural concerns. Timeline: 5-7 days.
@@ -54,7 +54,7 @@ A Pre-Authorization Registry entry following `assets/pre-authorization-template.
 
 - **Pre-authorized roles** can only exercise authority that was explicitly consented to during the ACT process -- no implied or expanded authority
 - **No role holder** can exceed their defined ceilings, even in genuine crisis conditions -- ceiling violation is itself a governance event logged for post-emergency review
-- **No emergency authority** can cross irreducible constraints: UAF amendment, AZPO dissolution, member expulsion, criteria modification during emergency
+- **No emergency authority** can cross irreducible constraints: UAF amendment, ETHOS dissolution, member expulsion, criteria modification during emergency
 - **Role holders** cannot appoint additional emergency roles or expand their own authority scope during an emergency
 - **The ACT consent process** determines all pre-authorizations -- no individual or leadership body can pre-authorize emergency roles unilaterally
 - **Auto-expiration** is structural, not discretionary -- authority ceases when the timer runs regardless of the role holder's assessment
@@ -65,7 +65,7 @@ A Pre-Authorization Registry entry following `assets/pre-authorization-template.
 
 **Charismatic capture.** The separation of emergency powers -- no individual holds more than one role -- prevents a charismatic leader from concentrating emergency authority. Role holders are designated through ACT consent, not by leadership appointment. A beloved leader can serve as one emergency role holder but cannot accumulate multiple roles or expand the scope of their single role.
 
-**Emergency capture.** Auto-expiration timers are the primary defense. Pre-authorized authority has a hard structural end point that no individual decision can extend. The irreducible constraints prevent the most dangerous forms of emergency overreach: no UAF amendment means no permanent rule changes under emergency authority; no AZPO dissolution means no structural destruction during crisis; no criteria modification means the rules governing the emergency cannot be changed by those operating under emergency authority.
+**Emergency capture.** Auto-expiration timers are the primary defense. Pre-authorized authority has a hard structural end point that no individual decision can extend. The irreducible constraints prevent the most dangerous forms of emergency overreach: no UAF amendment means no permanent rule changes under emergency authority; no ETHOS dissolution means no structural destruction during crisis; no criteria modification means the rules governing the emergency cannot be changed by those operating under emergency authority.
 
 **Informal capture.** All pre-authorizations are formally registered, publicly visible, and installed through ACT consent. There are no informal emergency powers, no "understood" authority, and no "someone has to make the call" justifications. If an authority was not pre-consented, it does not exist during an emergency.
 
@@ -87,7 +87,7 @@ When a pre-authorized role holder exits the ecosystem, their alternate becomes t
 
 ## L. Cross-Unit Interoperability Impact
 
-Pre-authorization registries for each AZPO are published to all ecosystem members, enabling cross-unit visibility into emergency preparedness. AZPOs in similar contexts can share role templates and authority scope definitions while customizing ceilings and holders locally. During an ecosystem-level emergency (e.g., OSC incapacity), ecosystem-wide pre-authorizations activate alongside AZPO-level ones. Cross-AZPO mutual aid agreements can include pre-authorized resource sharing during emergencies, designed through joint ACT process. When one AZPO's emergency affects adjacent AZPOs, the affected AZPOs' own pre-authorized roles activate independently within their domains.
+Pre-authorization registries for each ETHOS are published to all ecosystem members, enabling cross-unit visibility into emergency preparedness. ETHOS in similar contexts can share role templates and authority scope definitions while customizing ceilings and holders locally. During an ecosystem-level emergency (e.g., OSC incapacity), ecosystem-wide pre-authorizations activate alongside ETHOS-level ones. Cross-ETHOS mutual aid agreements can include pre-authorized resource sharing during emergencies, designed through joint ACT process. When one ETHOS's emergency affects adjacent ETHOS, the affected ETHOS' own pre-authorized roles activate independently within their domains.
 
 ## OmniOne Walkthrough
 
@@ -99,13 +99,13 @@ It is March 2026, and SHUR Bali has installed five emergency criteria (per the e
 
 **Resource Coordinator design.** Authority scope: release emergency reserves, renegotiate payment schedules with vendors, authorize essential operating expenditures, request emergency contributions from the ecosystem. Hard ceilings: spending up to $5,000 per decision, total emergency spending not to exceed 50% of quarterly reserves, contracts up to 30 days. Auto-expiration: aligned with resource crisis criterion maximum duration (30 days).
 
-**Communications Coordinator design.** Authority scope: issue official statements on behalf of the AZPO, communicate with external authorities, coordinate member communications. Hard ceilings: no financial authority, no authority to make commitments on behalf of the AZPO beyond factual status updates, no authority to negotiate with external parties. Auto-expiration: aligned with the triggering criterion's duration.
+**Communications Coordinator design.** Authority scope: issue official statements on behalf of the ETHOS, communicate with external authorities, coordinate member communications. Hard ceilings: no financial authority, no authority to make commitments on behalf of the ETHOS beyond factual status updates, no authority to negotiate with external parties. Auto-expiration: aligned with the triggering criterion's duration.
 
 **Irreducible constraints verification.** All three roles are checked against the constraints in `assets/irreducible-constraints.yaml`: none can amend the UAF, dissolve SHUR Bali, expel members, or modify emergency criteria. The Resource Coordinator's spending ceiling is explicitly below the threshold that would require UAF-level financial restructuring.
 
 **Role holder designation.** Ratu (facilities steward, with construction experience) is designated Safety Coordinator with Dewa as alternate. Nadia (AE liaison, with financial background) is designated Resource Coordinator with Farid as alternate. Tomasz (TH member, journalist background) is designated Communications Coordinator with Sari as alternate. No individual holds more than one role.
 
-**ACT process.** During the Advice phase, Yuki (cross-AZPO advisor from Costa Rica) notes that the Safety Coordinator's $3,000 ceiling may be too low for emergency shelter arrangements in Bali: "In our experience, emergency lodging for 38 people costs $150-200 per night." The team revises the ceiling to $5,000 per decision. During Consent, Ketut confirms no reasoned objections. All three pre-authorizations are installed in the registry.
+**ACT process.** During the Advice phase, Yuki (cross-ETHOS advisor from Costa Rica) notes that the Safety Coordinator's $3,000 ceiling may be too low for emergency shelter arrangements in Bali: "In our experience, emergency lodging for 38 people costs $150-200 per night." The team revises the ceiling to $5,000 per decision. During Consent, Ketut confirms no reasoned objections. All three pre-authorizations are installed in the registry.
 
 **Edge case.** During the tabletop drill, the team simulates a scenario where flooding damages the SHUR facility and a vendor demands $8,000 for emergency water delivery. The Resource Coordinator's ceiling is $5,000 per decision. Nadia cannot authorize the full amount unilaterally. She authorizes $5,000 and logs the remaining $3,000 in the deferred decision queue for emergency ACT consent among available members. The drill reveals that the compressed ACT timeline (per crisis-coordination) can process such decisions within 24 hours, making the ceiling operationally viable without exposing the ecosystem to uncapped spending.
 
@@ -129,7 +129,7 @@ During a resource crisis, the two SHUR Bali factions disagree on how the Resourc
 
 ### 5. Large-Scale Replication
 
-As OmniOne scales to 12 SHUR locations, each AZPO designs pre-authorized roles calibrated to its local context. Bali's Safety Coordinator has a $5,000 ceiling reflecting local costs; Costa Rica's has $7,000 reflecting different economic conditions. The pre-authorization template (`assets/pre-authorization-template.yaml`) ensures structural consistency while allowing local calibration. Cross-AZPO mutual aid pre-authorizations allow Safety Coordinators to request assistance from adjacent AZPOs during emergencies. At ecosystem scale, the OSC maintains visibility into all pre-authorization registries to identify gaps -- an AZPO without a designated Communications Coordinator, for instance. The role designation and ACT consent process scales with the participant base because each AZPO manages its own registry. No central authority designates emergency roles across the ecosystem.
+As OmniOne scales to 12 SHUR locations, each ETHOS designs pre-authorized roles calibrated to its local context. Bali's Safety Coordinator has a $5,000 ceiling reflecting local costs; Costa Rica's has $7,000 reflecting different economic conditions. The pre-authorization template (`assets/pre-authorization-template.yaml`) ensures structural consistency while allowing local calibration. Cross-ETHOS mutual aid pre-authorizations allow Safety Coordinators to request assistance from adjacent ETHOS during emergencies. At ecosystem scale, the OSC maintains visibility into all pre-authorization registries to identify gaps -- an ETHOS without a designated Communications Coordinator, for instance. The role designation and ACT consent process scales with the participant base because each ETHOS manages its own registry. No central authority designates emergency roles across the ecosystem.
 
 ### 6. External Legal Pressure
 

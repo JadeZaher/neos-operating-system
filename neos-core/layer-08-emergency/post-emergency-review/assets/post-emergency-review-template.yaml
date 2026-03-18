@@ -15,7 +15,7 @@ post_emergency_review:
   review_body:
     - member_name: ""
       member_role: ""             # normal governance role (not emergency role)
-      azpo: ""                    # home AZPO
+      ethos: ""                    # home ETHOS
       independence_declaration: "" # statement confirming no emergency role held
   review_date: ""                 # ISO date
   review_body_appointed_by: ""    # role-assignment process reference

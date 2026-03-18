@@ -44,7 +44,7 @@ Carl Schmitt defined sovereignty as "who decides the exception." Agamben showed 
 
 2. **Pre-consented authority**: Emergency roles, scopes, ceilings, and timers are designed and consented to before any crisis. No one improvises power during fear.
 
-3. **Irreducible constraints**: Four boundaries that no emergency authority can cross: no UAF amendment, no AZPO dissolution, no member expulsion, no criteria modification during emergency. These protect permanent governance architecture from temporary authority.
+3. **Irreducible constraints**: Four boundaries that no emergency authority can cross: no UAF amendment, no ETHOS dissolution, no member expulsion, no criteria modification during emergency. These protect permanent governance architecture from temporary authority.
 
 4. **Auto-reversion**: Every emergency has a hard end date. The timer starts at declaration and cannot be paused. Authority ceases immediately upon reversion. The Half-Open recovery state cannot be skipped.
 

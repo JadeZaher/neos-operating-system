@@ -149,7 +149,7 @@ Implementation details:
 - `create_decision_record`: generates `DR-{year}-{seq}`, auto-adds layer and skill name as tags
 - `search_precedents`: supports multi-filter query, case-insensitive text search via SQL LIKE, orders by tag match count then recency
 - `get_domain`: returns all 11 S3 domain contract elements, includes current steward(s)
-- `get_active_members`: defaults to status=active, supports AZPO and profile filters, returns count alongside list
+- `get_active_members`: defaults to status=active, supports ETHOS and profile filters, returns count alongside list
 
 Run tests from Task 1.1 for tools 11-14.
 
@@ -207,7 +207,7 @@ Create `agent/tests/test_system_prompt.py` with test cases:
 - `test_foundation_prompt_contains_identity` -- output contains "NEOS Governance Agent"
 - `test_foundation_prompt_contains_all_principles` -- all 10 principle names appear
 - `test_foundation_prompt_contains_skill_index` -- all 54 skill names appear
-- `test_foundation_prompt_contains_terminology` -- key terms (AZPO, Current-See, Steward, ACT) present
+- `test_foundation_prompt_contains_terminology` -- key terms (ETHOS, Current-See, Steward, ACT) present
 - `test_foundation_prompt_token_budget` -- estimated tokens under 2,500
 - `test_skill_prompt_loads_content` -- active skill content appears when skill is set
 - `test_skill_prompt_empty_when_no_skill` -- Layer 2 is empty when active_skill is None
@@ -237,7 +237,7 @@ PRINCIPLES_CONDENSED = [
 ]
 
 TERMINOLOGY = {
-    "AZPO": "Autonomous Zone of Purposeful Operation -- a self-organizing unit",
+    "ETHOS": "Emergent Thriving Holonic Organizational Structure -- a self-organizing unit",
     ...
 }
 

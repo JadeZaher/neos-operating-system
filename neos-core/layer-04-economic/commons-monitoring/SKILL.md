@@ -112,10 +112,10 @@ When 30%+ of participants exit:
 
 ## L. Cross-Unit Interoperability Impact
 
-- Each AZPO runs its own commons monitoring for its circle-level pools. Ecosystem-level monitoring aggregates data across all AZPOs.
-- Cross-AZPO shared pools are monitored jointly by monitors from each participating AZPO. The reporting cycle follows the pool's governance agreement, which all AZPOs consented to.
-- Ecosystem-level commons health reports synthesize findings from all AZPO-level reports. The ecosystem report identifies cross-unit patterns: resource concentration in specific locations, reciprocity imbalances between AZPOs, and sustainability risks that span multiple units.
-- Monitor rotation across AZPOs prevents geographic capture: monitors from SHUR Bali may rotate to monitor SHUR Portugal pools, and vice versa. Cross-AZPO monitoring provides fresh perspective.
+- Each ETHOS runs its own commons monitoring for its circle-level pools. Ecosystem-level monitoring aggregates data across all ETHOS.
+- Cross-ETHOS shared pools are monitored jointly by monitors from each participating ETHOS. The reporting cycle follows the pool's governance agreement, which all ETHOS consented to.
+- Ecosystem-level commons health reports synthesize findings from all ETHOS-level reports. The ecosystem report identifies cross-unit patterns: resource concentration in specific locations, reciprocity imbalances between ETHOS, and sustainability risks that span multiple units.
+- Monitor rotation across ETHOS prevents geographic capture: monitors from SHUR Bali may rotate to monitor SHUR Portugal pools, and vice versa. Cross-ETHOS monitoring provides fresh perspective.
 - Cross-ecosystem commons monitoring (between separate NEOS ecosystems) uses the inter-unit coordination protocol (Layer V, deferred).
 
 ## OmniOne Walkthrough
@@ -163,7 +163,7 @@ Two factions within OmniOne disagree about whether the commons health report sho
 
 ### 5. Large-Scale Replication
 
-OmniOne scales to 5,000 participants, 80 circles, and 150+ active funding pools. Commons monitoring scales through nested reporting: each AZPO's monitors produce AZPO-level reports, and ecosystem-level monitors synthesize these into an ecosystem health report. No single monitor pair oversees 150 pools. The monitoring calendar staggers reporting cycles so ecosystem monitors receive a steady stream of AZPO reports rather than 80 reports on the same day. Threshold configurations vary by pool type and size -- a circle operational pool with $2,000 uses different absolute thresholds than an ecosystem strategic pool with $200,000, though percentage thresholds remain consistent. The agreement registry tracks monitoring data with consistent metadata across all pools, enabling trend analysis at every scale. Monitor rotation at scale draws from a larger pool of trained monitors, reducing rotation burden on any individual.
+OmniOne scales to 5,000 participants, 80 circles, and 150+ active funding pools. Commons monitoring scales through nested reporting: each ETHOS's monitors produce ETHOS-level reports, and ecosystem-level monitors synthesize these into an ecosystem health report. No single monitor pair oversees 150 pools. The monitoring calendar staggers reporting cycles so ecosystem monitors receive a steady stream of ETHOS reports rather than 80 reports on the same day. Threshold configurations vary by pool type and size -- a circle operational pool with $2,000 uses different absolute thresholds than an ecosystem strategic pool with $200,000, though percentage thresholds remain consistent. The agreement registry tracks monitoring data with consistent metadata across all pools, enabling trend analysis at every scale. Monitor rotation at scale draws from a larger pool of trained monitors, reducing rotation burden on any individual.
 
 ### 6. External Legal Pressure
 

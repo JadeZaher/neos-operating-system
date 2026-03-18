@@ -9,8 +9,8 @@ checklist:
     notes: "Former member contacts any steward. No approval needed to start the process."
 
   - step: 2
-    action: "Assign re-entry coordinator from the receiving AZPO"
-    responsible: "AZPO governance facilitator"
+    action: "Assign re-entry coordinator from the receiving ETHOS"
+    responsible: "ETHOS governance facilitator"
     completed: false
     notes: "Coordinator should not have a prior close relationship with the returning member."
 
@@ -30,7 +30,7 @@ checklist:
     action: "Prepare change summary covering period since departure"
     responsible: "re-entry coordinator"
     completed: false
-    notes: "Include: agreement amendments, structural changes, new/dissolved AZPOs, policy updates."
+    notes: "Include: agreement amendments, structural changes, new/dissolved ETHOS, policy updates."
 
   - step: 6
     action: "Present current foundational agreements and change summary to returning member"
@@ -51,7 +51,7 @@ checklist:
     notes: "Consent to CURRENT versions only. Member cannot rejoin under old terms."
 
   - step: 9
-    action: "Agree on integration pathway (AZPO, circle, orientation period)"
+    action: "Agree on integration pathway (ETHOS, circle, orientation period)"
     responsible: "re-entry coordinator + returning member"
     completed: false
     notes: "Previous role experience informs but does not determine placement."
@@ -69,7 +69,7 @@ checklist:
     notes: "Record filed in governance memory. Copy to returning member."
 
   - step: 12
-    action: "Publish factual re-entry notice to receiving AZPO and relevant circles"
+    action: "Publish factual re-entry notice to receiving ETHOS and relevant circles"
     responsible: "re-entry coordinator"
     completed: false
     notes: "Name, return date, assigned circle, previous experience noted. No editorial."

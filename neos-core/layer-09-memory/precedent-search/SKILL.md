@@ -82,7 +82,7 @@ When a participant exits, precedent application reports they authored remain val
 
 ## L. Cross-Unit Interoperability Impact
 
-Precedent search operates across all AZPOs in the ecosystem by default. A participant at SHUR Costa Rica can search for precedents from SHUR Bali and vice versa. Cross-AZPO search uses the shared tagging taxonomy to filter by ecosystem_scope (single-azpo, cross-azpo, ecosystem-wide). When a governance decision at one AZPO cites a precedent from another AZPO, the precedent is classified as persuasive (different unit, reasoning informative) unless the deciding body explicitly adopts it as binding for their context. Cross-ecosystem precedent search (between two separate NEOS ecosystems) is deferred to Layer V federation, but the search query parameters and precedent classification framework are designed to be portable across ecosystems.
+Precedent search operates across all ETHOS in the ecosystem by default. A participant at SHUR Costa Rica can search for precedents from SHUR Bali and vice versa. Cross-ETHOS search uses the shared tagging taxonomy to filter by ecosystem_scope (single-ethos, cross-ethos, ecosystem-wide). When a governance decision at one ETHOS cites a precedent from another ETHOS, the precedent is classified as persuasive (different unit, reasoning informative) unless the deciding body explicitly adopts it as binding for their context. Cross-ecosystem precedent search (between two separate NEOS ecosystems) is deferred to Layer V federation, but the search query parameters and precedent classification framework are designed to be portable across ecosystems.
 
 ## OmniOne Walkthrough
 

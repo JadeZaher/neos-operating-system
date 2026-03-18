@@ -3,7 +3,7 @@
 
 report:
   report_id: ""            # e.g. GHR-SHUR-2026-Q1
-  audit_scope: ""          # AZPO name or "ecosystem"
+  audit_scope: ""          # ETHOS name or "ecosystem"
   audit_period:
     start: ""              # ISO date
     end: ""                # ISO date

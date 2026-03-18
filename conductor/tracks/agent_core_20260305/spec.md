@@ -236,10 +236,10 @@ Define 14 tools using the `@tool` decorator from `claude-agent-sdk`, registered 
 **FR-1.14: `get_active_members`**
 - Description: "Get active ecosystem members, optionally filtered"
 - Parameters:
-  - `azpo` (str, optional): filter by AZPO name
+  - `ethos` (str, optional): filter by ETHOS name
   - `profile` (str, optional): filter by profile type (co-creator, builder, collaborator, townhall)
   - `status` (str, optional): filter by membership status (active, onboarding, wind_down)
-- Returns: list of members with name, profile, AZPO(s), joined_date, status
+- Returns: list of members with name, profile, ETHOS(s), joined_date, status
 - Acceptance criteria:
   - Returns only active members by default (status=active)
   - Supports combining filters
@@ -284,7 +284,7 @@ Content:
   - Never make a governance decision on behalf of a participant
   - Always state when a participant needs to take an action (the agent cannot take it for them)
   - Flag capture resistance concerns when detected in user requests
-  - Use NEOS terminology consistently (AZPO, not "department"; Steward, not "manager"; Current-See, not "token")
+  - Use NEOS terminology consistently (ETHOS, not "department"; Steward, not "manager"; Current-See, not "token")
 - **Terminology table**: Key terms from product-guidelines.md
 - **Skill index**: All 54 skill names with one-line descriptions, organized by layer. This allows the agent to identify which skill is relevant to a user's request.
 - **Capabilities summary**: What the agent can do (search agreements, help draft proposals, walk through ACT phases, check authority, search precedents) and what it cannot do (approve agreements, cast votes, override objections, expand authority).
@@ -586,7 +586,7 @@ Acceptance criteria:
 **So that** I can make a more informed governance decision.
 
 **Given** I am considering a resource allocation dispute,
-**When** I ask "Have we handled resource disputes between AZPOs before?,"
+**When** I ask "Have we handled resource disputes between ETHOS before?,"
 **Then** the agent:
 1. Uses `search_precedents` with relevant tags
 2. Returns matching decision records with summaries

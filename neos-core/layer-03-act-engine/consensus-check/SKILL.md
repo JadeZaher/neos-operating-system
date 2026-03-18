@@ -96,8 +96,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO consensus checks require each AZPO to conduct its own check. The results are linked but each AZPO's quorum is calculated independently.
-- When a consensus check involves participants from multiple AZPOs, each participant's AZPO affiliation is recorded.
+- Cross-ETHOS consensus checks require each ETHOS to conduct its own check. The results are linked but each ETHOS's quorum is calculated independently.
+- When a consensus check involves participants from multiple ETHOS, each participant's ETHOS affiliation is recorded.
 - Federation: cross-ecosystem consensus checks follow each ecosystem's own rules, with results linked in both registries.
 
 ## OmniOne Walkthrough

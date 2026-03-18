@@ -5,46 +5,46 @@
 tiers:
   - tier: 1
     name: "Direct Negotiation"
-    description: "Designated representatives from affected AZPOs meet directly to share positions, interests, and constraints, seeking mutual solutions through good-faith dialogue."
+    description: "Designated representatives from affected ETHOS meet directly to share positions, interests, and constraints, seeking mutual solutions through good-faith dialogue."
     entry_conditions:
       - "Structural conflict identified and documented"
-      - "Each AZPO designates a representative with negotiation mandate"
+      - "Each ETHOS designates a representative with negotiation mandate"
     process:
       - "Document conflict using conflict-resolution-record-template.yaml"
-      - "Each AZPO designates representative with mandate"
+      - "Each ETHOS designates representative with mandate"
       - "Representatives meet for direct dialogue"
       - "Seek mutual solutions within mandate limits"
     authority_rules:
-      - "Representatives can explore and negotiate but not commit without AZPO consent"
+      - "Representatives can explore and negotiate but not commit without ETHOS consent"
       - "No external facilitation or mediation"
-      - "Each AZPO evaluates proposed resolutions through its own ACT process"
-    timeline: "30 days recommended; either AZPO may request Tier 2 escalation at any time"
+      - "Each ETHOS evaluates proposed resolutions through its own ACT process"
+    timeline: "30 days recommended; either ETHOS may request Tier 2 escalation at any time"
     legitimate_outcomes:
-      - "Mutual resolution (ratified by each AZPO)"
+      - "Mutual resolution (ratified by each ETHOS)"
       - "Escalation to Tier 2"
       - "Agree to disagree (with documented good-faith attempt)"
 
   - tier: 2
     name: "Facilitated Dialogue"
-    description: "A mutually agreed neutral party from a third AZPO facilitates dialogue between the affected AZPOs. The facilitator manages process, not outcomes."
+    description: "A mutually agreed neutral party from a third ETHOS facilitates dialogue between the affected ETHOS. The facilitator manages process, not outcomes."
     entry_conditions:
       - "Tier 1 attempted without resolution"
-      - "Both AZPOs consent to facilitated dialogue"
+      - "Both ETHOS consent to facilitated dialogue"
       - "Neutral facilitator selected through dual-list process"
     process:
-      - "Each AZPO proposes three facilitator candidates from other AZPOs"
+      - "Each ETHOS proposes three facilitator candidates from other ETHOS"
       - "Overlapping names selected; if no overlap, combined list with random selection"
-      - "Facilitator discloses any relationships with affected AZPOs"
+      - "Facilitator discloses any relationships with affected ETHOS"
       - "Facilitated sessions focus on underlying interests and structural solutions"
       - "Facilitator may surface options but cannot impose or recommend binding solutions"
     authority_rules:
       - "Facilitator has PROCESS authority only (managing dialogue, time, flow)"
       - "Facilitator has ZERO outcome authority (cannot decide, impose, or bind)"
-      - "Resolution requires mutual consent through each AZPO's ACT process"
-      - "Either AZPO may request facilitator replacement if bias is demonstrated"
-    timeline: "45 days recommended; either AZPO may request Tier 3 or conclude without resolution"
+      - "Resolution requires mutual consent through each ETHOS's ACT process"
+      - "Either ETHOS may request facilitator replacement if bias is demonstrated"
+    timeline: "45 days recommended; either ETHOS may request Tier 3 or conclude without resolution"
     legitimate_outcomes:
-      - "Mutual resolution (ratified by each AZPO)"
+      - "Mutual resolution (ratified by each ETHOS)"
       - "Escalation to Tier 3 (if conflict stems from structural gap)"
       - "Agree to disagree (with documented good-faith process)"
 
@@ -53,17 +53,17 @@ tiers:
     description: "Address the underlying structural gap through federation agreement amendment or new agreement. Used when Tiers 1-2 reveal that the conflict stems from missing governance infrastructure."
     entry_conditions:
       - "Tiers 1-2 identified a structural gap as root cause"
-      - "Both AZPOs consent to pursue structural resolution"
+      - "Both ETHOS consent to pursue structural resolution"
       - "Conflict cannot be resolved within existing governance structures"
     process:
       - "Draft federation agreement amendment or new agreement"
       - "Follow full federation-agreement skill process"
-      - "Each AZPO runs negotiation, advice, and consent independently"
+      - "Each ETHOS runs negotiation, advice, and consent independently"
       - "Resulting agreement addresses the structural gap that produced the conflict"
     authority_rules:
       - "Full federation-agreement authority model applies"
-      - "Each AZPO ratifies through its own ACT process"
-      - "No AZPO can impose structural changes on another"
+      - "Each ETHOS ratifies through its own ACT process"
+      - "No ETHOS can impose structural changes on another"
     timeline: "Per federation-agreement skill timelines (typically 60-90 days)"
     legitimate_outcomes:
       - "Federation agreement amendment ratified by all parties"
@@ -72,7 +72,7 @@ tiers:
 
 notes:
   - "Agree to disagree is ALWAYS a legitimate outcome at any tier"
-  - "No tier is mandatory -- AZPOs may conclude without resolution at any point"
+  - "No tier is mandatory -- ETHOS may conclude without resolution at any point"
   - "Engagement tier reduction is a structural choice, not a punishment"
   - "There is no Tier 4 -- no appellate body, no supreme court, no Sultan"
   - "The three-tier model is progressively deeper, not progressively punitive"

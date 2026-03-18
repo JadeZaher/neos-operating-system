@@ -51,7 +51,7 @@ monitoring       audit                 design
 
 | # | Skill | Purpose | Dependencies |
 |---|-------|---------|-------------|
-| 1 | [governance-health-audit](governance-health-audit/SKILL.md) | Quantified review of 8 governance health indicators across an AZPO or ecosystem | agreement-registry, domain-mapping, role-assignment |
+| 1 | [governance-health-audit](governance-health-audit/SKILL.md) | Quantified review of 8 governance health indicators across an ETHOS or ecosystem | agreement-registry, domain-mapping, role-assignment |
 | 2 | [capture-pattern-recognition](capture-pattern-recognition/SKILL.md) | Diagnose the four capture types from governance data with evidence-based confidence scores | governance-health-audit, domain-mapping |
 | 3 | [safeguard-trigger-design](safeguard-trigger-design/SKILL.md) | Design, install, and maintain automatic thresholds that activate governance interventions | capture-pattern-recognition, act-consent-phase, agreement-creation |
 | 4 | [independent-monitoring](independent-monitoring/SKILL.md) | Structurally separated data collection and publication -- raw data, no interpretation | governance-health-audit, role-assignment, domain-mapping |

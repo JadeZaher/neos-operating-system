@@ -264,16 +264,16 @@
     </div>
     {% endif %}
 
-    {# AZPO Memberships #}
-    {% if azpo_memberships is defined and azpo_memberships %}
+    {# ETHOS Memberships #}
+    {% if ethos_memberships is defined and ethos_memberships %}
     <div class="bg-neos-surface border border-neos-border rounded-xl">
       <div class="px-6 py-4 border-b border-neos-border">
-        <h2 class="text-base font-semibold text-neos-text">AZPO Memberships</h2>
+        <h2 class="text-base font-semibold text-neos-text">ETHOS Memberships</h2>
       </div>
       <div class="px-6 py-4">
         <div class="flex flex-wrap gap-2">
-          {% for azpo in azpo_memberships %}
-          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ azpo }}</span>
+          {% for ethos in ethos_memberships %}
+          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neos-bg text-neos-text border border-neos-border">{{ ethos }}</span>
           {% endfor %}
         </div>
       </div>

@@ -14,7 +14,7 @@ triage_assessment:
   triager:
     name: ""
     role: ""
-    azpo_affiliation: ""
+    ethos_affiliation: ""
     conflict_of_interest_check: ""  # none | disclosed (details)
 
   situation_summary: ""             # Brief factual description of the reported conflict
@@ -29,7 +29,7 @@ triage_assessment:
       rating: ""                    # low | moderate | high | critical
       justification: ""            # Written rationale required
     scope:
-      rating: ""                    # individual | circle | azpo | ecosystem
+      rating: ""                    # individual | circle | ethos | ecosystem
       justification: ""
     parties:
       involved:
@@ -71,7 +71,7 @@ triage_assessment:
   linked_records:
     prior_triage_ids: []            # Previous triage records for this situation
     downstream_process_id: ""       # Harm circle, coaching plan, etc.
-    domain_reference: ""            # AZPO and circle context
+    domain_reference: ""            # ETHOS and circle context
 
   created_at: ""                    # ISO 8601 timestamp
   created_by: ""                    # Triager who finalized the record

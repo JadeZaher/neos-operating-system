@@ -1,11 +1,11 @@
 # Lifecycle Record Template
-# One record per participant per AZPO.
+# One record per participant per ETHOS.
 # Current status drives quorum eligibility. All transitions are append-only (never delete).
 # Reference: neos-core/layer-02-authority/member-lifecycle/SKILL.md
 
 member_id: ""               # Unique identifier (ecosystem-assigned, immutable)
 display_name: ""            # Human-readable name (may be updated)
-azpo: ""                    # AZPO this record belongs to (empty = ecosystem-level record)
+ethos: ""                    # ETHOS this record belongs to (empty = ecosystem-level record)
 
 current_status: ""          # prospective | onboarding | active | inactive | reactivating | exiting | exited
 

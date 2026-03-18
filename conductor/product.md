@@ -32,7 +32,7 @@ I.    Agreement Layer         — Lifecycle of agreements (create, amend, review
 II.   Authority & Role Layer  — Scoped authority, role definition, domain boundaries
 III.  Decision (ACT) Engine   — Advice → Consent → Test decision protocol
 IV.   Economic Coordination   — Resource requests, funding pools, access economy
-V.    Inter-Unit Coordination — Cross-AZPO requests, shared resources, federation
+V.    Inter-Unit Coordination — Cross-ETHOS requests, shared resources, federation
 VI.   Conflict & Repair       — Mediation, coaching escalation, repair protocols
 VII.  Safeguard & Capture     — Detection of capital/charisma/emergency capture
 VIII. Emergency Handling       — Temporary authority expansion with auto-revert
@@ -62,7 +62,7 @@ X.    Exit & Portability      — Voluntary exit, data portability, graceful deg
 
 ## Success Criteria
 
-**Primary**: OmniOne members can use the skills daily for real governance — making decisions, forming agreements, requesting resources, resolving conflicts, onboarding members, and coordinating across AZPOs.
+**Primary**: OmniOne members can use the skills daily for real governance — making decisions, forming agreements, requesting resources, resolving conflicts, onboarding members, and coordinating across ETHOS.
 
 **Secondary**: The skill stack is structured so another ecosystem could adopt NEOS core and write their own configuration overlay.
 

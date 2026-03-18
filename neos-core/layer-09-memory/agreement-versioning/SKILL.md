@@ -14,7 +14,7 @@ Agreements change over time through amendments, reviews, and partial sunsets, bu
 
 ## B. Domain Scope
 
-This skill applies to every agreement registered through the agreement-registry skill (Layer I), across all domains and AZPOs. It covers: version creation when agreements are created, amended, or reviewed; diff generation between any two versions; history queries; and rollback proposals. The skill extends the agreement-registry with formal versioning but does not replace it -- the registry tracks agreement status and affected parties; versioning tracks the document's evolution over time. Out of scope: versioning of non-agreement governance artifacts (decision records, domain contracts) -- those are tracked through the decision-record skill's lifecycle fields. Also out of scope: the technical implementation of diff algorithms or storage systems.
+This skill applies to every agreement registered through the agreement-registry skill (Layer I), across all domains and ETHOS. It covers: version creation when agreements are created, amended, or reviewed; diff generation between any two versions; history queries; and rollback proposals. The skill extends the agreement-registry with formal versioning but does not replace it -- the registry tracks agreement status and affected parties; versioning tracks the document's evolution over time. Out of scope: versioning of non-agreement governance artifacts (decision records, domain contracts) -- those are tracked through the decision-record skill's lifecycle fields. Also out of scope: the technical implementation of diff algorithms or storage systems.
 
 ## C. Trigger Conditions
 
@@ -87,7 +87,7 @@ When a participant exits, version records they authored remain valid and unchang
 
 ## L. Cross-Unit Interoperability Impact
 
-When an agreement spans multiple AZPOs (e.g., a cross-AZPO resource sharing agreement), its version history is maintained in the ecosystem-wide governance memory, not in any single AZPO's records. All affected AZPOs can query the version history. When one AZPO proposes an amendment to a cross-AZPO agreement, the version record documents which AZPOs participated in the consent process. Diff queries across versions enable any AZPO to see how the agreement changed and whether changes affected their unit specifically. Cross-ecosystem version compatibility (when two NEOS ecosystems share agreement formats) is deferred to Layer V, but the version record schema is designed for portability: the semver convention, snapshot format, and diff structure are NEOS-generic, not OmniOne-specific.
+When an agreement spans multiple ETHOS (e.g., a cross-ETHOS resource sharing agreement), its version history is maintained in the ecosystem-wide governance memory, not in any single ETHOS's records. All affected ETHOS can query the version history. When one ETHOS proposes an amendment to a cross-ETHOS agreement, the version record documents which ETHOS participated in the consent process. Diff queries across versions enable any ETHOS to see how the agreement changed and whether changes affected their unit specifically. Cross-ecosystem version compatibility (when two NEOS ecosystems share agreement formats) is deferred to Layer V, but the version record schema is designed for portability: the semver convention, snapshot format, and diff structure are NEOS-generic, not OmniOne-specific.
 
 ## OmniOne Walkthrough
 

@@ -4,7 +4,7 @@
 
 report:
   report_id: ""              # e.g. GDR-SHUR-2026-03
-  collection_scope: ""       # AZPO name or "ecosystem"
+  collection_scope: ""       # ETHOS name or "ecosystem"
   collection_period:
     start: ""                # ISO date
     end: ""                  # ISO date

@@ -1,6 +1,6 @@
 # Shared Resource Governance Agreement Template
 # Layer V -- Inter-Unit Coordination
-# Use this template for jointly-held resources across AZPOs
+# Use this template for jointly-held resources across ETHOS
 
 agreement_id: "SRS-[Ecosystem]-[YYYY]-[Seq]"
 
@@ -10,7 +10,7 @@ resource:
   type: ""  # shared-pool | shared-infrastructure | shared-repository | shared-service
   current_state: ""
 
-participating_azpos:
+participating_ethos:
   - name: ""
     contact_person: ""
     ratification_date: ""
@@ -21,10 +21,10 @@ governance_structure:
   steward_term_length: "12 months"
   current_steward:
     name: ""
-    home_azpo: ""
+    home_ethos: ""
     term_start: ""
     term_end: ""
-  succession_schedule: []  # ordered list of AZPO names for rotation
+  succession_schedule: []  # ordered list of ETHOS names for rotation
 
 access_rules:
   tiers:
@@ -35,20 +35,20 @@ access_rules:
   special_conditions: []
 
 contribution_commitments:
-  - azpo: ""
+  - ethos: ""
     commitment: ""
     frequency: ""
     consequence_for_non_compliance: ""
 
 reporting:
   cadence: "monthly"  # monthly | quarterly
-  report_recipients: []  # all participating AZPOs
+  report_recipients: []  # all participating ETHOS
   report_contents: []
 
 review:
   next_review_date: ""
   review_interval: "12 months"
-  review_process: "all-azpo-consent"
+  review_process: "all-ethos-consent"
 
 exit_terms:
   notice_period: "90 days"
@@ -57,4 +57,4 @@ exit_terms:
   content_retention: "contributed content remains under resource governance"
   original_works: "revert to creator per UAF"
 
-registry_entries: []  # list of registry IDs per AZPO
+registry_entries: []  # list of registry IDs per ETHOS

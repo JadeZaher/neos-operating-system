@@ -14,7 +14,7 @@ Without formal lifecycle tracking, ecosystems cannot distinguish active particip
 
 ## B. Domain Scope
 
-Every individual participant in the ecosystem, across all AZPOs and circles. This skill governs status transitions between lifecycle states -- it does not govern governance authority (which is domain-mapping and role-assignment) or platform access (which is determined by profile). A participant may be active in multiple AZPOs simultaneously; each AZPO carries an independent lifecycle record for that participant.
+Every individual participant in the ecosystem, across all ETHOS and circles. This skill governs status transitions between lifecycle states -- it does not govern governance authority (which is domain-mapping and role-assignment) or platform access (which is determined by profile). A participant may be active in multiple ETHOS simultaneously; each ETHOS carries an independent lifecycle record for that participant.
 
 **Inside scope:** status tracking, onboarding consent ceremony process, inactivity detection and notification, reactivation, voluntary exit initiation, profile assignment at onboarding.
 
@@ -155,11 +155,11 @@ On voluntary exit, the following align with the UAF exit clauses:
 
 ## L. Cross-Unit Interoperability Impact
 
-A participant may be active in multiple AZPOs simultaneously. Each AZPO maintains an independent lifecycle record for that participant. Active status in one AZPO does not imply active status in another. Inactivity in one AZPO does not automatically trigger inactivity in another -- each record is checked against the relevant AZPO's participation log independently.
+A participant may be active in multiple ETHOS simultaneously. Each ETHOS maintains an independent lifecycle record for that participant. Active status in one ETHOS does not imply active status in another. Inactivity in one ETHOS does not automatically trigger inactivity in another -- each record is checked against the relevant ETHOS's participation log independently.
 
-Cross-AZPO profile assignments may differ. A member may hold a Co-creator profile in AZPO-A and a Builder profile in AZPO-B, reflecting their different levels of engagement in each unit.
+Cross-ETHOS profile assignments may differ. A member may hold a Co-creator profile in ETHOS-A and a Builder profile in ETHOS-B, reflecting their different levels of engagement in each unit.
 
-When a participant exits the ecosystem entirely (not just an AZPO), all AZPO lifecycle records are updated to `exited` status on the same date. The wind-down process covers all AZPOs simultaneously.
+When a participant exits the ecosystem entirely (not just an ETHOS), all ETHOS lifecycle records are updated to `exited` status on the same date. The wind-down process covers all ETHOS simultaneously.
 
 The extensibility point for cross-ecosystem federation (Layer V, deferred): when a participant is active in two federated NEOS ecosystems, each ecosystem maintains its own lifecycle record. Federated status recognition (auto-accepting onboarding from a trusted ecosystem) is a Layer V configuration, not defined here.
 
@@ -169,7 +169,7 @@ The extensibility point for cross-ecosystem federation (Layer V, deferred): when
 
 Priya, a permaculture designer from Kerala, has completed OmniOne's NEXUS orientation modules and is ready for the UAF consent ceremony. Her assigned facilitator is Dex, a trained AE member who has conducted over a dozen onboarding sessions.
 
-Dex sends Priya the OmniOne UAF (version 2.1.0) three days before their scheduled session, giving her time to read it in advance. In the walkthrough session, they move through each section. When they reach Section 4 (Stewardship and Contribution), Priya pauses: "I create permaculture designs for clients outside of OmniOne. Does consenting to this section mean OmniOne has claims on that work?" Dex clarifies: designs she creates independently, outside any OmniOne AZPO context, are her original works and carry no OmniOne claims. Only co-created works within an AZPO context are emergent works. Priya is satisfied and they continue.
+Dex sends Priya the OmniOne UAF (version 2.1.0) three days before their scheduled session, giving her time to read it in advance. In the walkthrough session, they move through each section. When they reach Section 4 (Stewardship and Contribution), Priya pauses: "I create permaculture designs for clients outside of OmniOne. Does consenting to this section mean OmniOne has claims on that work?" Dex clarifies: designs she creates independently, outside any OmniOne ETHOS context, are her original works and carry no OmniOne claims. Only co-created works within an ETHOS context are emergent works. Priya is satisfied and they continue.
 
 In Section 5 (Sovereignty and Evolution), Priya raises a harder objection: "I cannot agree to the clause stating that I accept the mediation process as the first step in any dispute. I have experienced mediation processes used to protect institutions, not people. I need to understand who mediates and whether I can withdraw from the process mid-way." Dex records this as a reasoned objection to Section 5. He explains the OmniOne conflict resolution structure (GAIA model, independent facilitators, right to escalate). After Dex provides the conflict resolution documentation and Priya reads it, she resolves her objection -- she was concerned about a process she did not have information on, not about the principle. The objection is documented as resolved with the date and context noted.
 

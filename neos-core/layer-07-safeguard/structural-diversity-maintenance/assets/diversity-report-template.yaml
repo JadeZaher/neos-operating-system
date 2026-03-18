@@ -3,7 +3,7 @@
 
 report:
   report_id: ""              # e.g. SDR-SHUR-2026-H1
-  review_scope: ""           # AZPO name or "ecosystem"
+  review_scope: ""           # ETHOS name or "ecosystem"
   review_period:
     start: ""                # ISO date
     end: ""                  # ISO date

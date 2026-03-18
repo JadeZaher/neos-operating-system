@@ -1,7 +1,7 @@
 {
   "track_id": "exit_portability_20260302",
   "title": "Exit & Portability (Layer X)",
-  "description": "Build the 5 governance skills for Layer X: voluntary-exit, commitment-unwinding, portable-record, azpo-dissolution, and re-entry-integration. The capstone layer ensuring exit is a structural right with graceful degradation and data portability.",
+  "description": "Build the 5 governance skills for Layer X: voluntary-exit, commitment-unwinding, portable-record, ethos-dissolution, and re-entry-integration. The capstone layer ensuring exit is a structural right with graceful degradation and data portability.",
   "status": "planned",
   "priority": "P0",
   "created_date": "2026-03-02",
@@ -11,7 +11,7 @@
     "voluntary-exit",
     "commitment-unwinding",
     "portable-record",
-    "azpo-dissolution",
+    "ethos-dissolution",
     "re-entry-integration"
   ],
   "phases": 4,

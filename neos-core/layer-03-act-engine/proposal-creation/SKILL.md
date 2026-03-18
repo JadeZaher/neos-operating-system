@@ -14,7 +14,7 @@ Without formal proposals, changes happen through informal influence — whoever 
 
 ## B. Domain Scope
 
-This skill applies to any domain where a change to existing agreements, processes, resources, or structure is proposed. Proposal types include: EcoPlan proposals (ecosystem-level strategic changes), GenPlan proposals (generative plan changes within an AZPO), agreement amendments (modifications to existing agreements, which then route to agreement-amendment), resource requests (allocation or reallocation of shared resources), and policy changes (modifications to governance processes themselves). The skill routes each type to the correct ACT level based on scope and impact.
+This skill applies to any domain where a change to existing agreements, processes, resources, or structure is proposed. Proposal types include: EcoPlan proposals (ecosystem-level strategic changes), GenPlan proposals (generative plan changes within an ETHOS), agreement amendments (modifications to existing agreements, which then route to agreement-amendment), resource requests (allocation or reallocation of shared resources), and policy changes (modifications to governance processes themselves). The skill routes each type to the correct ACT level based on scope and impact.
 
 ## C. Trigger Conditions
 
@@ -32,7 +32,7 @@ This skill applies to any domain where a change to existing agreements, processe
 - **Affected domain**: the boundary within which the change operates
 - **Proposed change text**: what specifically will change, written clearly enough for any participant to understand
 - **Rationale**: why this change is needed, what problem it solves, what happens if nothing changes
-- **Impacted parties**: all participants, circles, or AZPOs that will be affected
+- **Impacted parties**: all participants, circles, or ETHOS that will be affected
 - **Urgency level**: normal (standard timelines), elevated (compressed but not emergency), or emergency (maximum compression, provisional rules apply)
 - **Desired timeline**: when the proposer hopes to see the change implemented
 
@@ -99,8 +99,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Proposals affecting multiple AZPOs require representatives from each AZPO in the synergy check and advice phases
-- Cross-AZPO proposals are tracked in all affected units' registries with linked entries
+- Proposals affecting multiple ETHOS require representatives from each ETHOS in the synergy check and advice phases
+- Cross-ETHOS proposals are tracked in all affected units' registries with linked entries
 - Proposal numbering includes an ecosystem prefix for cross-ecosystem uniqueness (e.g., OMNI-PROP-2026-042)
 - When two NEOS ecosystems need to coordinate, proposals use the inter-unit coordination protocol (Layer V, deferred). This skill notes the extensibility point: the routing logic in Step 4 can be extended to include cross-ecosystem routing when Layer V is available.
 

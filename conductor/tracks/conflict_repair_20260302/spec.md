@@ -5,7 +5,7 @@
 
 ## Overview
 
-This track builds **Layer VI (Conflict and Repair)** of the NEOS governance stack: the skill layer that governs how harm is addressed, conflicts are resolved, and relationships are repaired within and across AZPOs -- all without coercive authority, punitive mechanisms, or forced reconciliation. The layer encompasses restorative harm circles, NVC-grounded dialogue, formalized repair agreements, escalation triage, coaching interventions, and community impact assessment.
+This track builds **Layer VI (Conflict and Repair)** of the NEOS governance stack: the skill layer that governs how harm is addressed, conflicts are resolved, and relationships are repaired within and across ETHOS -- all without coercive authority, punitive mechanisms, or forced reconciliation. The layer encompasses restorative harm circles, NVC-grounded dialogue, formalized repair agreements, escalation triage, coaching interventions, and community impact assessment.
 
 Conflict is not a system failure. It is the signal that governance structures need attention. This layer treats conflict as diagnostic information rather than deviant behavior, and provides structural protocols that transform conflict into governance improvement.
 
@@ -19,7 +19,7 @@ Conflict is not a system failure. It is the signal that governance structures ne
 
 Every governance system generates conflict. The question is not whether conflict will occur but whether the system has structural pathways to address it. Systems without explicit conflict protocols develop implicit ones -- usually dominated by whoever has the most social capital, the loudest voice, or the willingness to escalate furthest. NEOS replaces implicit conflict dynamics with explicit, structured, consent-based processes.
 
-This layer is distinct from Layer V's polycentric-conflict-navigation, which handles structural disputes between AZPOs about authority, agreements, and resources. Layer VI handles interpersonal harm, intra-AZPO disputes, behavioral conflicts, skill-gap tensions, and community-affecting incidents.
+This layer is distinct from Layer V's polycentric-conflict-navigation, which handles structural disputes between ETHOS about authority, agreements, and resources. Layer VI handles interpersonal harm, intra-ETHOS disputes, behavioral conflicts, skill-gap tensions, and community-affecting incidents.
 
 ### Theoretical Foundations
 
@@ -39,7 +39,7 @@ OmniOne's "Solutionary Culture" framework orients all conflict toward finding be
 
 - **Coaching as distinct from mediation:** When conflict stems from a skill gap rather than a values conflict, coaching is the appropriate intervention -- not a restorative circle. A member who disrupts meetings because they lack facilitation skills needs coaching, not conflict resolution.
 - **"All but one by consensus can remove someone":** The extreme measure in OmniOne governance. This is a structural safeguard of last resort, not a normal conflict outcome. It requires near-unanimous consensus and is fundamentally different from majority-vote removal.
-- **Relocation process:** When a member cannot work with their team, relocation to another circle or AZPO is explored before any discussion of removal. The system seeks fit, not punishment.
+- **Relocation process:** When a member cannot work with their team, relocation to another circle or ETHOS is explored before any discussion of removal. The system seeks fit, not punishment.
 
 ### Design Principles for This Layer
 
@@ -68,7 +68,7 @@ OmniOne's "Solutionary Culture" framework orients all conflict toward finding be
 
 ### FR-2: NVC Dialogue (`nvc-dialogue`)
 
-**Description:** Apply Nonviolent Communication principles in high-tension governance conversations. This skill is a communication protocol that can be applied within any governance interaction -- harm circles, ACT processes, cross-AZPO negotiations, or informal conflict. It teaches the structural distinction between observations and evaluations, feelings and thoughts, needs and strategies, and requests and demands.
+**Description:** Apply Nonviolent Communication principles in high-tension governance conversations. This skill is a communication protocol that can be applied within any governance interaction -- harm circles, ACT processes, cross-ETHOS negotiations, or informal conflict. It teaches the structural distinction between observations and evaluations, feelings and thoughts, needs and strategies, and requests and demands.
 
 **Acceptance Criteria:**
 - AC-2.1: The skill defines the four NVC components (observation, feeling, need, request) with governance-specific examples showing how each transforms a governance conversation.
@@ -128,7 +128,7 @@ OmniOne's "Solutionary Culture" framework orients all conflict toward finding be
 
 ### FR-6: Community Impact Assessment (`community-impact-assessment`)
 
-**Description:** Facilitate AZPO-wide or ecosystem-wide processing of conflicts that affect the broader community, not just the directly involved parties. When harm occurs that shakes community trust, when a pattern of conflict reveals systemic issues, or when a repair agreement has implications for how the community operates, this skill provides a structured process for the community to process the impact, identify systemic changes needed, and integrate those changes into governance.
+**Description:** Facilitate ETHOS-wide or ecosystem-wide processing of conflicts that affect the broader community, not just the directly involved parties. When harm occurs that shakes community trust, when a pattern of conflict reveals systemic issues, or when a repair agreement has implications for how the community operates, this skill provides a structured process for the community to process the impact, identify systemic changes needed, and integrate those changes into governance.
 
 **Acceptance Criteria:**
 - AC-6.1: The skill defines the triggers for community impact assessment (harm affecting more than the direct parties, pattern of similar conflicts, conflict revealing a structural gap, repair agreement with community-wide implications).
@@ -218,7 +218,7 @@ Every SKILL.md must pass automated validation via `scripts/validate_skill.py`.
 **Then** a voluntary coaching plan is designed with clear skill targets, timeline, and check-ins.
 
 ### US-5: Community Processes Systemic Impact
-**As** a TH member aware of a pattern of similar conflicts in our AZPO,
+**As** a TH member aware of a pattern of similar conflicts in our ETHOS,
 **I want** a structured process for the community to examine what systemic conditions created the pattern,
 **So that** governance changes can be proposed through ACT rather than the same conflicts recurring.
 
@@ -320,7 +320,7 @@ Each skill will reference skills from earlier layers:
 - `proposal-creation` -- Systemic change recommendations become proposals
 
 For Layer V interaction:
-- `polycentric-conflict-navigation` -- Layer V handles structural inter-AZPO conflicts; Layer VI handles interpersonal and intra-AZPO conflicts. Clear boundary between the two.
+- `polycentric-conflict-navigation` -- Layer V handles structural inter-ETHOS conflicts; Layer VI handles interpersonal and intra-ETHOS conflicts. Clear boundary between the two.
 
 ---
 

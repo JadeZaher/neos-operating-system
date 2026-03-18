@@ -15,7 +15,7 @@
 
 | Term | Meaning | Do NOT use |
 |------|---------|------------|
-| AZPO | Autonomous Zone of Purposeful Operation — an organizational unit | "department", "team" (too corporate) |
+| ETHOS | Emergent Thriving Holonic Organizational Structure — an organizational unit | "department", "team" (too corporate) |
 | Current-See | Influence currency (111 per person, equal) | "token", "vote" (implies purchasability or majority-rule) |
 | Domain | Invisible boundary within which a circle can make decisions | "jurisdiction" (implies sovereign authority) |
 | Steward | Person who holds responsibility, not ownership | "owner", "manager" |

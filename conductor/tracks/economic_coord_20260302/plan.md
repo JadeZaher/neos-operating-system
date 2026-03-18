@@ -50,7 +50,7 @@ This track assumes the following are complete or in progress:
 - [ ] **Task 1.2: Draft resource-request SKILL.md -- sections A through F**
   Using the SKILL_TEMPLATE.md, fill in the first 6 sections for `resource-request`:
   - **A. Structural Problem It Solves:** Without a formal resource request process, resources flow through informal networks -- people who know the right person get funded, others do not. This skill ensures every resource request has a traceable origin, clear rationale, defined stewardship commitment, and passes through legitimate consent-based decision making. It structurally prevents economic contribution from translating into preferential access.
-  - **B. Domain Scope:** Any domain where participants need to draw from shared resource pools. Applies to circle operational pools, ecosystem strategic pools, project-specific pools, and cross-AZPO shared pools. Covers financial resources, physical assets, time allocations, access permissions, and expertise commitments.
+  - **B. Domain Scope:** Any domain where participants need to draw from shared resource pools. Applies to circle operational pools, ecosystem strategic pools, project-specific pools, and cross-ETHOS shared pools. Covers financial resources, physical assets, time allocations, access permissions, and expertise commitments.
   - **C. Trigger Conditions:** A participant identifies a resource need that cannot be met from their existing personal or role-based allocation. The need has a clear connection to ecosystem, circle, or project objectives.
   - **D. Required Inputs:** Requester identity, resource type, amount/scope, target funding pool, rationale connecting the request to ecosystem purpose, timeline for use, stewardship commitment (how the resource will be accounted for), domain scope, and any conflict-of-interest disclosures.
   - **E. Step-by-Step Process:** Draft request using template, verify target pool exists and has capacity, submit to pool steward for initial routing, route through appropriate ACT level based on pool-defined thresholds (steward discretion for small amounts, circle consent for medium, ecosystem consent for large), track fulfillment, and report stewardship outcomes.
@@ -65,7 +65,7 @@ This track assumes the following are complete or in progress:
   - **I. Failure Containment Logic:** Request denied (requester may revise and resubmit or escalate through GAIA). Pool depleted (requests enter queue, no new approvals until next allocation cycle). Stewardship violation (graduated response: reporting reminder, pool access pause, stewardship review, resource return requirement).
   - **J. Expiry / Review Condition:** Approved requests that are not fulfilled within their stated timeline auto-expire. Fulfilled requests require stewardship reports within 30 days of completion. Resource requests creating ongoing commitments include review dates.
   - **K. Exit Compatibility Check:** When a requester exits, unfulfilled requests are voided. Resources already disbursed follow the stewardship terms of the original request. In-progress projects receive a 30-day wind-down to return or transition stewardship.
-  - **L. Cross-Unit Interoperability Impact:** Requests targeting cross-AZPO pools trigger notification to all contributing AZPOs. Cross-AZPO requests require consent from the shared pool governance body, not just the requester's home circle.
+  - **L. Cross-Unit Interoperability Impact:** Requests targeting cross-ETHOS pools trigger notification to all contributing ETHOS. Cross-ETHOS requests require consent from the shared pool governance body, not just the requester's home circle.
   **Acceptance:** Sections G-L are substantive and structurally precise.
 
 - [ ] **Task 1.4: Write resource-request OmniOne walkthrough**
@@ -105,7 +105,7 @@ This track assumes the following are complete or in progress:
 - [ ] **Task 1.7: Draft funding-pool-stewardship SKILL.md -- full skill (sections A-L)**
   Build the complete `funding-pool-stewardship` skill with all 12 sections:
   - **A:** Without formal pool governance, resource containers become power centers. This skill ensures every funding pool has transparent boundaries, accountable stewards, community oversight, and consent-based governance rules.
-  - **B:** Any domain where shared resources are collected and distributed. Pool types: circle operational, ecosystem strategic, cross-AZPO shared, project-specific, emergency reserve.
+  - **B:** Any domain where shared resources are collected and distributed. Pool types: circle operational, ecosystem strategic, cross-ETHOS shared, project-specific, emergency reserve.
   - **C:** A circle or ecosystem body identifies the need for a shared resource container, or an existing informal pool needs to be formalized.
   - **D:** Pool name, type, boundary definition (who can contribute, who can request), inflow rules, outflow rules (threshold tiers), steward role definition, reporting cycle, review date.
   - **E:** Propose pool creation through ACT (using agreement-creation), define governance rules, appoint stewards through authority-assignment, establish reporting cadence, conduct regular reviews, sunset when purpose is fulfilled.
@@ -151,7 +151,7 @@ This track assumes the following are complete or in progress:
   - **I:** Consensus not reached on any allocation (park the item, extend deliberation, do not force). Quorum not met (reschedule, do not lower threshold). Allocation exceeds pool balance (proportional reduction across all approved items or re-deliberate).
   - **J:** Allocation records reviewed at next allocation cycle. Pool governance agreement defines assembly frequency (recommended quarterly).
   - **K:** Exiting members' approved-but-undisbursed allocations are returned to the pool. In-progress allocations follow original stewardship terms.
-  - **L:** Cross-AZPO allocation assemblies require representation from all contributing AZPOs. Facilitation rotates among AZPOs to prevent any one unit from controlling the process.
+  - **L:** Cross-ETHOS allocation assemblies require representation from all contributing ETHOS. Facilitation rotates among ETHOS to prevent any one unit from controlling the process.
   **Acceptance:** Sections G-L structurally precise with Ostrom principles embedded.
 
 - [ ] **Task 2.3: Write participatory-allocation OmniOne walkthrough and stress tests**
@@ -192,7 +192,7 @@ This track assumes the following are complete or in progress:
   - **I:** Monitor role vacant (steward assumes temporary reporting, escalates to circle for appointment). Data incomplete (report what is available, flag gaps). Threshold breach ignored (automatic escalation to next governance level after one cycle).
   - **J:** Monitoring reports are produced per pool governance agreement cycle (recommended quarterly). Monitor role appointments reviewed annually.
   - **K:** Exiting monitors complete their current cycle report. Successor appointed through authority-assignment.
-  - **L:** Cross-AZPO resource flows monitored by representatives from all involved AZPOs. Ecosystem-wide monitoring reports aggregate circle-level reports.
+  - **L:** Cross-ETHOS resource flows monitored by representatives from all involved ETHOS. Ecosystem-wide monitoring reports aggregate circle-level reports.
   **Acceptance:** Sections G-L structurally precise.
 
 - [ ] **Task 3.3: Write commons-monitoring OmniOne walkthrough and stress tests**
@@ -233,7 +233,7 @@ This track assumes the following are complete or in progress:
   - **I:** Pilot fails (revert to previous stage, document learnings, no stigma). Readiness assessment incomplete (extend assessment period, do not guess). Circle refuses to advance (their autonomy is respected; they continue at current stage while others advance if ready).
   - **J:** Transition stage assessments conducted annually at minimum. Pilots have defined end dates (recommended 90-180 days). Stage advancement decisions include automatic review dates (recommended 12 months).
   - **K:** Exiting participants' departure does not trigger automatic stage regression. Readiness criteria are reassessed after significant exit events (threshold: 20%+ of participating circle exits).
-  - **L:** Different AZPOs may be at different transition stages simultaneously. Inter-AZPO resource flows use the more conservative stage's protocols (if one AZPO is at stage 2 and another at stage 3, cross-AZPO flows use stage 2 rules).
+  - **L:** Different ETHOS may be at different transition stages simultaneously. Inter-ETHOS resource flows use the more conservative stage's protocols (if one ETHOS is at stage 2 and another at stage 3, cross-ETHOS flows use stage 2 rules).
   **Acceptance:** Sections G-L structurally precise, emphasizing reversibility and autonomy.
 
 - [ ] **Task 4.3: Write access-economy-transition OmniOne walkthrough and stress tests**

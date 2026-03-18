@@ -8,7 +8,7 @@ Every governance system generates conflict. The question is not whether conflict
 
 ## Distinction from Layer V
 
-Layer V (Polycentric Governance) handles **structural disputes between AZPOs** -- conflicts about authority boundaries, resource allocation between units, and domain overlap. Layer VI handles **interpersonal harm, intra-AZPO disputes, behavioral conflicts, skill-gap tensions, and community-affecting incidents**. The boundary is clear: if the dispute is about which AZPO has authority over a domain, it belongs in Layer V. If the dispute is about how people within or across AZPOs treat each other, it belongs in Layer VI.
+Layer V (Polycentric Governance) handles **structural disputes between ETHOS** -- conflicts about authority boundaries, resource allocation between units, and domain overlap. Layer VI handles **interpersonal harm, intra-ETHOS disputes, behavioral conflicts, skill-gap tensions, and community-affecting incidents**. The boundary is clear: if the dispute is about which ETHOS has authority over a domain, it belongs in Layer V. If the dispute is about how people within or across ETHOS treat each other, it belongs in Layer VI.
 
 ## Three-Tier Escalation Model
 
@@ -34,7 +34,7 @@ Tier 3: Harm Circle
        | (systemic impact beyond direct parties)
        v
 Tier 4: Community Impact Assessment
-  AZPO-wide or ecosystem-wide processing of systemic patterns.
+  ETHOS-wide or ecosystem-wide processing of systemic patterns.
   Structural gaps revealed, governance changes recommended via ACT.
 ```
 
@@ -85,7 +85,7 @@ The escalation-triage skill determines which tier applies. Parties are never for
 | role-assignment | II | Coaches, facilitators, and triagers are assigned roles with scoped authority |
 | role-assignment | II | Authority boundaries for all conflict roles are defined |
 | domain-mapping | II | Conflict scope is verified against domain boundaries |
-| polycentric-conflict-navigation | V | Layer V handles structural inter-AZPO disputes; Layer VI handles interpersonal |
+| polycentric-conflict-navigation | V | Layer V handles structural inter-ETHOS disputes; Layer VI handles interpersonal |
 
 ## File Structure
 

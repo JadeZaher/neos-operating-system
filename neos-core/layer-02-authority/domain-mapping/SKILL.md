@@ -14,7 +14,7 @@ Without formal domain definitions, authority is assumed, informal, and inconsist
 
 ## B. Domain Scope
 
-Any circle, role, or structural body that exercises governance authority within the ecosystem. This includes new circles being formed, existing roles that have been operating without formal domain contracts, and any body whose scope is contested or ambiguous. Domain-mapping applies to every AZPO and crosses AZPO boundaries when cross-unit dependencies exist. Out of scope: the assignment of a specific person to a defined domain (that is role-assignment), and the resolution of overlapping claims between already-defined domains (that is authority-boundary-negotiation).
+Any circle, role, or structural body that exercises governance authority within the ecosystem. This includes new circles being formed, existing roles that have been operating without formal domain contracts, and any body whose scope is contested or ambiguous. Domain-mapping applies to every ETHOS and crosses ETHOS boundaries when cross-unit dependencies exist. Out of scope: the assignment of a specific person to a defined domain (that is role-assignment), and the resolution of overlapping claims between already-defined domains (that is authority-boundary-negotiation).
 
 ## C. Trigger Conditions
 
@@ -39,7 +39,7 @@ Any circle, role, or structural body that exercises governance authority within 
 3. **Adjacent domain review.** Present the draft to all stewards of adjacent domains for structural feedback. This is not a consent round — it is a dependencies and overlap check. Any overlap identified is documented and routed to authority-boundary-negotiation before the consent round proceeds.
 4. **Delegating body consent round.** The delegating body runs an ACT consent process on the complete domain contract. The question posed: "Does this domain contract clearly bound authority in a way no one has a reasoned objection to?" Adjacent domain stewards' feedback is included in the advice record.
 5. **Registration.** The completed, consented domain contract is entered in the domain registry with a unique domain ID, version 1.0.0, status "active," and a linked evaluation schedule.
-6. **Notification.** All adjacent and dependent domains are notified. Cross-AZPO dependencies trigger notification to those AZPOs' registries as well.
+6. **Notification.** All adjacent and dependent domains are notified. Cross-ETHOS dependencies trigger notification to those ETHOS' registries as well.
 
 ## F. Output Artifact
 
@@ -92,7 +92,7 @@ When a domain steward exits the ecosystem, the domain enters "vacant" status imm
 
 ## L. Cross-Unit Interoperability Impact
 
-Domains within one AZPO may have dependencies on domains in another AZPO. Cross-unit dependencies must be listed explicitly in the dependencies element — "no cross-AZPO dependencies" must be stated rather than omitted. When a domain is created or refined in one AZPO, all cross-AZPO dependent domains are notified before the consent round concludes. Cross-AZPO domain conflicts follow the authority-boundary-negotiation process with facilitators drawn from neither AZPO. Resolution records are registered in both AZPOs' registries. Cross-ecosystem domain dependencies follow the same structure with an additional inter-ecosystem notification step when Layer V federation is available.
+Domains within one ETHOS may have dependencies on domains in another ETHOS. Cross-unit dependencies must be listed explicitly in the dependencies element — "no cross-ETHOS dependencies" must be stated rather than omitted. When a domain is created or refined in one ETHOS, all cross-ETHOS dependent domains are notified before the consent round concludes. Cross-ETHOS domain conflicts follow the authority-boundary-negotiation process with facilitators drawn from neither ETHOS. Resolution records are registered in both ETHOS' registries. Cross-ecosystem domain dependencies follow the same structure with an additional inter-ecosystem notification step when Layer V federation is available.
 
 ## OmniOne Walkthrough
 
@@ -101,8 +101,8 @@ The Agents of the Ecosystem (AE) decides to create a new Economics circle. Mirei
 Mireille leads the AE through drafting all 11 elements:
 
 - **Purpose:** Steward the ecosystem's economic coordination — resource allocation, funding pool management, and economic policy proposals.
-- **Key responsibilities:** Manage funding requests from AZPOs and circles; maintain economic transparency through monthly reporting; propose resource distribution changes to the AE; coordinate with OSC on ecosystem-level economic policy.
-- **Customers:** All participants and AZPOs requesting or receiving resources; the OSC for economic policy input.
+- **Key responsibilities:** Manage funding requests from ETHOS and circles; maintain economic transparency through monthly reporting; propose resource distribution changes to the AE; coordinate with OSC on ecosystem-level economic policy.
+- **Customers:** All participants and ETHOS requesting or receiving resources; the OSC for economic policy input.
 - **Deliverables:** Monthly economic transparency reports; funding request decisions within 14 days of submission; annual economic policy proposal to the OSC.
 - **Dependencies:** OSC for ecosystem-level economic policy approval; agreement registry (layer-01) for tracking economic agreements; Trunk Council for access to foundation financial records during OmniOne's formation phase.
 - **Constraints:** Cannot approve funding above 10% of the total resource pool without OSC consent. Cannot create economic agreements that contradict the UAF. Cannot grant Current-See advantages to any role. Cannot negotiate with external funders without AE awareness.
@@ -136,11 +136,11 @@ A charismatic OSC member proposes a personal domain with constraints reading "wh
 
 ### 4. High Conflict / Polarization
 
-Two AE factions submit competing draft domain contracts for economics — one centralized, one distributed. The registry flags both drafts as claiming the same scope. Neither proceeds to consent. GAIA Level 4 coaching maps the structural concern behind each position: centralists fear fragmented accountability; distributionists fear capture. The coach surfaces a federated model: sub-domains per AZPO for local decisions plus a cross-AZPO Economics Coordination domain for inter-AZPO allocation. Three domain contracts replace the two contested ones. Both factions participate in consent. See `references/stress-tests.md` §4.
+Two AE factions submit competing draft domain contracts for economics — one centralized, one distributed. The registry flags both drafts as claiming the same scope. Neither proceeds to consent. GAIA Level 4 coaching maps the structural concern behind each position: centralists fear fragmented accountability; distributionists fear capture. The coach surfaces a federated model: sub-domains per ETHOS for local decisions plus a cross-ETHOS Economics Coordination domain for inter-ETHOS allocation. Three domain contracts replace the two contested ones. Both factions participate in consent. See `references/stress-tests.md` §4.
 
 ### 5. Large-Scale Replication
 
-OmniOne grows from 5 domains to 200 across 15 AZPOs. Domain contracts are self-documenting; the dependencies element creates a navigable registry graph. Nested delegation keeps any single delegating body's domain count manageable. The 6-month evaluation cadence prevents stale domains from accumulating. At 200 domains the registry shows 180 active, 8 under_review, 7 provisional, 5 vacant — all statuses are visible, no domains are hidden or informally operated. See `references/stress-tests.md` §5.
+OmniOne grows from 5 domains to 200 across 15 ETHOS. Domain contracts are self-documenting; the dependencies element creates a navigable registry graph. Nested delegation keeps any single delegating body's domain count manageable. The 6-month evaluation cadence prevents stale domains from accumulating. At 200 domains the registry shows 180 active, 8 under_review, 7 provisional, 5 vacant — all statuses are visible, no domains are hidden or informally operated. See `references/stress-tests.md` §5.
 
 ### 6. External Legal Pressure
 

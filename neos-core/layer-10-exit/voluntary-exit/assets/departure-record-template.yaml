@@ -4,8 +4,8 @@
 departure:
   departure_id: ""                # e.g. DR-SHUR-2026-031
   member_identity: ""             # departing member's ecosystem identity
-  departure_scope: ""             # "azpo" or "ecosystem"
-  azpo_name: ""                   # AZPO being departed (if scope is azpo)
+  departure_scope: ""             # "ethos" or "ecosystem"
+  ethos_name: ""                   # ETHOS being departed (if scope is ethos)
   ecosystem_name: ""              # ecosystem being departed (if scope is ecosystem)
   declaration_date: ""            # ISO date -- when member declared intent
   effective_departure_date: ""    # ISO date -- when departure becomes final

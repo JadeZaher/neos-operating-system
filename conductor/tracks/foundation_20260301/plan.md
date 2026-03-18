@@ -133,7 +133,7 @@ Layer I and Layer III are co-dependent. Agreements are created through ACT decis
   - **I. Failure Containment Logic:** What happens when: consent fails (proposal returns to advice), quorum is not met (extend timeline, do not lower threshold), agreement text is ambiguous (mandatory clarification round before ratification).
   - **J. Expiry / Review Condition:** Default review intervals by type: space agreements (annual), access agreements (6 months), organizational agreement fields (2 years), UAF (annual review, never auto-expires).
   - **K. Exit Compatibility Check:** When a participant exits, their obligations under agreements cease except for: stewarded asset return, in-progress commitment completion (30-day wind-down), and any exit-specific clauses in the agreement itself.
-  - **L. Cross-Unit Interoperability Impact:** Agreements created in one AZPO that affect another AZPO trigger cross-unit notification. The affected AZPO must consent through their own ACT process.
+  - **L. Cross-Unit Interoperability Impact:** Agreements created in one ETHOS that affect another ETHOS trigger cross-unit notification. The affected ETHOS must consent through their own ACT process.
   **Acceptance:** Sections G-L are substantive and structurally precise.
 
 - [x] **Task 2.3: Write agreement-creation OmniOne walkthrough**
@@ -243,7 +243,7 @@ Layer I and Layer III are co-dependent. Agreements are created through ACT decis
 - [x] **Task 3.1: Draft universal-agreement-field SKILL.md -- sections A through F**
   **Source docs to load:** `fieldagreementexample.md` (real OmniOne field agreement — primary source for UAF structure and language), `conductor/tracks/foundation_20260301/spec.md` (Agreement Hierarchy section, AC-5.8, AC-5.9).
   - **A:** Without a root agreement, participants operate on assumed norms that vary by individual. The UAF makes baseline commitments explicit, equal, and traceable.
-  - **B:** The entire ecosystem. The UAF applies to every participant regardless of role, circle, or AZPO.
+  - **B:** The entire ecosystem. The UAF applies to every participant regardless of role, circle, or ETHOS.
   - **C:** New ecosystem formation, new participant onboarding, or periodic review of the existing UAF.
   - **D:** The ecosystem's founding values, the field agreement example document, the identified domains of commitment (accountability, processes, conflict, stewardship, sovereignty).
   - **E:** Draft from founding values, structured review by founding council, consent of all founding members (consensus mode for UAF), registration as agreement #001, onboarding integration.
@@ -528,7 +528,7 @@ Layer I and Layer III are co-dependent. Agreements are created through ACT decis
   - **E:** For writes: validate the incoming artifact, assign or update registry entry, update version history, notify affected parties of changes. For queries: accept query parameters, return matching agreements with metadata, support compound queries (e.g., "all active space agreements in SHUR Bali domain created in the last year").
   - **F:** For writes: updated registry state. For queries: query result set with agreement summaries and links to full text.
   - **G:** Only agreement-creation, agreement-amendment, and agreement-review outputs can write to the registry. No direct writes. Query access is open to all participants. Registry steward (a role, not a person) maintains registry integrity but cannot modify agreement content.
-  - **H-L:** Full structural sections. Special attention to L (Cross-Unit Interoperability) -- how do registries federate across AZPOs?
+  - **H-L:** Full structural sections. Special attention to L (Cross-Unit Interoperability) -- how do registries federate across ETHOS?
   Walkthrough: An AE member queries the registry to find all active agreements affecting the Economics circle. The query returns 4 agreements: the UAF, the ETHOS agreement field, a resource stewardship agreement, and a cross-circle collaboration agreement. The member reads the summaries and follows the link to the full resource stewardship agreement. Edge case: a sunset agreement is still showing as "active" due to a missed review -- the registry flags this inconsistency.
   Stress tests: all 7 with particular attention to Scenario 5 (replication -- registry performance at scale) and Scenario 7 (30% exit -- registry entries for departed participants' agreements).
   **Acceptance:** Passes validation. Under 500 lines. Read vs. write access clearly separated.

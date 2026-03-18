@@ -1,5 +1,5 @@
 # Pre-Authorization Registry Template -- output artifact of pre-authorization-protocol
-# One entry per emergency role. Maintain as a living registry for each AZPO.
+# One entry per emergency role. Maintain as a living registry for each ETHOS.
 
 pre_authorizations:
 

@@ -1,10 +1,10 @@
 # Polycentric Conflict Resolution Record Template
 # Layer V -- Inter-Unit Coordination
-# Use for structural conflicts between AZPOs
+# Use for structural conflicts between ETHOS
 
 conflict_id: "PCN-[Ecosystem]-[YYYY]-[Seq]"
 
-affected_azpos:
+affected_ethos:
   - name: ""
     representative: ""
     representative_mandate: ""
@@ -12,8 +12,8 @@ affected_azpos:
 conflict:
   type: ""  # authority-overlap | agreement-contradiction | resource-competition | boundary-dispute | protocol-divergence
   description: ""
-  azpo_positions:
-    - azpo: ""
+  ethos_positions:
+    - ethos: ""
       position: ""
       supporting_documentation: []
   date_identified: ""
@@ -31,7 +31,7 @@ resolution_process:
   tier_2:
     facilitator:
       name: ""
-      home_azpo: ""
+      home_ethos: ""
       selection_method: ""  # overlap | random | mutual-agreement
       disclosed_relationships: []
     start_date: ""
@@ -50,7 +50,7 @@ resolution:
   outcome_type: ""  # mutual-agreement | federation-amendment | agree-to-disagree | engagement-tier-reduction
   outcome_description: ""
   ratification_records:
-    - azpo: ""
+    - ethos: ""
       ratification_date: ""
       consent_record: ""
   engagement_tier_change: ""  # if applicable
@@ -59,4 +59,4 @@ review:
   review_date: ""  # 6 months post-resolution for agreements, 12 months for agree-to-disagree
   review_outcome: ""
 
-registry_entries: []  # list of registry IDs per AZPO
+registry_entries: []  # list of registry IDs per ETHOS

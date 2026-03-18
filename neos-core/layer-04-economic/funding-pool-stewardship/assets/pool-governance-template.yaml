@@ -1,6 +1,6 @@
 pool_id: ""
 pool_name: ""
-pool_type: ""  # circle_operational | ecosystem_strategic | cross_azpo_shared | project_specific | emergency_reserve
+pool_type: ""  # circle_operational | ecosystem_strategic | cross_ethos_shared | project_specific | emergency_reserve
 governing_circle: ""
 domain: ""
 stewards:

@@ -44,8 +44,8 @@ precedent_tags: []             # Semantic tags for registry lookup (e.g. "resour
 
 adjacent_domains_notified: []  # domain_ids notified at Step 8
 
-cross_azpo: false              # true if domains span multiple AZPOs
-azpos_involved: []             # List of AZPO identifiers if cross_azpo is true
+cross_ethos: false              # true if domains span multiple ETHOS
+ethos_involved: []             # List of ETHOS identifiers if cross_ethos is true
 
 relapse_check:
   prior_resolution_id: ""      # Set if this resolution addresses the same overlap as a prior one

@@ -14,9 +14,9 @@ irreducible_constraints:
     violation_response: "Immediate notification to all ecosystem members and OSC. Attempted amendment is void. Role holder's pre-authorization suspended pending post-emergency review."
 
   - constraint_id: IC-02
-    constraint: "No dissolution of any AZPO"
-    rationale: "AZPO dissolution is an irreversible structural change that affects all members of the unit. Emergency conditions do not provide sufficient deliberative space for such a decision. AZPO restructuring requires normal ACT process with full participation."
-    violation_response: "Dissolution attempt is void. All AZPO governance structures remain intact. Role holder's pre-authorization suspended pending post-emergency review."
+    constraint: "No dissolution of any ETHOS"
+    rationale: "ETHOS dissolution is an irreversible structural change that affects all members of the unit. Emergency conditions do not provide sufficient deliberative space for such a decision. ETHOS restructuring requires normal ACT process with full participation."
+    violation_response: "Dissolution attempt is void. All ETHOS governance structures remain intact. Role holder's pre-authorization suspended pending post-emergency review."
 
   - constraint_id: IC-03
     constraint: "No expulsion of any ecosystem member"

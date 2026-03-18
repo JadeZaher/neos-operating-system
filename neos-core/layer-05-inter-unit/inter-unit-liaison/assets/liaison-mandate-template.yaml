@@ -1,15 +1,15 @@
 # Liaison Mandate Template
 # Layer V -- Inter-Unit Coordination
-# Use this template for cross-AZPO liaison role agreements
+# Use this template for cross-ETHOS liaison role agreements
 
 role_id: "LIA-[Domain]-[YYYY]-[Seq]"
 
 liaison:
   name: ""
-  home_azpo: ""
-  role_in_home_azpo: ""
+  home_ethos: ""
+  role_in_home_ethos: ""
 
-participating_azpos:
+participating_ethos:
   - name: ""
     contact_person: ""
 
@@ -25,22 +25,22 @@ mandate_scope:
     items: []
 
   can_recommend:
-    description: "Areas where the liaison can make recommendations to their home AZPO"
+    description: "Areas where the liaison can make recommendations to their home ETHOS"
     items: []
 
-  requires_azpo_consent:
-    description: "Actions that require explicit home AZPO consent before proceeding"
+  requires_ethos_consent:
+    description: "Actions that require explicit home ETHOS consent before proceeding"
     items: []
 
 reporting:
   cadence: "monthly"  # monthly | bi-weekly | quarterly
-  report_to: ""  # home AZPO circle name
-  shared_with: []  # participating AZPOs receiving reports
+  report_to: ""  # home ETHOS circle name
+  shared_with: []  # participating ETHOS receiving reports
   report_contents:
     - "Topics discussed"
     - "Items explored"
     - "Recommendations made"
-    - "Items escalated for AZPO consent"
+    - "Items escalated for ETHOS consent"
     - "Mandate boundary questions encountered"
 
 term:
@@ -60,4 +60,4 @@ review_schedule:
   mid_term_review: false  # recommended but optional
   review_process: "role-assignment review"
 
-registry_entries: []  # list of registry IDs per AZPO
+registry_entries: []  # list of registry IDs per ETHOS

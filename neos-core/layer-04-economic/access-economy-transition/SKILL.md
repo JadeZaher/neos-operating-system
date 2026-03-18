@@ -14,11 +14,11 @@ Every intentional community that aspires to move beyond conventional economics f
 
 ## B. Domain Scope
 
-This skill applies to any circle or AZPO assessing, proposing, or executing a transition between economic stages. The four stages are: Stage 1 (currency-dependent) where accepted currencies are the primary medium of exchange, Stage 2 (hybrid) where accepted currencies and Current-Sees operate in parallel with defined exchange relationships, Stage 3 (Current-See primary) where Current-Sees serve as the primary coordination mechanism with accepted currencies used only for external transactions, and Stage 4 (access economy) where resources flow by need and stewardship rather than exchange. The skill governs transitions between adjacent stages only -- no stage can be skipped. Each AZPO and circle may operate at a different stage. Out of scope: designing the Current-See protocol itself (that is OmniOne-specific infrastructure), managing external fundraising or currency acquisition (outside NEOS scope), and defining what the access economy looks like in full maturity (the skill governs transition, not destination).
+This skill applies to any circle or ETHOS assessing, proposing, or executing a transition between economic stages. The four stages are: Stage 1 (currency-dependent) where accepted currencies are the primary medium of exchange, Stage 2 (hybrid) where accepted currencies and Current-Sees operate in parallel with defined exchange relationships, Stage 3 (Current-See primary) where Current-Sees serve as the primary coordination mechanism with accepted currencies used only for external transactions, and Stage 4 (access economy) where resources flow by need and stewardship rather than exchange. The skill governs transitions between adjacent stages only -- no stage can be skipped. Each ETHOS and circle may operate at a different stage. Out of scope: designing the Current-See protocol itself (that is OmniOne-specific infrastructure), managing external fundraising or currency acquisition (outside NEOS scope), and defining what the access economy looks like in full maturity (the skill governs transition, not destination).
 
 ## C. Trigger Conditions
 
-- A circle or AZPO identifies that it may be ready to advance to the next economic stage
+- A circle or ETHOS identifies that it may be ready to advance to the next economic stage
 - A scheduled transition readiness review reaches its due date (default: annual for each circle)
 - Commons monitoring data reveals that a circle is functionally operating at a different stage than its formal designation
 - A pilot program reaches its evaluation milestone
@@ -28,7 +28,7 @@ This skill applies to any circle or AZPO assessing, proposing, or executing a tr
 
 ## D. Required Inputs
 
-- **Current stage assessment**: the circle or AZPO's current formal economic stage and the date it entered that stage (mandatory, sourced from the agreement registry)
+- **Current stage assessment**: the circle or ETHOS's current formal economic stage and the date it entered that stage (mandatory, sourced from the agreement registry)
 - **Readiness indicators**: measurable criteria for advancement to the next stage (mandatory, defined in the transition framework with ecosystem defaults)
 - **Commons health data**: recent commons monitoring reports showing resource flow patterns, sustainability metrics, and accessibility data for the circle (mandatory, sourced from commons-monitoring)
 - **Participant survey**: structured assessment of participant confidence in advancing, specific concerns, and unmet needs at the current stage (mandatory, minimum 60% response rate from affected participants)
@@ -37,7 +37,7 @@ This skill applies to any circle or AZPO assessing, proposing, or executing a tr
 
 ## E. Step-by-Step Process
 
-1. **Initiate readiness assessment.** A circle steward, AZPO coordinator, or participant group requests a transition readiness assessment. The request specifies: current stage, target stage (must be adjacent), and the rationale for considering advancement. The request is registered in the agreement registry.
+1. **Initiate readiness assessment.** A circle steward, ETHOS coordinator, or participant group requests a transition readiness assessment. The request specifies: current stage, target stage (must be adjacent), and the rationale for considering advancement. The request is registered in the agreement registry.
 2. **Gather readiness data.** The assessment team (assigned through role-assignment, minimum 3 members including at least one skeptic of the proposed transition) collects:
    - Commons health data from the most recent two monitoring reports
    - Participant survey responses (60% minimum response rate required)
@@ -50,14 +50,14 @@ This skill applies to any circle or AZPO assessing, proposing, or executing a tr
 4. **Draft transition assessment.** The assessment team produces a transition stage assessment document using `assets/transition-assessment-template.yaml`. The document reports: each readiness criterion, current measurement, whether it is met, overall readiness determination, and recommended next steps. If readiness is not met, the document identifies the specific gaps and recommends actions to close them.
 5. **Community review.** The transition assessment is presented to all affected participants at a community review session. The facilitator ensures both advancement advocates and skeptics have equal voice. The assessment team answers questions about methodology and findings.
 6. **Propose pilot (if readiness criteria met).** If the assessment shows readiness, the advancement advocates draft a pilot proposal. The pilot must define: scope (which resource types or domains transition first), timeline (minimum 90 days, maximum 12 months), success criteria (measurable outcomes that must be achieved for the pilot to be considered successful), rollback triggers (specific conditions that force the pilot to halt and the circle to revert), and resource requirements.
-7. **Pilot consent through ACT.** The pilot proposal enters the ACT process at the circle level for circle-specific transitions, or at the ecosystem level for AZPO-wide or ecosystem-wide transitions. The consent phase must address objections from participants who are concerned about the transition's impact on their ability to meet basic needs. No pilot proceeds over a reasoned objection that the transition threatens participant welfare.
+7. **Pilot consent through ACT.** The pilot proposal enters the ACT process at the circle level for circle-specific transitions, or at the ecosystem level for ETHOS-wide or ecosystem-wide transitions. The consent phase must address objections from participants who are concerned about the transition's impact on their ability to meet basic needs. No pilot proceeds over a reasoned objection that the transition threatens participant welfare.
 8. **Execute pilot.** The pilot operates for its defined duration. Commons monitoring tracks pilot-specific metrics alongside regular reporting. The pilot steward publishes monthly progress reports comparing actual outcomes to success criteria.
 9. **Evaluate pilot.** At the pilot's end date, the assessment team evaluates outcomes against success criteria. The evaluation is presented at a community review session. If success criteria are met and no rollback triggers activated, the circle may propose full adoption.
 10. **Full adoption or rollback.** Full adoption requires a fresh consent round (not an extension of the pilot consent). The adoption proposal includes: the scope of full transition, timeline for remaining domains to transition, support resources for participants who need additional time, and ongoing monitoring commitments. If the pilot failed to meet success criteria, the circle reverts to its previous stage. Rollback is not failure -- it is the governance system functioning correctly.
 
 ## F. Output Artifact
 
-A transition stage assessment document following `assets/transition-assessment-template.yaml`. The document contains: assessment ID, circle or AZPO name, current stage, target stage, assessment date, assessment team roster, readiness criteria evaluation (criterion-by-criterion with measurements and met/unmet status), participant survey summary, commons health data summary, external dependency analysis, overall readiness determination, recommended next steps, pilot proposal (if applicable) with scope, timeline, success criteria, and rollback triggers, and the next scheduled assessment date. The document is registered in the agreement registry and accessible to every ecosystem participant.
+A transition stage assessment document following `assets/transition-assessment-template.yaml`. The document contains: assessment ID, circle or ETHOS name, current stage, target stage, assessment date, assessment team roster, readiness criteria evaluation (criterion-by-criterion with measurements and met/unmet status), participant survey summary, commons health data summary, external dependency analysis, overall readiness determination, recommended next steps, pilot proposal (if applicable) with scope, timeline, success criteria, and rollback triggers, and the next scheduled assessment date. The document is registered in the agreement registry and accessible to every ecosystem participant.
 
 ## G. Authority Boundary Check
 
@@ -112,10 +112,10 @@ When a participant exits who opposes the transition:
 
 ## L. Cross-Unit Interoperability Impact
 
-- Each AZPO operates at its own economic stage. SHUR Bali might be at Stage 2 while SHUR Portugal remains at Stage 1. The transition skill supports this heterogeneity by design.
-- Cross-AZPO transactions between units at different stages use the higher-stage unit's mechanisms where both parties consent, or the lower-stage unit's mechanisms as the default. A Stage 2 AZPO transacting with a Stage 1 AZPO uses currency by default, with Current-Sees as an option if both parties agree.
-- Ecosystem-level transition proposals (moving the entire ecosystem's baseline stage) require consent from every AZPO. No AZPO can be forced to advance by ecosystem-level decision.
-- Pilot programs may operate across AZPOs if all affected units consent. Cross-AZPO pilots provide valuable data on inter-stage transaction handling.
+- Each ETHOS operates at its own economic stage. SHUR Bali might be at Stage 2 while SHUR Portugal remains at Stage 1. The transition skill supports this heterogeneity by design.
+- Cross-ETHOS transactions between units at different stages use the higher-stage unit's mechanisms where both parties consent, or the lower-stage unit's mechanisms as the default. A Stage 2 ETHOS transacting with a Stage 1 ETHOS uses currency by default, with Current-Sees as an option if both parties agree.
+- Ecosystem-level transition proposals (moving the entire ecosystem's baseline stage) require consent from every ETHOS. No ETHOS can be forced to advance by ecosystem-level decision.
+- Pilot programs may operate across ETHOS if all affected units consent. Cross-ETHOS pilots provide valuable data on inter-stage transaction handling.
 - The inter-unit coordination protocol (Layer V, deferred) will define how economic stage differences are managed in cross-ecosystem federation.
 
 ## OmniOne Walkthrough

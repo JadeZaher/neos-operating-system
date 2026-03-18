@@ -84,7 +84,7 @@ State that participants retain rights to their original works.
 
 ## L. Cross-Unit Interoperability Impact
 
-Define how this skill's outputs interact with other AZPOs.
+Define how this skill's outputs interact with other ETHOS.
 State notification requirements for cross-unit effects.
 Define how outputs are registered across multiple units.
 Note the extensibility point for cross-ecosystem federation (Layer V, deferred).

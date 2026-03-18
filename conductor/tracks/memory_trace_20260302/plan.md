@@ -60,7 +60,7 @@ Decision-record is the anchor because every other skill operates on decision rec
   - **I. Failure Containment Logic:** What happens when: the recorder fails to produce a record within 48 hours (any participant from the governance process can escalate to the governance memory steward, who assigns an alternate recorder), participants dispute the factual accuracy of a record (disputed elements are marked as "contested" with both versions preserved until resolution through the deciding body), a decision record contradicts another decision record (flag the contradiction and route to the deciding bodies of both records for resolution -- this may trigger a precedent-challenge).
   - **J. Expiry / Review Condition:** Decision records do not expire. They are permanent governance memory. However, their precedent classification may be reviewed: routine decisions are not reviewed unless specifically searched. Governance-level decisions are reviewed when the related domain undergoes domain-review. Constitutional-level decisions are reviewed alongside UAF reviews.
   - **K. Exit Compatibility Check:** When a participant exits, their decision records remain in governance memory (they are governance records, not personal property). The participant's name remains as a factual record of who participated. The participant cannot request deletion of their participation record.
-  - **L. Cross-Unit Interoperability Impact:** Decisions that affect multiple AZPOs are tagged as "cross-AZPO" scope. Cross-unit decision records are shared with all affected AZPOs' governance memory. When governance memories from different AZPOs reference the same precedent, the decision record ID provides the canonical link.
+  - **L. Cross-Unit Interoperability Impact:** Decisions that affect multiple ETHOS are tagged as "cross-ETHOS" scope. Cross-unit decision records are shared with all affected ETHOS' governance memory. When governance memories from different ETHOS reference the same precedent, the decision record ID provides the canonical link.
   **Acceptance:** Sections G-L are substantive and structurally precise. The immutability principle is clearly stated.
 
 - [ ] **Task 1.4: Write decision-record OmniOne walkthrough**
@@ -130,7 +130,7 @@ Decision-record is the anchor because every other skill operates on decision rec
       skill: []
       affected_parties: []
       topic: []
-      ecosystem_scope: single_azpo | cross_azpo | ecosystem_wide
+      ecosystem_scope: single_ethos | cross_ethos | ecosystem_wide
       urgency_at_time: normal | elevated | emergency
     verification:
       window_start: ""
@@ -210,7 +210,7 @@ Decision-record is the anchor because every other skill operates on decision rec
     ecosystem_scope:
       description: "Geographic or organizational scope"
       type: enum
-      values: [single_azpo, cross_azpo, ecosystem_wide]
+      values: [single_ethos, cross_ethos, ecosystem_wide]
     urgency_at_time:
       description: "The urgency level when the decision was made"
       type: enum
@@ -338,7 +338,7 @@ Decision-record is the anchor because every other skill operates on decision rec
   - **I.** Cascade effects (overruling a precedent that other decisions relied on -- the new decision record must address downstream impacts; related records are flagged for review). Simultaneously valid contradictory precedents (the conflicting-precedent ground specifically addresses this -- one must yield, or both must be modified to be consistent). Dead-body challenge (challenging a precedent whose original body no longer exists and has no successor -- OSC serves as the default deciding body).
   - **J.** Challenges do not have an expiry. A precedent can be challenged at any time. However, challenges on "changed circumstances" grounds carry more weight the more time has passed (circumstances are more likely to have changed), while challenges on "flawed rationale" grounds carry more weight the sooner they are filed (the flaw was more likely to have been present from the beginning).
   - **K.** An exited participant's challenge (filed before exit) is still processed. An exited participant cannot file new challenges.
-  - **L.** Cross-AZPO precedent challenges require the deciding body to include representation from all affected AZPOs.
+  - **L.** Cross-ETHOS precedent challenges require the deciding body to include representation from all affected ETHOS.
   OmniOne walkthrough: Challenge to the resource allocation threshold precedent as specified in AC-5.6. Include the consolidation of two simultaneous challenges.
   All 7 stress tests.
   Include YAML frontmatter with `depends_on: [decision-record, precedent-search]`.

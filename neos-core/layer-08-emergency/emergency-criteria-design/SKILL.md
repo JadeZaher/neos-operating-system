@@ -14,11 +14,11 @@ Every governance system faces genuine crises -- natural disasters, funding colla
 
 ## B. Domain Scope
 
-This skill applies to any AZPO or ecosystem that needs to define conditions under which normal governance processes compress or temporarily restructure. Emergency criteria are scoped to the domain boundary defined by domain-mapping (Layer II) -- criteria designed for SHUR Bali address Bali-specific risks, not the entire OmniOne ecosystem, unless explicitly scoped to ecosystem level. The skill covers the design and installation of criteria, not the activation of emergency authority (that is pre-authorization-protocol) or the conduct of crisis operations (that is crisis-coordination). Out of scope: this skill does not define what actions are taken during an emergency -- it defines only the measurable conditions under which emergency status begins and ends.
+This skill applies to any ETHOS or ecosystem that needs to define conditions under which normal governance processes compress or temporarily restructure. Emergency criteria are scoped to the domain boundary defined by domain-mapping (Layer II) -- criteria designed for SHUR Bali address Bali-specific risks, not the entire OmniOne ecosystem, unless explicitly scoped to ecosystem level. The skill covers the design and installation of criteria, not the activation of emergency authority (that is pre-authorization-protocol) or the conduct of crisis operations (that is crisis-coordination). Out of scope: this skill does not define what actions are taken during an emergency -- it defines only the measurable conditions under which emergency status begins and ends.
 
 ## C. Trigger Conditions
 
-- **New ecosystem setup**: when an AZPO or ecosystem establishes its governance structure, emergency criteria design is part of initial configuration
+- **New ecosystem setup**: when an ETHOS or ecosystem establishes its governance structure, emergency criteria design is part of initial configuration
 - **Risk assessment update**: when the ecosystem identifies a new category of risk not covered by existing criteria (e.g., a new SHUR location in an earthquake-prone region)
 - **Post-emergency review recommendation**: when a post-emergency review identifies gaps in existing criteria (e.g., criteria existed for natural disaster but not for pandemic)
 - **Scheduled review**: emergency criteria are reviewed annually through the ACT process to ensure continued relevance
@@ -26,16 +26,16 @@ This skill applies to any AZPO or ecosystem that needs to define conditions unde
 
 ## D. Required Inputs
 
-- **Risk assessment**: a structured identification of credible emergency scenarios for the AZPO's domain, informed by geographic, financial, legal, and operational context
+- **Risk assessment**: a structured identification of credible emergency scenarios for the ETHOS's domain, informed by geographic, financial, legal, and operational context
 - **Existing criteria registry**: all currently active emergency criteria for the scope, to prevent duplication and ensure coherence
 - **Safeguard trigger registry**: active Layer VII triggers that may interact with emergency thresholds (per safeguard-trigger-design)
 - **ACT process access**: criteria must be designed and installed through the Advice-Consent-Test protocol (Layer III)
-- **Domain boundary**: the scope boundary from domain-mapping, confirming which AZPO or ecosystem the criteria apply to
+- **Domain boundary**: the scope boundary from domain-mapping, confirming which ETHOS or ecosystem the criteria apply to
 - **Stakeholder input**: affected participants who will provide consent during installation
 
 ## E. Step-by-Step Process
 
-1. **Conduct risk assessment.** The criteria designer identifies credible emergency scenarios for the AZPO's domain across five starter categories: physical safety, resource crisis, governance incapacity, external legal threat, and infrastructure failure. Each scenario must be grounded in the AZPO's actual context -- geographic hazards, funding structure, regulatory environment, and operational dependencies. Timeline: 3-7 days.
+1. **Conduct risk assessment.** The criteria designer identifies credible emergency scenarios for the ETHOS's domain across five starter categories: physical safety, resource crisis, governance incapacity, external legal threat, and infrastructure failure. Each scenario must be grounded in the ETHOS's actual context -- geographic hazards, funding structure, regulatory environment, and operational dependencies. Timeline: 3-7 days.
 2. **Define entry criteria.** For each identified scenario, specify the measurable threshold that constitutes an emergency declaration. Entry criteria must be objective and externally verifiable: "Category 3+ cyclone within 50km of SHUR facility" not "severe weather." Each criterion specifies the data source, measurement method, and threshold value.
 3. **Define matching exit criteria.** Every entry criterion must have an equally measurable exit condition. Exit criteria define when the emergency ends, not when leadership decides it ends. Example: entry = "flooding reaches ground floor of SHUR facility"; exit = "water level below ground floor for 48 consecutive hours AND structural safety inspection passed." Exit criteria must be at least as specific as entry criteria.
 4. **Define maximum duration.** Each criterion includes a maximum emergency duration after which the emergency automatically enters the reversion process (per emergency-reversion), regardless of whether exit criteria have been met. This prevents indefinite emergencies. Default maximum: 30 days, extendable only through emergency ACT consent (per crisis-coordination).
@@ -87,7 +87,7 @@ When a participant who designed or championed emergency criteria exits the ecosy
 
 ## L. Cross-Unit Interoperability Impact
 
-Emergency criteria registries for each AZPO are published to all ecosystem members, enabling cross-unit visibility into what risks each location has prepared for. AZPOs in similar geographic or operational contexts can share criteria templates -- SHUR locations in tropical regions may share natural disaster criteria while customizing thresholds to local conditions. Ecosystem-level criteria (e.g., governance incapacity across the OSC) are designed through ecosystem-wide ACT process, not by any single AZPO. When two NEOS ecosystems federate (Layer V, deferred), emergency criteria frameworks may be shared as templates, but each ecosystem installs and manages its own criteria through its own ACT process.
+Emergency criteria registries for each ETHOS are published to all ecosystem members, enabling cross-unit visibility into what risks each location has prepared for. ETHOS in similar geographic or operational contexts can share criteria templates -- SHUR locations in tropical regions may share natural disaster criteria while customizing thresholds to local conditions. Ecosystem-level criteria (e.g., governance incapacity across the OSC) are designed through ecosystem-wide ACT process, not by any single ETHOS. When two NEOS ecosystems federate (Layer V, deferred), emergency criteria frameworks may be shared as templates, but each ecosystem installs and manages its own criteria through its own ACT process.
 
 ## OmniOne Walkthrough
 
@@ -97,7 +97,7 @@ It is February 2026, and the OSC has directed all SHUR locations to design emerg
 
 **Criteria design -- natural disaster.** Entry criterion: "Indonesian BMKG issues a Level 3 or higher alert for Bali region (earthquake, volcanic eruption, flooding) OR physical damage to SHUR facility renders any residential or common space unsafe for occupancy as confirmed by two independent assessments." Exit criterion: "BMKG alert downgraded below Level 3 for 48 consecutive hours AND facility safety inspection passed by qualified assessor AND all displaced members have confirmed safe shelter." Maximum duration: 14 days, extendable through emergency ACT consent.
 
-**Criteria design -- funding loss.** Entry criterion: "Confirmed loss of funding constituting 25% or more of the AZPO's quarterly operating budget with less than 60 days notice AND no replacement funding source identified." Exit criterion: "Replacement funding secured covering at least 75% of the shortfall OR operating costs reduced through consented restructuring to match available resources." Maximum duration: 30 days.
+**Criteria design -- funding loss.** Entry criterion: "Confirmed loss of funding constituting 25% or more of the ETHOS's quarterly operating budget with less than 60 days notice AND no replacement funding source identified." Exit criterion: "Replacement funding secured covering at least 75% of the shortfall OR operating costs reduced through consented restructuring to match available resources." Maximum duration: 30 days.
 
 **ACT process.** The five criteria enter the Advice phase. Dewa, the financial steward, advises that the funding loss threshold of 25% may be too low for an early-stage ecosystem: "We should set it at 30% to avoid triggering emergency protocols for normal funding variability." Tomasz, a TH member, notes that the infrastructure failure criterion should specify "sustained" failure: "A 4-hour power outage is not an emergency." The team revises: infrastructure failure entry criterion now requires "sustained failure exceeding 48 hours." During Consent, Sari objects to the governance incapacity criterion: "Quorum loss from travel is predictable and should be handled through delegation, not emergency declaration." The team integrates by adding a qualifier: governance incapacity requires "inability to achieve quorum for 14 consecutive days despite delegation attempts." Consent achieved for all five criteria.
 
@@ -119,7 +119,7 @@ Surya, the beloved founding member, is deeply concerned about what she perceives
 
 ### 4. High Conflict / Polarization
 
-Two factions within SHUR Bali are deeply divided over a proposed partnership. Faction A argues that the conflict constitutes a "governance emergency" because proposals are stalling and participation is declining. Faction B argues the conflict is healthy democratic tension. The governance incapacity criterion provides the objective test: has the AZPO been unable to achieve quorum for 14 consecutive days despite delegation attempts? The answer is no -- quorum is being met, even though meetings are contentious. Participation has declined 12%, but the governance incapacity threshold specifies quorum failure, not participation decline (participation decline is handled by Layer VII safeguard triggers, not emergency criteria). The criteria prevent either faction from escalating a political conflict into an emergency declaration that would suspend normal governance -- exactly the scenario Agamben warned about. The conflict is addressed through GAIA escalation (Layer VI) and normal ACT process, not through emergency authority.
+Two factions within SHUR Bali are deeply divided over a proposed partnership. Faction A argues that the conflict constitutes a "governance emergency" because proposals are stalling and participation is declining. Faction B argues the conflict is healthy democratic tension. The governance incapacity criterion provides the objective test: has the ETHOS been unable to achieve quorum for 14 consecutive days despite delegation attempts? The answer is no -- quorum is being met, even though meetings are contentious. Participation has declined 12%, but the governance incapacity threshold specifies quorum failure, not participation decline (participation decline is handled by Layer VII safeguard triggers, not emergency criteria). The criteria prevent either faction from escalating a political conflict into an emergency declaration that would suspend normal governance -- exactly the scenario Agamben warned about. The conflict is addressed through GAIA escalation (Layer VI) and normal ACT process, not through emergency authority.
 
 ### 5. Large-Scale Replication
 

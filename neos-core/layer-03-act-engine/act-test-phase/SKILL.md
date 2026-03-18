@@ -87,8 +87,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO tests require each AZPO to independently evaluate success within their own domain. One AZPO can revert the change in their domain without affecting the other AZPO's ongoing test.
-- The test report includes domain-specific sections for each affected AZPO, with each AZPO's review body contributing their evaluation.
+- Cross-ETHOS tests require each ETHOS to independently evaluate success within their own domain. One ETHOS can revert the change in their domain without affecting the other ETHOS's ongoing test.
+- The test report includes domain-specific sections for each affected ETHOS, with each ETHOS's review body contributing their evaluation.
 - Federation extensibility: when two ecosystems share a governance space and test a joint change, each ecosystem evaluates independently and both must adopt for the change to persist in the shared space.
 
 ## OmniOne Walkthrough

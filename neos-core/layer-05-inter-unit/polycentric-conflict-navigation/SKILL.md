@@ -1,98 +1,98 @@
 ---
 name: polycentric-conflict-navigation
-description: "Resolve structural disputes between AZPOs -- authority overlaps, agreement contradictions, resource competition, and boundary disputes -- through a three-tier lateral resolution protocol that preserves every unit's autonomy."
+description: "Resolve structural disputes between ETHOS -- authority overlaps, agreement contradictions, resource competition, and boundary disputes -- through a three-tier lateral resolution protocol that preserves every unit's autonomy."
 layer: 5
 version: 0.1.0
-depends_on: [cross-azpo-request, federation-agreement, inter-unit-liaison, act-consent-phase]
+depends_on: [cross-ethos-request, federation-agreement, inter-unit-liaison, act-consent-phase]
 ---
 
 # polycentric-conflict-navigation
 
 ## A. Structural Problem It Solves
 
-When two autonomous units have conflicting authority claims, contradictory agreements, or competing resource interests, there is no sovereign authority to resolve the dispute. Without a structural protocol, conflicts either escalate indefinitely, result in ecosystem fragmentation, or are resolved by whoever has more power -- the antithesis of polycentric governance. This skill provides a three-tier lateral resolution protocol that preserves both units' autonomy while creating pathways to agreement. The millet system lesson applies: shared protocols without a Sultan. No body, individual, or AZPO can impose resolution on another.
+When two autonomous units have conflicting authority claims, contradictory agreements, or competing resource interests, there is no sovereign authority to resolve the dispute. Without a structural protocol, conflicts either escalate indefinitely, result in ecosystem fragmentation, or are resolved by whoever has more power -- the antithesis of polycentric governance. This skill provides a three-tier lateral resolution protocol that preserves both units' autonomy while creating pathways to agreement. The millet system lesson applies: shared protocols without a Sultan. No body, individual, or ETHOS can impose resolution on another.
 
 ## B. Domain Scope
 
-This skill applies to structural conflicts between two or more AZPOs. Conflict types include:
+This skill applies to structural conflicts between two or more ETHOS. Conflict types include:
 
-- **Authority overlap** -- both AZPOs claim governance authority over the same domain or decision
-- **Agreement contradiction** -- AZPO A's agreements conflict with AZPO B's in their intersection
-- **Resource competition** -- both AZPOs need the same limited resource and their claims are incompatible
-- **Boundary dispute** -- unclear which AZPO's rules apply in a shared or overlapping space
-- **Protocol divergence** -- AZPOs follow incompatible processes for the same coordination need
+- **Authority overlap** -- both ETHOS claim governance authority over the same domain or decision
+- **Agreement contradiction** -- ETHOS A's agreements conflict with ETHOS B's in their intersection
+- **Resource competition** -- both ETHOS need the same limited resource and their claims are incompatible
+- **Boundary dispute** -- unclear which ETHOS's rules apply in a shared or overlapping space
+- **Protocol divergence** -- ETHOS follow incompatible processes for the same coordination need
 
-This is distinct from Layer VI (Conflict and Repair), which handles interpersonal and intra-AZPO conflict. This skill handles structural conflicts between autonomous units that each have legitimate governance authority within their own domains.
+This is distinct from Layer VI (Conflict and Repair), which handles interpersonal and intra-ETHOS conflict. This skill handles structural conflicts between autonomous units that each have legitimate governance authority within their own domains.
 
 ## C. Trigger Conditions
 
-- An AZPO identifies that another AZPO's actions or agreements conflict with its own governance structures
-- A cross-AZPO request reveals incompatible expectations between two AZPOs
-- A liaison reports a structural incompatibility between participating AZPOs
-- A participant operating in both AZPOs encounters contradictory governance requirements
+- An ETHOS identifies that another ETHOS's actions or agreements conflict with its own governance structures
+- A cross-ETHOS request reveals incompatible expectations between two ETHOS
+- A liaison reports a structural incompatibility between participating ETHOS
+- A participant operating in both ETHOS encounters contradictory governance requirements
 - A federation agreement review surfaces unresolved structural tensions
 
 ## D. Required Inputs
 
-- **Affected AZPOs** -- all units involved in the structural conflict (mandatory)
+- **Affected ETHOS** -- all units involved in the structural conflict (mandatory)
 - **Conflict description** -- specific claims from each side, documented neutrally (mandatory)
 - **Conflict type** -- authority overlap, agreement contradiction, resource competition, boundary dispute, or protocol divergence (mandatory)
 - **Supporting documentation** -- relevant agreements, authority scopes, resource records (mandatory)
-- **Desired resolution timeline** -- when the affected AZPOs want resolution, understanding this is aspirational (mandatory)
+- **Desired resolution timeline** -- when the affected ETHOS want resolution, understanding this is aspirational (mandatory)
 
 ## E. Step-by-Step Process
 
 ### Tier 1: Direct Negotiation
 
-1. **Identify and document conflict.** The AZPO that identifies the conflict formally documents it using `assets/conflict-resolution-record-template.yaml`. Both AZPOs' claims are stated in the record.
-2. **Designate representatives.** Each affected AZPO designates a representative with mandate to negotiate (but not to commit without AZPO consent).
-3. **Direct dialogue.** Representatives meet and share their AZPO's position, interests, and constraints. The dialogue seeks mutual solutions through good-faith engagement.
-4. **Outcome.** If a resolution emerges, it is documented and submitted to each AZPO for ratification through their own ACT process. If no resolution within 30 days, either AZPO may request escalation to Tier 2.
+1. **Identify and document conflict.** The ETHOS that identifies the conflict formally documents it using `assets/conflict-resolution-record-template.yaml`. Both ETHOS' claims are stated in the record.
+2. **Designate representatives.** Each affected ETHOS designates a representative with mandate to negotiate (but not to commit without ETHOS consent).
+3. **Direct dialogue.** Representatives meet and share their ETHOS's position, interests, and constraints. The dialogue seeks mutual solutions through good-faith engagement.
+4. **Outcome.** If a resolution emerges, it is documented and submitted to each ETHOS for ratification through their own ACT process. If no resolution within 30 days, either ETHOS may request escalation to Tier 2.
 
 ### Tier 2: Facilitated Dialogue
 
-5. **Select neutral facilitator.** Each AZPO proposes three candidates from other AZPOs (not from the affected AZPOs). Overlapping names are selected. If no overlap, both lists are combined and random selection is used.
+5. **Select neutral facilitator.** Each ETHOS proposes three candidates from other ETHOS (not from the affected ETHOS). Overlapping names are selected. If no overlap, both lists are combined and random selection is used.
 6. **Facilitated dialogue.** The neutral party facilitates but does NOT decide. They have process authority only -- managing the conversation, surfacing underlying interests, and helping parties see structural solutions. They have zero outcome authority.
-7. **Outcome.** If a resolution emerges, it is documented and submitted to each AZPO for ratification. If no resolution within 45 days, either AZPO may request escalation to Tier 3 or choose to conclude without agreement (see Step 9).
+7. **Outcome.** If a resolution emerges, it is documented and submitted to each ETHOS for ratification. If no resolution within 45 days, either ETHOS may request escalation to Tier 3 or choose to conclude without agreement (see Step 9).
 
 ### Tier 3: Structural Resolution
 
-8. **Federation agreement amendment or new agreement.** If Tiers 1-2 did not produce resolution because the conflict stems from a structural gap (no protocol exists for the situation), the affected AZPOs draft a federation agreement amendment or new agreement that addresses the underlying structural incompatibility. This uses the full federation-agreement skill process with negotiation, drafting, and per-AZPO ratification.
+8. **Federation agreement amendment or new agreement.** If Tiers 1-2 did not produce resolution because the conflict stems from a structural gap (no protocol exists for the situation), the affected ETHOS draft a federation agreement amendment or new agreement that addresses the underlying structural incompatibility. This uses the full federation-agreement skill process with negotiation, drafting, and per-ETHOS ratification.
 
 ### Legitimate Conclusion Without Resolution
 
-9. **Agree to disagree.** At any tier, both AZPOs may conclude that no mutually acceptable resolution exists. This is a legitimate outcome, not a failure. The AZPOs may choose to reduce their engagement tier (from federate to cooperate, or cooperate to observe). The conflict resolution record documents the disagreement, the good-faith process, and the resulting relationship adjustment.
+9. **Agree to disagree.** At any tier, both ETHOS may conclude that no mutually acceptable resolution exists. This is a legitimate outcome, not a failure. The ETHOS may choose to reduce their engagement tier (from federate to cooperate, or cooperate to observe). The conflict resolution record documents the disagreement, the good-faith process, and the resulting relationship adjustment.
 
 ## F. Output Artifact
 
-A polycentric conflict resolution record following `assets/conflict-resolution-record-template.yaml`, containing: conflict ID, affected AZPOs, conflict type, description with each AZPO's claims, supporting documentation references, resolution tier reached, facilitator identity and selection method (if Tier 2+), outcome agreement or documented disagreement, any federation agreement amendments, ratification records from each AZPO, and review date (6 months post-resolution).
+A polycentric conflict resolution record following `assets/conflict-resolution-record-template.yaml`, containing: conflict ID, affected ETHOS, conflict type, description with each ETHOS's claims, supporting documentation references, resolution tier reached, facilitator identity and selection method (if Tier 2+), outcome agreement or documented disagreement, any federation agreement amendments, ratification records from each ETHOS, and review date (6 months post-resolution).
 
 ## G. Authority Boundary Check
 
-- **No AZPO, body, or individual can impose a resolution.** All resolutions require mutual consent through each AZPO's own ACT process.
+- **No ETHOS, body, or individual can impose a resolution.** All resolutions require mutual consent through each ETHOS's own ACT process.
 - **Neutral facilitators (Tier 2)** have process authority only -- managing dialogue structure, time, and flow. They have zero outcome authority. They cannot propose solutions as binding.
-- **Resolution outcomes** require ratification through each affected AZPO's consent round. No shortcut exists.
-- **If no resolution is reached,** AZPOs may reduce their engagement tier rather than being forced into a resolution they did not consent to. This is structurally protected as a legitimate choice.
-- **Ecosystem-level bodies (OSC, TH)** do not serve as appellate courts. They may offer facilitation but cannot impose outcomes on AZPOs.
+- **Resolution outcomes** require ratification through each affected ETHOS's consent round. No shortcut exists.
+- **If no resolution is reached,** ETHOS may reduce their engagement tier rather than being forced into a resolution they did not consent to. This is structurally protected as a legitimate choice.
+- **Ecosystem-level bodies (OSC, TH)** do not serve as appellate courts. They may offer facilitation but cannot impose outcomes on ETHOS.
 
 ## H. Capture Resistance Check
 
-**Size leverage.** A larger AZPO pressures a smaller one through implied consequences of non-resolution ("if you don't agree, we'll reduce resource sharing"). Resistance: each AZPO evaluates resolutions through its own consent process. Implied threats are documented as capture vectors. The option to reduce engagement tier protects the smaller AZPO from being forced into unfavorable terms by economic dependency.
+**Size leverage.** A larger ETHOS pressures a smaller one through implied consequences of non-resolution ("if you don't agree, we'll reduce resource sharing"). Resistance: each ETHOS evaluates resolutions through its own consent process. Implied threats are documented as capture vectors. The option to reduce engagement tier protects the smaller ETHOS from being forced into unfavorable terms by economic dependency.
 
-**Facilitator bias.** The Tier 2 neutral party develops structural bias toward one side -- perhaps the AZPO they interact with more, or the AZPO whose governance philosophy they share. Resistance: the dual-list selection process surfaces mutually acceptable facilitators. Either AZPO may request facilitator replacement if bias is demonstrated. Facilitator conduct is documented in the resolution record.
+**Facilitator bias.** The Tier 2 neutral party develops structural bias toward one side -- perhaps the ETHOS they interact with more, or the ETHOS whose governance philosophy they share. Resistance: the dual-list selection process surfaces mutually acceptable facilitators. Either ETHOS may request facilitator replacement if bias is demonstrated. Facilitator conduct is documented in the resolution record.
 
-**Resolution fatigue.** One side capitulates to end the process rather than genuinely consenting. Resistance: each AZPO's ratification runs through a full ACT consent round with objection rights. Facilitators are trained to distinguish genuine consent from exhaustion. If resolution fatigue is suspected, the process pauses for a cooling period (recommended: 14 days).
+**Resolution fatigue.** One side capitulates to end the process rather than genuinely consenting. Resistance: each ETHOS's ratification runs through a full ACT consent round with objection rights. Facilitators are trained to distinguish genuine consent from exhaustion. If resolution fatigue is suspected, the process pauses for a cooling period (recommended: 14 days).
 
-**Precedent weaponization.** Past resolutions are cited to constrain future autonomy ("you agreed to X last time, so you must agree to X now"). Resistance: each conflict is documented and resolved independently. Prior resolution records are context, not binding precedent. Each AZPO retains full autonomy in future disputes.
+**Precedent weaponization.** Past resolutions are cited to constrain future autonomy ("you agreed to X last time, so you must agree to X now"). Resistance: each conflict is documented and resolved independently. Prior resolution records are context, not binding precedent. Each ETHOS retains full autonomy in future disputes.
 
-**Escalation avoidance.** AZPOs avoid Tier 2 or 3 because the process feels too burdensome, letting conflicts fester. Resistance: the three-tier model is designed to be progressively deeper, not progressively punitive. Tier 1 is lightweight. Liaison roles can flag festering conflicts. The skill explicitly affirms that using the process is preferable to unresolved structural tension.
+**Escalation avoidance.** ETHOS avoid Tier 2 or 3 because the process feels too burdensome, letting conflicts fester. Resistance: the three-tier model is designed to be progressively deeper, not progressively punitive. Tier 1 is lightweight. Liaison roles can flag festering conflicts. The skill explicitly affirms that using the process is preferable to unresolved structural tension.
 
 ## I. Failure Containment Logic
 
-- **No resolution reached:** AZPOs may agree to disagree and reduce engagement tier. This is documented as a legitimate outcome. The conflict resolution record captures the good-faith process and the resulting relationship adjustment.
-- **Neutral party unavailable:** Extend Tier 1 direct negotiation with documented good-faith attempts. If facilitator selection repeatedly fails, the AZPOs may jointly request ecosystem-level facilitation resources (but not imposed outcomes).
-- **Resolution agreement violated:** The aggrieved AZPO may trigger a review, returning the conflict to the appropriate tier. The violation is documented in the resolution record.
-- **One AZPO refuses to participate:** Non-participation is documented. The requesting AZPO may unilaterally adjust their engagement tier. Non-participation does not grant the non-participating AZPO veto power over the other's governance adjustments.
+- **No resolution reached:** ETHOS may agree to disagree and reduce engagement tier. This is documented as a legitimate outcome. The conflict resolution record captures the good-faith process and the resulting relationship adjustment.
+- **Neutral party unavailable:** Extend Tier 1 direct negotiation with documented good-faith attempts. If facilitator selection repeatedly fails, the ETHOS may jointly request ecosystem-level facilitation resources (but not imposed outcomes).
+- **Resolution agreement violated:** The aggrieved ETHOS may trigger a review, returning the conflict to the appropriate tier. The violation is documented in the resolution record.
+- **One ETHOS refuses to participate:** Non-participation is documented. The requesting ETHOS may unilaterally adjust their engagement tier. Non-participation does not grant the non-participating ETHOS veto power over the other's governance adjustments.
 
 ## J. Expiry / Review Condition
 
@@ -103,14 +103,14 @@ A polycentric conflict resolution record following `assets/conflict-resolution-r
 
 ## K. Exit Compatibility Check
 
-- **AZPO exits during navigation:** The process concludes with documentation. The conflict resolution record captures the state at exit. Remaining AZPOs adjust their governance as needed.
-- **AZPO dissolves:** All active conflict navigation processes involving the dissolved AZPO are closed with documentation.
-- **Participant exits but AZPO continues:** The AZPO designates a new representative. The process continues.
-- **Completed resolutions survive exit.** Federation agreement amendments produced through this process remain binding on the AZPOs that ratified them, regardless of individual participant departures.
+- **ETHOS exits during navigation:** The process concludes with documentation. The conflict resolution record captures the state at exit. Remaining ETHOS adjust their governance as needed.
+- **ETHOS dissolves:** All active conflict navigation processes involving the dissolved ETHOS are closed with documentation.
+- **Participant exits but ETHOS continues:** The ETHOS designates a new representative. The process continues.
+- **Completed resolutions survive exit.** Federation agreement amendments produced through this process remain binding on the ETHOS that ratified them, regardless of individual participant departures.
 
 ## L. Cross-Unit Interoperability Impact
 
-This skill is the capstone cross-unit mechanism for Layer V. It handles the structural disputes that emerge from all the coordination structures defined in the other Layer V skills. It references cross-azpo-request (how conflicts are identified through incompatible requests), federation-agreement (how structural resolutions are formalized), and inter-unit-liaison (how liaisons flag emerging conflicts before they escalate). The conflict resolution record is registered in all affected AZPOs' agreement registries. Structural resolutions that produce federation agreement amendments are registered per the federation-agreement skill's procedures.
+This skill is the capstone cross-unit mechanism for Layer V. It handles the structural disputes that emerge from all the coordination structures defined in the other Layer V skills. It references cross-ethos-request (how conflicts are identified through incompatible requests), federation-agreement (how structural resolutions are formalized), and inter-unit-liaison (how liaisons flag emerging conflicts before they escalate). The conflict resolution record is registered in all affected ETHOS' agreement registries. Structural resolutions that produce federation agreement amendments are registered per the federation-agreement skill's procedures.
 
 ## OmniOne Walkthrough
 
@@ -128,13 +128,13 @@ Maria, a TH member, splits her time between the Bali and Costa Rica SHURs -- thr
 
 The federation agreement amendment is registered in both SHURs' registries. Maria's situation is immediately clarified.
 
-**Edge case: facilitator bias.** During dialogue, Putu notices that Valentina knows Diego personally from a prior cross-SHUR project. Putu raises this concern formally. Valentina discloses the relationship and offers to recuse. Both AZPOs discuss: the relationship is professional, not personal, and Valentina has been evenhanded in facilitation. They agree she should continue but the disclosure is documented in the resolution record. If Putu had pressed for replacement, a new selection process would have begun.
+**Edge case: facilitator bias.** During dialogue, Putu notices that Valentina knows Diego personally from a prior cross-SHUR project. Putu raises this concern formally. Valentina discloses the relationship and offers to recuse. Both ETHOS discuss: the relationship is professional, not personal, and Valentina has been evenhanded in facilitation. They agree she should continue but the disclosure is documented in the resolution record. If Putu had pressed for replacement, a new selection process would have begun.
 
 ## Stress-Test Results
 
 ### 1. Capital Influx
 
-A wealthy AZPO has a boundary dispute with a smaller AZPO over access to a shared facility. During Tier 1 negotiation, the wealthy AZPO implies that an unfavorable resolution could affect their resource-sharing commitments. The smaller AZPO's negotiator documents this as size leverage in the conflict resolution record. At Tier 2, the facilitator explicitly names the economic dynamic and ensures the dialogue focuses on the structural merits of each position. The smaller AZPO's consent round evaluates the proposed resolution independently of economic implications. The option to reduce engagement tier protects the smaller AZPO from being forced into terms by financial dependency -- if the resolution is unfavorable, they can step back to "cooperate" tier and maintain autonomy.
+A wealthy ETHOS has a boundary dispute with a smaller ETHOS over access to a shared facility. During Tier 1 negotiation, the wealthy ETHOS implies that an unfavorable resolution could affect their resource-sharing commitments. The smaller ETHOS's negotiator documents this as size leverage in the conflict resolution record. At Tier 2, the facilitator explicitly names the economic dynamic and ensures the dialogue focuses on the structural merits of each position. The smaller ETHOS's consent round evaluates the proposed resolution independently of economic implications. The option to reduce engagement tier protects the smaller ETHOS from being forced into terms by financial dependency -- if the resolution is unfavorable, they can step back to "cooperate" tier and maintain autonomy.
 
 ### 2. Emergency Crisis
 
@@ -142,11 +142,11 @@ Two SHURs have an unresolved authority overlap about which SHUR coordinates disa
 
 ### 3. Leadership Charisma Capture
 
-A charismatic ecosystem leader publicly advocates for one AZPO's position in a boundary dispute, characterizing the other AZPO as "prioritizing rules over community." The social pressure is significant. During Tier 2 facilitated dialogue, the facilitator names the external pressure and ensures both AZPOs' positions are evaluated on structural merits. The consent round in the pressured AZPO includes explicit recognition that external advocacy does not factor into the consent decision. The structural protection is the consent round itself -- each participant records their position independently. Objections are formally recorded before any discussion, preventing social pressure from suppressing dissent.
+A charismatic ecosystem leader publicly advocates for one ETHOS's position in a boundary dispute, characterizing the other ETHOS as "prioritizing rules over community." The social pressure is significant. During Tier 2 facilitated dialogue, the facilitator names the external pressure and ensures both ETHOS' positions are evaluated on structural merits. The consent round in the pressured ETHOS includes explicit recognition that external advocacy does not factor into the consent decision. The structural protection is the consent round itself -- each participant records their position independently. Objections are formally recorded before any discussion, preventing social pressure from suppressing dissent.
 
 ### 4. High Conflict
 
-Two AZPOs have fundamental governance disagreements -- one operates by deep consensus on all decisions, the other uses lighter consent-based processes. Their federation agreement requires joint decisions on shared infrastructure. The deep-consensus AZPO finds the consent-based AZPO's decisions insufficiently deliberated. The consent-based AZPO finds the other's process paralyzingly slow. Tier 1 negotiation fails -- the disagreement is philosophical. Tier 2 facilitation surfaces the core tension: both processes are legitimate NEOS governance modes, and neither can be imposed on the other. The structural resolution: the federation agreement is amended to specify which AZPO's decision mode applies to which shared infrastructure decisions, with a default to the lighter mode for operational decisions and the deeper mode for strategic decisions. Both AZPOs consent. If they had not found a resolution, they could have reduced their engagement tier -- a legitimate structural choice.
+Two ETHOS have fundamental governance disagreements -- one operates by deep consensus on all decisions, the other uses lighter consent-based processes. Their federation agreement requires joint decisions on shared infrastructure. The deep-consensus ETHOS finds the consent-based ETHOS's decisions insufficiently deliberated. The consent-based ETHOS finds the other's process paralyzingly slow. Tier 1 negotiation fails -- the disagreement is philosophical. Tier 2 facilitation surfaces the core tension: both processes are legitimate NEOS governance modes, and neither can be imposed on the other. The structural resolution: the federation agreement is amended to specify which ETHOS's decision mode applies to which shared infrastructure decisions, with a default to the lighter mode for operational decisions and the deeper mode for strategic decisions. Both ETHOS consent. If they had not found a resolution, they could have reduced their engagement tier -- a legitimate structural choice.
 
 ### 5. Large-Scale Replication
 
@@ -158,4 +158,4 @@ A government agency asserts regulatory authority over a domain that two SHURs' g
 
 ### 7. Sudden Exit of 30% of Participants
 
-Mass departure occurs during an active Tier 2 facilitation between two SHURs. Three representatives from one SHUR exit simultaneously. The SHUR designates replacements for the conflict navigation process. The process pauses for 14 days while new representatives are briefed using the documented conflict resolution record. The facilitator re-establishes context with the new representatives. The process continues. If one AZPO has too few remaining members to meaningfully participate, the process pauses until that AZPO stabilizes. The conflict resolution record preserves the state so no progress is lost. If the departures make the conflict moot (e.g., the disputed resource is no longer shared), the process concludes with documentation.
+Mass departure occurs during an active Tier 2 facilitation between two SHURs. Three representatives from one SHUR exit simultaneously. The SHUR designates replacements for the conflict navigation process. The process pauses for 14 days while new representatives are briefed using the documented conflict resolution record. The facilitator re-establishes context with the new representatives. The process continues. If one ETHOS has too few remaining members to meaningfully participate, the process pauses until that ETHOS stabilizes. The conflict resolution record preserves the state so no progress is lost. If the departures make the conflict moot (e.g., the disputed resource is no longer shared), the process concludes with documentation.

@@ -14,7 +14,7 @@ Without a structured allocation process, funding pools distribute resources thro
 
 ## B. Domain Scope
 
-This skill applies whenever a funding pool's resources are allocated collectively rather than through individual resource requests. It covers periodic allocation assemblies (quarterly, semi-annual), special allocation assemblies (triggered by windfall inflows or emergency replenishment), and reallocation assemblies (redistributing previously allocated but unused resources). Pool types that use this skill include circle operational pools, ecosystem strategic pools, cross-AZPO shared pools, and project-specific pools. Emergency reserve pools are excluded -- emergency disbursements follow the compressed resource-request process, not the deliberative allocation assembly. Out of scope: individual resource requests that fall within steward discretionary thresholds (see resource-request), pool creation and governance structure (see funding-pool-stewardship), and monitoring of allocation outcomes (see commons-monitoring).
+This skill applies whenever a funding pool's resources are allocated collectively rather than through individual resource requests. It covers periodic allocation assemblies (quarterly, semi-annual), special allocation assemblies (triggered by windfall inflows or emergency replenishment), and reallocation assemblies (redistributing previously allocated but unused resources). Pool types that use this skill include circle operational pools, ecosystem strategic pools, cross-ETHOS shared pools, and project-specific pools. Emergency reserve pools are excluded -- emergency disbursements follow the compressed resource-request process, not the deliberative allocation assembly. Out of scope: individual resource requests that fall within steward discretionary thresholds (see resource-request), pool creation and governance structure (see funding-pool-stewardship), and monitoring of allocation outcomes (see commons-monitoring).
 
 ## C. Trigger Conditions
 
@@ -59,7 +59,7 @@ An allocation record following `assets/allocation-record-template.yaml`. The doc
 - **Proposers** cannot vote on their own proposals. They participate in deliberation and integration but abstain from the consent round on their specific proposal.
 - **The pool steward** determines the allocation amount based on pool governance rules but does not influence which proposals receive funding. The steward's role in the assembly is administrative, not decisional.
 - **OSC involvement** is required for ecosystem strategic pool allocations that exceed the pool's circle-level authority threshold (default 25% of pool balance in a single assembly).
-- **Cross-AZPO shared pool assemblies** require participation from all contributing AZPOs. No single AZPO can dominate the allocation through higher participation numbers -- consent requires addressing objections from any participating unit.
+- **Cross-ETHOS shared pool assemblies** require participation from all contributing ETHOS. No single ETHOS can dominate the allocation through higher participation numbers -- consent requires addressing objections from any participating unit.
 
 ## H. Capture Resistance Check
 
@@ -100,10 +100,10 @@ When a facilitator exits:
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO shared pool allocation assemblies include participants from all contributing AZPOs. The facilitator ensures balanced representation -- no single AZPO dominates presentation time or deliberation.
-- Proposals from one AZPO requesting shared pool resources for activities that affect another AZPO require acknowledgment from the affected AZPO during the advice phase.
-- Allocation records for cross-AZPO assemblies are registered in every participating AZPO's agreement registry with synchronized records.
-- When multiple AZPOs each run independent allocation assemblies for their own pools, the commons-monitoring skill tracks aggregate allocation patterns across the ecosystem to detect systemic imbalances.
+- Cross-ETHOS shared pool allocation assemblies include participants from all contributing ETHOS. The facilitator ensures balanced representation -- no single ETHOS dominates presentation time or deliberation.
+- Proposals from one ETHOS requesting shared pool resources for activities that affect another ETHOS require acknowledgment from the affected ETHOS during the advice phase.
+- Allocation records for cross-ETHOS assemblies are registered in every participating ETHOS's agreement registry with synchronized records.
+- When multiple ETHOS each run independent allocation assemblies for their own pools, the commons-monitoring skill tracks aggregate allocation patterns across the ecosystem to detect systemic imbalances.
 - Cross-ecosystem allocation assemblies (between separate NEOS ecosystems) use the inter-unit coordination protocol (Layer V, deferred).
 
 ## OmniOne Walkthrough

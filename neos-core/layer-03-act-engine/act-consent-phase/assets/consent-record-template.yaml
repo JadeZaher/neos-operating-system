@@ -8,7 +8,7 @@ quorum_met: false
 participants:
   - name: ""
     role: ""
-    azpo: ""
+    ethos: ""
     position: ""  # consent | stand_aside | objection
     reason: ""
     round: 1

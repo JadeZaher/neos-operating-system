@@ -200,7 +200,7 @@ The middleware's session factory may use the default `expire_on_commit=True`. Af
 ## Out of Scope
 
 - Profile picture upload
-- AZPO membership display (no data source yet)
+- ETHOS membership display (no data source yet)
 - Role assignments display (no join table yet)
 - Participation history timeline (no data source yet)
 - Advanced profile search/filtering

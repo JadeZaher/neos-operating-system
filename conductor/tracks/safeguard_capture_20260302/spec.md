@@ -43,16 +43,16 @@ Layer VII detects when emergency authority is being abused. Layer VIII defines h
 
 ### FR-1: Governance Health Audit (`governance-health-audit`)
 
-**Description:** Enable any authorized participant or automated process to conduct a structured review of governance health indicators across an AZPO or the full ecosystem. The audit examines decision patterns, resource flows, participation rates, proposal diversity, and leadership tenure to produce a quantified governance health report.
+**Description:** Enable any authorized participant or automated process to conduct a structured review of governance health indicators across an ETHOS or the full ecosystem. The audit examines decision patterns, resource flows, participation rates, proposal diversity, and leadership tenure to produce a quantified governance health report.
 
 **Acceptance Criteria:**
-- AC-1.1: The skill defines all required inputs (audit scope -- AZPO or ecosystem, time period, data sources including decision logs, resource allocation records, participation records, and proposal registry).
+- AC-1.1: The skill defines all required inputs (audit scope -- ETHOS or ecosystem, time period, data sources including decision logs, resource allocation records, participation records, and proposal registry).
 - AC-1.2: The step-by-step process specifies at least 8 measurable indicators drawn from V-Dem methodology: proposal authorship diversity, approval rate by author role, resource concentration index, participation trend, leadership tenure, objection integration rate, review compliance rate, and cross-unit engagement frequency.
 - AC-1.3: Each indicator has a defined "healthy range," "warning threshold," and "critical threshold" with specific numeric or percentage-based criteria.
 - AC-1.4: The output artifact is a Governance Health Report with indicator scores, trend data (comparison to previous audit), and triggered safeguard recommendations.
 - AC-1.5: The authority boundary check prevents audit results from being suppressed by the body being audited -- audit reports are published to all ecosystem members, not just leadership.
 - AC-1.6: The capture resistance check addresses the anti-pattern of self-assessment: the skill structurally separates audit data collection from audit interpretation.
-- AC-1.7: An OmniOne walkthrough demonstrates a quarterly governance health audit of the Bali SHUR AZPO.
+- AC-1.7: An OmniOne walkthrough demonstrates a quarterly governance health audit of the Bali SHUR ETHOS.
 - AC-1.8: All 7 stress-test scenarios are documented with full narrative results.
 
 **Priority:** P0 -- Foundational skill for the entire layer.
@@ -158,9 +158,9 @@ Every SKILL.md must pass automated validation via `scripts/validate_skill.py`.
 ## User Stories
 
 ### US-1: AI Agent Conducts a Governance Health Audit
-**As** an AI agent assisting an AZPO steward,
+**As** an AI agent assisting an ETHOS steward,
 **I want** to collect governance health indicators and produce a structured report,
-**So that** the AZPO has quantified visibility into whether its governance is healthy or degrading.
+**So that** the ETHOS has quantified visibility into whether its governance is healthy or degrading.
 
 **Given** the AI agent has access to decision logs, participation records, and resource allocation data,
 **When** it follows the governance-health-audit skill process,

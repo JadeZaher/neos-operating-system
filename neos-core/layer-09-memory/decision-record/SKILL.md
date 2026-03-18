@@ -82,7 +82,7 @@ When a participant exits the ecosystem, decision records they authored remain va
 
 ## L. Cross-Unit Interoperability Impact
 
-Decision records from one AZPO are accessible to all participants across the ecosystem -- governance memory is not siloed by organizational unit. When a decision affects multiple AZPOs, the record's semantic tags include all affected units and the record is surfaced in cross-AZPO searches. Cross-AZPO decisions include participant lists from all affected units. When two NEOS ecosystems share governance space, their decision record schemas are compatible (same envelope structure) enabling cross-ecosystem precedent search. Full cross-ecosystem federation protocol is deferred to Layer V but the decision record format is designed for it: the record_id namespace includes the ecosystem identifier.
+Decision records from one ETHOS are accessible to all participants across the ecosystem -- governance memory is not siloed by organizational unit. When a decision affects multiple ETHOS, the record's semantic tags include all affected units and the record is surfaced in cross-ETHOS searches. Cross-ETHOS decisions include participant lists from all affected units. When two NEOS ecosystems share governance space, their decision record schemas are compatible (same envelope structure) enabling cross-ecosystem precedent search. Full cross-ecosystem federation protocol is deferred to Layer V but the decision record format is designed for it: the record_id namespace includes the ecosystem identifier.
 
 ## OmniOne Walkthrough
 
@@ -92,7 +92,7 @@ Lena drafts the holding: "The Economics circle holds domain authority over resou
 
 Lena records the obiter dicta: "Several participants noted that this boundary may need revisiting if OmniOne expands to multiple SHUR locations, as a single Economics circle managing allocation frameworks across sites may become a bottleneck." She documents dissent: OSC member Kaito objected that the split would create coordination overhead. During integration, the circles agreed to a monthly sync meeting, and Kaito changed his position to consent. TH member Priya stood aside, noting she was not directly affected but preferred a unified approach.
 
-Lena classifies this as governance-level precedent: it establishes a new pattern for how domain boundaries between circles are drawn. She applies semantic tags: domain=Economics+Operations, layer=2, skill=authority-boundary-negotiation, affected_parties=[Economics circle, Operations circle, SHUR Bali residents], topic=[resource-allocation, domain-boundary, shared-infrastructure], ecosystem_scope=single-azpo. She shares the draft with all 14 participants for 72-hour verification.
+Lena classifies this as governance-level precedent: it establishes a new pattern for how domain boundaries between circles are drawn. She applies semantic tags: domain=Economics+Operations, layer=2, skill=authority-boundary-negotiation, affected_parties=[Economics circle, Operations circle, SHUR Bali residents], topic=[resource-allocation, domain-boundary, shared-infrastructure], ecosystem_scope=single-ethos. She shares the draft with all 14 participants for 72-hour verification.
 
 During verification, Operations steward Marco notices the record omits his comment about seasonal budget variations. Lena adds this to the obiter dicta as a factual correction. No other corrections arise. The record is registered as DR-OMNI-2026-042 with status "active" and linked to the boundary resolution artifact BR-OMNI-2026-015.
 

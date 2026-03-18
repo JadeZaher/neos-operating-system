@@ -86,9 +86,9 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO agreements are reviewed by a body that includes representatives from each affected AZPO. Each AZPO must agree on the review outcome.
-- If one AZPO wants to sunset an agreement that another AZPO still needs, the agreement is revised to narrow scope rather than fully sunset. The departing AZPO's obligations under the agreement cease through proper amendment.
-- Registry synchronization: when a cross-AZPO agreement is reviewed, the review record is entered in all affected registries.
+- Cross-ETHOS agreements are reviewed by a body that includes representatives from each affected ETHOS. Each ETHOS must agree on the review outcome.
+- If one ETHOS wants to sunset an agreement that another ETHOS still needs, the agreement is revised to narrow scope rather than fully sunset. The departing ETHOS's obligations under the agreement cease through proper amendment.
+- Registry synchronization: when a cross-ETHOS agreement is reviewed, the review record is entered in all affected registries.
 
 ## OmniOne Walkthrough
 

@@ -4,7 +4,7 @@ what is the intention of the ecosystem??
 
 ### **Representation of ecosystem (marketing)**
 
-... there will be an ecosystem marketing AZPO that takes care of this
+... there will be an ecosystem marketing ETHOS that takes care of this
 
 ### **Vision**
 
@@ -14,9 +14,9 @@ Global covers the larger vision and collective impact on the planet and humanity
 
 How are the avatars being brought into the ecosystem?
 
-### Avatars (AZPO)
+### Avatars (ETHOS)
 
-who are the right AZPOs?
+who are the right ETHOS?
 
 ## **Values & Principles**
 
@@ -32,11 +32,11 @@ Something separate from the GenPlan but very important and to be developed as th
 
 ### Internal
 
-**Collective Decision-Making Process (AZPO to AZPO)**
+**Collective Decision-Making Process (ETHOS to ETHOS)**
 
 [Copy of [T](https://www.notion.so/What-is-the-ACT-process-a49ef3fa0d7f4df79f96e8f1b6222c91?pvs=21)he ACT process](https://www.notion.so/Copy-of-The-ACT-process-44fb8220786f4be1ac9df11e06131d28?pvs=21)
 
-*for decisions that affect the whole ecosystem there will need to be full consensus from all parties involved across all AZPOs involved (doing both is an option)
+*for decisions that affect the whole ecosystem there will need to be full consensus from all parties involved across all ETHOS involved (doing both is an option)
 
 —> Another option called Lawful Formation exists
 
@@ -74,21 +74,21 @@ natural laws to create attention to:
     1. access to information
     2. access to resources
 
-## **Onboarding & Vetting AZPOs prior to their integration**
+## **Onboarding & Vetting ETHOS prior to their integration**
 
-## How AZPOs Interact With One Another w/in the Ecosystem
-
-... 
-
-### Accountability protocols of the AZPO to the Ecosystem
+## How ETHOS Interact With One Another w/in the Ecosystem
 
 ... 
 
-**Potential AZPO reformation**
+### Accountability protocols of the ETHOS to the Ecosystem
 
 ... 
 
-## **How AZPOs interact with AZPOs/Organizations/Cultures outside the Ecosystem**
+**Potential ETHOS reformation**
+
+... 
+
+## **How ETHOS interact with ETHOS/Organizations/Cultures outside the Ecosystem**
 
 Important focus within on referencing use of information
 
@@ -108,7 +108,7 @@ How is information utilized within the Ecosystem - what is shared and what not? 
 This section establishes how funds will be distributed throughout the ecosystem:
 
 - where does money flow first? why?
-- how do AZPOs get funding? when? which ones?
+- how do ETHOS get funding? when? which ones?
 
 ### Resource pool and Distribution
 
@@ -116,9 +116,9 @@ This section establishes how funds will be distributed throughout the ecosystem:
 
 ### **Funding pools & distribution**
 
-we recommend funding pools and pre-determined methods of monetary flow throughout and between these pools — make sure each AZPO has what they need when they need it, without having to check in with everyone else every little time they need to get something done
+we recommend funding pools and pre-determined methods of monetary flow throughout and between these pools — make sure each ETHOS has what they need when they need it, without having to check in with everyone else every little time they need to get something done
 
-- the ecosystem provides the assets or resources necessary. to the AZPO - the AZPO doesn't need the money to make the purchase, necessarily.
+- the ecosystem provides the assets or resources necessary. to the ETHOS - the ETHOS doesn't need the money to make the purchase, necessarily.
 
 ### Currency Use Transition Plan
 

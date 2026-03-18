@@ -36,7 +36,7 @@ elements:
   # List of strings. What the domain must do; the actions it is accountable for.
   # Each item should be a discrete, observable action or output category.
   # Example:
-  #   - "Manage all funding requests from AZPOs and circles"
+  #   - "Manage all funding requests from ETHOS and circles"
   #   - "Publish monthly economic transparency report"
 
   # Element 3 — REQUIRED
@@ -56,7 +56,7 @@ elements:
   # Element 5 — REQUIRED
   dependencies: []
   # List of strings. Other domains, skills, or resources this domain requires to function.
-  # If there are no cross-AZPO dependencies, state "none" explicitly — do not omit.
+  # If there are no cross-ETHOS dependencies, state "none" explicitly — do not omit.
   # Example:
   #   - "DOM-OSC-POLICY-001 — requires OSC approval for allocations above 10% of pool"
   #   - "layer-01 agreement-registry — for tracking economic agreements"

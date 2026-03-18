@@ -20,7 +20,7 @@ This skill applies to any departing ecosystem member who requests a portable gov
 
 - **Voluntary exit**: the departing member requests a portable record as part of the voluntary-exit process (offered by default during every departure)
 - **Periodic export**: any active member may request a current snapshot of their portable record at any time, without departing
-- **AZPO dissolution**: all members of a dissolving AZPO receive portable records as part of the dissolution process
+- **ETHOS dissolution**: all members of a dissolving ETHOS receive portable records as part of the dissolution process
 - **Federation request**: when a member applies to join a federated NEOS ecosystem, they may generate a current portable record for presentation
 
 ## D. Required Inputs
@@ -78,11 +78,11 @@ Portable governance records do not expire. The record represents historical fact
 
 ## K. Exit Compatibility Check
 
-This skill is a core component of the exit process. The portable record is generated during every voluntary exit and AZPO dissolution, ensuring that no member leaves empty-handed. The record captures the output of the commitment-unwinding process (if the member chooses to include it) and the departure record. The skill ensures that exit is not just operationally clean but informationally complete -- the member carries their governance history with them.
+This skill is a core component of the exit process. The portable record is generated during every voluntary exit and ETHOS dissolution, ensuring that no member leaves empty-handed. The record captures the output of the commitment-unwinding process (if the member chooses to include it) and the departure record. The skill ensures that exit is not just operationally clean but informationally complete -- the member carries their governance history with them.
 
 ## L. Cross-Unit Interoperability Impact
 
-The portable record schema is standardized across all NEOS ecosystems, enabling cross-ecosystem portability. A member who departs OmniOne and joins a new AZPO in a different NEOS ecosystem presents a record that the receiving ecosystem can parse, verify, and evaluate using the same schema. Cross-ecosystem portability is informational, not prescriptive: the receiving ecosystem decides how much weight to give the record's contents. The verification hash enables trust without requiring the receiving ecosystem to contact the source ecosystem. When two NEOS ecosystems federate (Layer V, deferred), portable records may be exchanged automatically as part of member transfer protocols.
+The portable record schema is standardized across all NEOS ecosystems, enabling cross-ecosystem portability. A member who departs OmniOne and joins a new ETHOS in a different NEOS ecosystem presents a record that the receiving ecosystem can parse, verify, and evaluate using the same schema. Cross-ecosystem portability is informational, not prescriptive: the receiving ecosystem decides how much weight to give the record's contents. The verification hash enables trust without requiring the receiving ecosystem to contact the source ecosystem. When two NEOS ecosystems federate (Layer V, deferred), portable records may be exchanged automatically as part of member transfer protocols.
 
 ## OmniOne Walkthrough
 
@@ -94,7 +94,7 @@ Rina reviews the privacy options. She chooses full detail for roles, agreements,
 
 The system generates Portable Governance Record PGR-OMNI-2026-RINA following the schema. Each entry includes a source reference (e.g., "agreement-registry:UAF-2025-001") enabling verification. A verification hash is computed over the record contents and the current registry state. Rina receives the YAML file and the hash.
 
-**Edge case**: Rina plans to present her record to a new AZPO forming in Costa Rica. The Costa Rica ecosystem runs on NEOS but is not yet federated with OmniOne. The Costa Rica onboarding facilitator receives Rina's portable record, parses the YAML, and verifies the hash against the embedded registry references. The hash confirms the record has not been tampered with. The facilitator notes Rina's 14 months of governance experience, her two circle roles, and her proposal track record. The Costa Rica AZPO does not automatically grant Rina a role, but her experience informs their role-assignment process -- she is not starting from zero. Rina's excluded conflict mediation record remains invisible; the Costa Rica AZPO has no way to know it existed.
+**Edge case**: Rina plans to present her record to a new ETHOS forming in Costa Rica. The Costa Rica ecosystem runs on NEOS but is not yet federated with OmniOne. The Costa Rica onboarding facilitator receives Rina's portable record, parses the YAML, and verifies the hash against the embedded registry references. The hash confirms the record has not been tampered with. The facilitator notes Rina's 14 months of governance experience, her two circle roles, and her proposal track record. The Costa Rica ETHOS does not automatically grant Rina a role, but her experience informs their role-assignment process -- she is not starting from zero. Rina's excluded conflict mediation record remains invisible; the Costa Rica ETHOS has no way to know it existed.
 
 Rina receives her portable record on day 18 of the handoff period, alongside a markdown summary she can share informally. She carries 14 months of verified governance experience in a structured file that she owns and controls.
 
@@ -118,7 +118,7 @@ Members from both factions in a polarized ecosystem depart simultaneously and re
 
 ### 5. Large-Scale Replication
 
-At 4,000 members across 12 SHUR locations, portable record generation becomes a routine operation. The standardized schema ensures every record has the same structure regardless of which AZPO generated it. Registry queries scale across AZPO boundaries when a member participated in multiple locations. Automated generation reduces coordinator burden -- the coordinator reviews privacy preferences and initiates the query, but compilation and hash generation are systematic. Cross-ecosystem portability becomes valuable as members move between NEOS networks: a member departing OmniOne in Bali and joining a NEOS-governed cooperative in Portugal presents a record that the Portuguese ecosystem can parse using the same schema, even though the two ecosystems have never communicated. The schema is the interoperability layer.
+At 4,000 members across 12 SHUR locations, portable record generation becomes a routine operation. The standardized schema ensures every record has the same structure regardless of which ETHOS generated it. Registry queries scale across ETHOS boundaries when a member participated in multiple locations. Automated generation reduces coordinator burden -- the coordinator reviews privacy preferences and initiates the query, but compilation and hash generation are systematic. Cross-ecosystem portability becomes valuable as members move between NEOS networks: a member departing OmniOne in Bali and joining a NEOS-governed cooperative in Portugal presents a record that the Portuguese ecosystem can parse using the same schema, even though the two ecosystems have never communicated. The schema is the interoperability layer.
 
 ### 6. External Legal Pressure
 

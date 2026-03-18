@@ -86,7 +86,7 @@ When a former emergency role holder exits the ecosystem during the Recovery stat
 
 ## L. Cross-Unit Interoperability Impact
 
-Reversion processes in one AZPO are published to all ecosystem members, providing cross-unit visibility into how emergencies conclude. When an emergency affected multiple AZPOs, each conducts its own reversion independently. The Recovery state duration is consistent across AZPOs (30 days), enabling ecosystem-level tracking of concurrent reversions. Cross-AZPO mutual aid agreements activated during an emergency are reviewed during each AZPO's reversion process independently. At federation scale, each ecosystem manages its own reversions through its own processes.
+Reversion processes in one ETHOS are published to all ecosystem members, providing cross-unit visibility into how emergencies conclude. When an emergency affected multiple ETHOS, each conducts its own reversion independently. The Recovery state duration is consistent across ETHOS (30 days), enabling ecosystem-level tracking of concurrent reversions. Cross-ETHOS mutual aid agreements activated during an emergency are reviewed during each ETHOS's reversion process independently. At federation scale, each ecosystem manages its own reversions through its own processes.
 
 ## OmniOne Walkthrough
 
@@ -124,7 +124,7 @@ During the Recovery state, the two polarized factions disagree on whether to rat
 
 ### 5. Large-Scale Replication
 
-At scale, 12 SHUR locations may experience overlapping emergencies and reversions. Each AZPO manages its own reversion independently, using the same Reversion Record template and circuit breaker state definitions. The OSC monitors concurrent Recovery states across the ecosystem, identifying systemic patterns: if multiple AZPOs show ceiling violations during emergencies, the pre-authorization ceilings may need ecosystem-wide recalibration. The consistent 30-day Recovery period across all AZPOs enables ecosystem-level timeline tracking. The auto-revert default for unratified decisions ensures that no AZPO's reversion stalls indefinitely, even if member engagement is low during the recovery period.
+At scale, 12 SHUR locations may experience overlapping emergencies and reversions. Each ETHOS manages its own reversion independently, using the same Reversion Record template and circuit breaker state definitions. The OSC monitors concurrent Recovery states across the ecosystem, identifying systemic patterns: if multiple ETHOS show ceiling violations during emergencies, the pre-authorization ceilings may need ecosystem-wide recalibration. The consistent 30-day Recovery period across all ETHOS enables ecosystem-level timeline tracking. The auto-revert default for unratified decisions ensures that no ETHOS's reversion stalls indefinitely, even if member engagement is low during the recovery period.
 
 ### 6. External Legal Pressure
 

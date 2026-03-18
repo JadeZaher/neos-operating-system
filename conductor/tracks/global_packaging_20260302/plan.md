@@ -33,7 +33,7 @@ The Principles and Stress Test Protocol documents are written first because the 
   3. **Voluntary Participation** -- Exit is always structurally possible. Enforcement: voluntary-exit skill ensures departure cannot be prevented. Skills: voluntary-exit, commitment-unwinding, portable-record. Violation: any mechanism that makes exit practically impossible through financial, social, or structural barriers.
   4. **Capital Does Not Equal Power** -- Economic contribution does not grant governance authority. Enforcement: governance-health-audit monitors resource concentration; safeguard triggers activate on capital capture indicators. Skills: governance-health-audit, capture-pattern-recognition, safeguard-trigger-design. Violation: a funding source gaining veto power or systematic approval bias.
   5. **Solutionary Decision-Making (ACT)** -- Advice, Consent, Test. Enforcement: all governance decisions route through the ACT engine. Skills: act-advice-phase, act-consent-phase, act-test-phase, proposal-creation. Violation: decisions made outside ACT process except within pre-authorized emergency scope.
-  6. **Local Failure Containment** -- Autonomous units; failure does not cascade. Enforcement: AZPO boundaries, inter-unit coordination protocols. Skills: inter-unit skills, azpo-dissolution. Violation: one AZPO's failure causing governance collapse in another AZPO.
+  6. **Local Failure Containment** -- Autonomous units; failure does not cascade. Enforcement: ETHOS boundaries, inter-unit coordination protocols. Skills: inter-unit skills, ethos-dissolution. Violation: one ETHOS's failure causing governance collapse in another ETHOS.
   7. **Explicit Agreements** -- Written, scannable, traceable, revisable. Enforcement: agreement registry, version control, review dates. Skills: agreement-creation, agreement-registry, agreement-review. Violation: binding commitments that exist only as informal understandings.
   8. **Capture Resistance** -- Resists capital, charismatic, emergency, and informal capture. Enforcement: Layer VII monitoring, safeguard triggers, independent monitoring. Skills: all Layer VII skills, post-emergency-review. Violation: sustained capture pattern with no triggered safeguard.
   9. **Pluralism** -- Multiple value systems coexist via agreement, not belief. Enforcement: consent (not consensus) as default decision mode, UAF defines process not ideology. Skills: universal-agreement-field, act-consent-phase. Violation: governance decisions based on ideological alignment rather than reasoned objection process.
@@ -70,9 +70,9 @@ The Principles and Stress Test Protocol documents are written first because the 
      - Strong/weak response examples.
 
   5. **Large-Scale Replication Scenario**
-     - Setup: The ecosystem grows from 50 to 5,000 participants across 40 AZPOs in 5 countries.
+     - Setup: The ecosystem grows from 50 to 5,000 participants across 40 ETHOS in 5 countries.
      - Pressures: Coordination overhead, cultural diversity, timezone distribution, communication bottlenecks, governance fatigue.
-     - Evaluation criteria: (a) The skill's process remains feasible at scale, (b) authority does not concentrate due to coordination pressure, (c) local autonomy is preserved, (d) cross-AZPO processes work across timezone and language.
+     - Evaluation criteria: (a) The skill's process remains feasible at scale, (b) authority does not concentrate due to coordination pressure, (c) local autonomy is preserved, (d) cross-ETHOS processes work across timezone and language.
      - Strong/weak response examples.
 
   6. **External Legal Pressure Scenario**

@@ -12,7 +12,16 @@
       </button>
       <h2 id="chat-title" class="font-semibold text-base text-neos-text truncate">Conversations</h2>
     </div>
-    <div id="active-skill-badge" class="hidden text-xs px-2 py-1 rounded-full bg-neos-accent/20 text-neos-primary font-medium flex-shrink-0">General</div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <div id="active-skill-badge" class="hidden text-xs px-2 py-1 rounded-full bg-neos-accent/20 text-neos-primary font-medium">General</div>
+      <button type="button" id="chat-new-btn"
+              class="hidden p-1.5 rounded hover:bg-neos-surface-alt text-neos-muted flex-shrink-0"
+              onclick="startNewConversation()" title="New conversation">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+      </button>
+    </div>
   </div>
 
   {# ---- VIEW 1: CONVERSATION LIST ---- #}
@@ -115,6 +124,7 @@
   const convListView = document.getElementById('conv-list-view');
   const activeChatView = document.getElementById('active-chat-view');
   const backBtn = document.getElementById('chat-back-btn');
+  const newBtn = document.getElementById('chat-new-btn');
   const chatTitle = document.getElementById('chat-title');
   const skillBadge = document.getElementById('active-skill-badge');
   const readonlyBanner = document.getElementById('chat-readonly-banner');
@@ -141,10 +151,11 @@
   }
 
   // --- View management ---
-  function showConversationList() {
+  window.showConversationList = function() {
     convListView.classList.remove('hidden');
     activeChatView.classList.add('hidden');
     backBtn.classList.add('hidden');
+    newBtn.classList.add('hidden');
     skillBadge.classList.add('hidden');
     chatTitle.textContent = 'Conversations';
     isReadOnly = false;
@@ -158,6 +169,7 @@
     convListView.classList.add('hidden');
     activeChatView.classList.remove('hidden');
     backBtn.classList.remove('hidden');
+    newBtn.classList.remove('hidden');
     skillBadge.classList.remove('hidden');
     chatTitle.textContent = title || 'New Conversation';
     isReadOnly = !!readOnly;
@@ -165,6 +177,7 @@
       readonlyBanner.classList.remove('hidden');
       form.classList.add('hidden');
       quickActions.classList.add('hidden');
+      newBtn.classList.add('hidden');
     } else {
       readonlyBanner.classList.add('hidden');
       form.classList.remove('hidden');
@@ -474,11 +487,8 @@
           if (typeof toggleChat === 'function') toggleChat();
         }
       })();
-    } else if (sessionId) {
-      // Restore last active session
-      loadConversation(sessionId);
     } else {
-      // No session: show conversation list
+      // Always start on conversation list so user can choose or start new
       showConversationList();
     }
   })();

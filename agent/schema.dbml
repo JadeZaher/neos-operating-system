@@ -303,7 +303,7 @@ Table advice_entries {
   advice_log_id uuid [not null, ref: > advice_logs.id]
   advisor varchar(255) [not null]
   role varchar(100)
-  azpo varchar(100)
+  ethos varchar(100)
   date date
   advice_text text
   proposer_response text
@@ -359,7 +359,7 @@ Table consent_participants {
   consent_record_id uuid [not null, ref: > consent_records.id]
   name varchar(255) [not null]
   role varchar(100)
-  azpo varchar(100)
+  ethos varchar(100)
   position varchar(50)
   reason text
   round integer

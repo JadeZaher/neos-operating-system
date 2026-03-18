@@ -4,7 +4,7 @@
 protocols:
 
   role_obligations:
-    description: "Formal roles held by the departing member in circles or AZPOs."
+    description: "Formal roles held by the departing member in circles or ETHOS."
     resolution_paths:
       - method: "transfer"
         description: "Identify a willing successor, conduct knowledge transfer, formally reassign."

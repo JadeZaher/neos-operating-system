@@ -29,7 +29,7 @@ Authority in NEOS is scoped, temporary, and reviewable. A role has a defined dom
 Resource requests, funding pool stewardship, and participatory allocation are governed by Ostrom's eight commons principles. The structural rule: economic contribution does not purchase governance authority. A donor's million-dollar gift cannot buy a seat at the decision table. Influence currencies (Current-Sees in OmniOne) are distributed equally — 111 per person.
 
 ### Coordinate Across Autonomous Units Without a Central Office
-Cross-unit requests, shared resource stewardship, federation agreements, and polycentric conflict navigation allow autonomous zones (AZPOs) to cooperate without subordination. The design pattern draws from Ostrom's polycentric governance and the Ottoman millet system's structural separation — minus the Sultan.
+Cross-unit requests, shared resource stewardship, federation agreements, and polycentric conflict navigation allow autonomous zones (ETHOS) to cooperate without subordination. The design pattern draws from Ostrom's polycentric governance and the Ottoman millet system's structural separation — minus the Sultan.
 
 ### Resolve Conflict Without Courts or Punishment
 Harm circles, NVC dialogue, repair agreements, coaching interventions, and escalation triage provide a full conflict resolution pathway grounded in Transformative Justice and Restorative Justice. The goal is repair, not punishment. The structural guarantee: accessible, low-barrier conflict resolution at every level.
@@ -76,7 +76,7 @@ Universal Agreement Field (UAF)
   └── Ecosystem Agreement (e.g., Master Plan)
        └── Access Agreement (e.g., space-specific rules)
             └── Stewardship Agreement (e.g., role-specific commitments)
-                 └── AZPO Agreement Field (organizational unit agreements)
+                 └── ETHOS Agreement Field (organizational unit agreements)
                       └── Culture Code (circle-internal norms)
                            └── Personal Commitments
 ```
@@ -175,7 +175,7 @@ An AI agent reads a skill and can guide a participant through it. An ecosystem a
 - `access-economy-transition` — Transition from ownership to access models
 
 ### Layer V: Inter-Unit Coordination (5 skills)
-- `cross-azpo-request` — Request cooperation across autonomous units
+- `cross-ethos-request` — Request cooperation across autonomous units
 - `shared-resource-stewardship` — Manage resources shared between units
 - `federation-agreement` — Form agreements between autonomous units
 - `inter-unit-liaison` — Define liaison roles between units
@@ -214,7 +214,7 @@ An AI agent reads a skill and can guide a participant through it. An ecosystem a
 - `voluntary-exit` — Structured, dignified departure process
 - `commitment-unwinding` — Orderly unwinding of active commitments
 - `portable-record` — Export governance history in portable format
-- `azpo-dissolution` — Dissolve an autonomous unit gracefully
+- `ethos-dissolution` — Dissolve an autonomous unit gracefully
 - `re-entry-integration` — Return to the ecosystem after departure
 
 ---

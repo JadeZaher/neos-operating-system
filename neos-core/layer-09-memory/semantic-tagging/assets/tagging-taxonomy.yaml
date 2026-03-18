@@ -60,8 +60,8 @@ taxonomy:
       description: "Geographic or organizational scope of the decision's impact"
       type: enum
       values:
-        single-azpo: "Affects one AZPO only"
-        cross-azpo: "Affects multiple AZPOs"
+        single-ethos: "Affects one ETHOS only"
+        cross-ethos: "Affects multiple ETHOS"
         ecosystem-wide: "Affects the entire ecosystem"
 
     urgency_at_time:

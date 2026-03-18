@@ -14,13 +14,13 @@ Without explicit pool governance, treasuries become black boxes controlled by wh
 
 ## B. Domain Scope
 
-This skill applies to any collective resource pool within the ecosystem, from a single circle's operational budget to the ecosystem-wide strategic reserve. Pool types include: circle operational pools (funding day-to-day circle activities), ecosystem strategic pools (funding cross-cutting initiatives), cross-AZPO shared pools (jointly governed by multiple units), project-specific pools (time-bounded allocations for defined projects), and emergency reserve pools (accessible only under emergency protocols). Out of scope: individual resource requests from pools (see resource-request), collective allocation assemblies that distribute pool resources (see participatory-allocation), and monitoring of resource flows across pools (see commons-monitoring). The skill governs the pool itself -- its creation, structure, rules, stewards, and lifecycle -- not the individual transactions that flow through it.
+This skill applies to any collective resource pool within the ecosystem, from a single circle's operational budget to the ecosystem-wide strategic reserve. Pool types include: circle operational pools (funding day-to-day circle activities), ecosystem strategic pools (funding cross-cutting initiatives), cross-ETHOS shared pools (jointly governed by multiple units), project-specific pools (time-bounded allocations for defined projects), and emergency reserve pools (accessible only under emergency protocols). Out of scope: individual resource requests from pools (see resource-request), collective allocation assemblies that distribute pool resources (see participatory-allocation), and monitoring of resource flows across pools (see commons-monitoring). The skill governs the pool itself -- its creation, structure, rules, stewards, and lifecycle -- not the individual transactions that flow through it.
 
 ## C. Trigger Conditions
 
 - A circle identifies the need for a dedicated resource pool to fund its operations or projects
 - The ecosystem establishes a new strategic priority requiring dedicated funding
-- Two or more AZPOs agree to create a shared pool for cross-unit collaboration
+- Two or more ETHOS agree to create a shared pool for cross-unit collaboration
 - A project receives dedicated funding that requires ring-fenced governance
 - An existing pool's governance agreement reaches its review date
 - A pool steward rotates out and a new steward must be appointed with defined authority
@@ -29,7 +29,7 @@ This skill applies to any collective resource pool within the ecosystem, from a 
 
 ## D. Required Inputs
 
-- **Pool name and type**: descriptive name and category (circle_operational, ecosystem_strategic, cross_azpo_shared, project_specific, emergency_reserve) (mandatory, provided by the proposing circle or steward)
+- **Pool name and type**: descriptive name and category (circle_operational, ecosystem_strategic, cross_ethos_shared, project_specific, emergency_reserve) (mandatory, provided by the proposing circle or steward)
 - **Governing circle**: which circle holds governance authority over the pool (mandatory, must be a circle with domain authority per domain-mapping)
 - **Domain boundary**: what resources the pool covers and what falls outside it (mandatory, defined by the proposing circle)
 - **Steward nominees**: one or more individuals proposed to manage day-to-day pool operations (mandatory, with role and authority scope for each)
@@ -47,7 +47,7 @@ This skill applies to any collective resource pool within the ecosystem, from a 
 4. **Route to ACT.** The pool governance agreement enters the ACT process:
    - *Circle operational pool*: circle-level consent (standard 14-day timeline).
    - *Ecosystem strategic pool*: ecosystem-level consent with OSC involvement (21-day timeline).
-   - *Cross-AZPO shared pool*: consent from each participating AZPO (21-day timeline, parallel processing).
+   - *Cross-ETHOS shared pool*: consent from each participating ETHOS (21-day timeline, parallel processing).
    - *Project-specific pool*: consent from the sponsoring circle (14-day timeline).
    - *Emergency reserve pool*: ecosystem-level consent with OSC involvement (21-day timeline).
 5. **Enter Advice phase.** Per act-advice-phase: the pool proposal is announced to all affected participants. Advice covers: whether the pool boundaries overlap with existing pools, whether the inflow sources are sustainable, whether the outflow thresholds are appropriate, and whether the steward nominees are suitable.
@@ -68,7 +68,7 @@ A pool governance document following `assets/pool-governance-template.yaml`. The
 - **No steward** can modify the pool's governance rules (inflow sources, outflow thresholds, boundaries) without running the agreement amendment process through ACT.
 - **Stewards** manage operations within their defined scope; they do not own the pool or have preferential access to its resources.
 - **OSC** has oversight authority over ecosystem strategic pools and emergency reserves but cannot override circle-level pool governance without invoking the full escalation path.
-- **Cross-AZPO pool stewards** require consent from all participating AZPOs for changes that affect shared governance rules. Unilateral changes by one AZPO are structurally blocked.
+- **Cross-ETHOS pool stewards** require consent from all participating ETHOS for changes that affect shared governance rules. Unilateral changes by one ETHOS are structurally blocked.
 - Authority scopes are time-limited. Steward appointments include a rotation date (maximum 12 months). Reappointment requires a new consent round.
 
 ## H. Capture Resistance Check
@@ -112,11 +112,11 @@ When a significant contributor to pool inflows exits:
 
 ## L. Cross-Unit Interoperability Impact
 
-- Cross-AZPO shared pools require governance agreements consented by all participating AZPOs. Changes to shared pool governance require consent from every participating unit.
-- Each AZPO maintains its own circle operational pools. These do not require cross-unit notification unless a disbursement affects another AZPO's domain.
-- When an AZPO creates a pool that overlaps in domain with another AZPO's existing pool, the advice phase must include notification to the overlapping AZPO. Boundary conflicts are resolved before pool activation.
-- Pool governance agreements for cross-AZPO pools are registered in every participating AZPO's agreement registry with synchronized status.
-- Ecosystem strategic pools are governed at the ecosystem level and accessible to all AZPOs through the resource-request skill. Individual AZPOs cannot restrict other AZPOs' access to ecosystem pools.
+- Cross-ETHOS shared pools require governance agreements consented by all participating ETHOS. Changes to shared pool governance require consent from every participating unit.
+- Each ETHOS maintains its own circle operational pools. These do not require cross-unit notification unless a disbursement affects another ETHOS's domain.
+- When an ETHOS creates a pool that overlaps in domain with another ETHOS's existing pool, the advice phase must include notification to the overlapping ETHOS. Boundary conflicts are resolved before pool activation.
+- Pool governance agreements for cross-ETHOS pools are registered in every participating ETHOS's agreement registry with synchronized status.
+- Ecosystem strategic pools are governed at the ecosystem level and accessible to all ETHOS through the resource-request skill. Individual ETHOS cannot restrict other ETHOS' access to ecosystem pools.
 - Cross-ecosystem pool sharing (between separate NEOS ecosystems) uses the inter-unit coordination protocol (Layer V, deferred).
 
 ## OmniOne Walkthrough
@@ -149,7 +149,7 @@ Marcus, a charismatic founding steward of OmniOne's largest circle operational p
 
 ### 4. High Conflict / Polarization
 
-The OmniOne ecosystem is deeply divided over whether to create a new cross-AZPO shared pool for land acquisition. Faction A believes OmniOne should collectively purchase land for new SHUR communities. Faction B believes land ownership contradicts access-economy principles and the ecosystem should only lease or steward land held by others. The pool creation proposal enters ACT and receives five objections, each citing fundamentally different visions of OmniOne's relationship to property. At GAIA Level 4, a coach facilitates a third-solution exploration. The resulting proposal reframes the pool as a "Land Stewardship Fund" that can fund both acquisition and lease arrangements, with each specific disbursement requiring its own consent round that evaluates alignment with the access-economy transition stage. Neither faction's framing dominates the pool's structural design. The coach ensures the governance agreement explicitly addresses the philosophical tension rather than papering over it with ambiguous language.
+The OmniOne ecosystem is deeply divided over whether to create a new cross-ETHOS shared pool for land acquisition. Faction A believes OmniOne should collectively purchase land for new SHUR communities. Faction B believes land ownership contradicts access-economy principles and the ecosystem should only lease or steward land held by others. The pool creation proposal enters ACT and receives five objections, each citing fundamentally different visions of OmniOne's relationship to property. At GAIA Level 4, a coach facilitates a third-solution exploration. The resulting proposal reframes the pool as a "Land Stewardship Fund" that can fund both acquisition and lease arrangements, with each specific disbursement requiring its own consent round that evaluates alignment with the access-economy transition stage. Neither faction's framing dominates the pool's structural design. The coach ensures the governance agreement explicitly addresses the philosophical tension rather than papering over it with ambiguous language.
 
 ### 5. Large-Scale Replication
 
@@ -161,4 +161,4 @@ Portuguese authorities require that any collective fund exceeding EUR 10,000 reg
 
 ### 7. Sudden Exit of 30% of Participants
 
-Following a contentious decision about OmniOne's expansion strategy, 1,500 of 5,000 members exit within three weeks. Pool governance faces immediate impact: some pools lose their stewards, inflow sources shrink as departing members' contributions cease, and several circles fall below the membership threshold for maintaining independent pools. The skill's response is structural, not panic-driven. Pools that lose their steward revert to governing circle collective stewardship -- the circle assumes disbursement authority through consent for all amounts until a new steward is appointed. Pools with drastically reduced inflows trigger early governance reviews to assess viability. Circles that shrink below the minimum viable size for independent pool governance may merge their pools with a parent AZPO's pool through the sunset process. Existing pool governance agreements remain valid -- the departure does not retroactively invalidate legitimate governance structures. The commons-monitoring skill triggers an ecosystem-wide resource health assessment to identify which pools are at risk and recommend consolidation where needed.
+Following a contentious decision about OmniOne's expansion strategy, 1,500 of 5,000 members exit within three weeks. Pool governance faces immediate impact: some pools lose their stewards, inflow sources shrink as departing members' contributions cease, and several circles fall below the membership threshold for maintaining independent pools. The skill's response is structural, not panic-driven. Pools that lose their steward revert to governing circle collective stewardship -- the circle assumes disbursement authority through consent for all amounts until a new steward is appointed. Pools with drastically reduced inflows trigger early governance reviews to assess viability. Circles that shrink below the minimum viable size for independent pool governance may merge their pools with a parent ETHOS's pool through the sunset process. Existing pool governance agreements remain valid -- the departure does not retroactively invalidate legitimate governance structures. The commons-monitoring skill triggers an ecosystem-wide resource health assessment to identify which pools are at risk and recommend consolidation where needed.

@@ -14,7 +14,7 @@ Without a formal resource request process, resources flow through informal chann
 
 ## B. Domain Scope
 
-This skill applies to any participant requesting resources from any funding pool within the ecosystem. Resource types include financial disbursements, physical asset loans, time allocations from shared labor pools, access permissions to spaces or tools, and expertise commitments from other participants. The skill covers requests at every scale: circle operational pools, cross-AZPO shared pools, ecosystem strategic pools, project-specific pools, and emergency reserves. Out of scope: how funding pools are created and governed (see funding-pool-stewardship), how pools are collectively allocated in bulk (see participatory-allocation), and how external resources enter the ecosystem (external fundraising is outside NEOS scope). The requester must operate within a domain defined by domain-mapping (Layer II) and cannot request resources from pools outside their domain without cross-unit routing.
+This skill applies to any participant requesting resources from any funding pool within the ecosystem. Resource types include financial disbursements, physical asset loans, time allocations from shared labor pools, access permissions to spaces or tools, and expertise commitments from other participants. The skill covers requests at every scale: circle operational pools, cross-ETHOS shared pools, ecosystem strategic pools, project-specific pools, and emergency reserves. Out of scope: how funding pools are created and governed (see funding-pool-stewardship), how pools are collectively allocated in bulk (see participatory-allocation), and how external resources enter the ecosystem (external fundraising is outside NEOS scope). The requester must operate within a domain defined by domain-mapping (Layer II) and cannot request resources from pools outside their domain without cross-unit routing.
 
 ## C. Trigger Conditions
 
@@ -22,7 +22,7 @@ This skill applies to any participant requesting resources from any funding pool
 - A circle identifies an operational expense that requires funding pool disbursement
 - A project reaches a milestone that triggers a pre-approved resource release
 - An emergency creates urgent resource needs that invoke compressed timelines
-- A cross-AZPO collaboration requires resource commitments from multiple pools
+- A cross-ETHOS collaboration requires resource commitments from multiple pools
 - A stewardship review reveals that a previously allocated resource needs renewal or expansion
 
 ## D. Required Inputs
@@ -103,10 +103,10 @@ When a requester exits the ecosystem:
 
 ## L. Cross-Unit Interoperability Impact
 
-- Resource requests that target pools governed by a different AZPO require **cross-unit notification** before entering the advice phase. The target AZPO must acknowledge the request before it can proceed.
-- The target AZPO's pool governance rules apply to the decision process, not the requester's home AZPO rules.
-- Cross-AZPO requests are registered in both AZPOs' records with linked entries and synchronized status updates.
-- When a resource request spans multiple pools across AZPOs, each pool processes its portion independently. Partial approval from one pool does not obligate another.
+- Resource requests that target pools governed by a different ETHOS require **cross-unit notification** before entering the advice phase. The target ETHOS must acknowledge the request before it can proceed.
+- The target ETHOS's pool governance rules apply to the decision process, not the requester's home ETHOS rules.
+- Cross-ETHOS requests are registered in both ETHOS' records with linked entries and synchronized status updates.
+- When a resource request spans multiple pools across ETHOS, each pool processes its portion independently. Partial approval from one pool does not obligate another.
 - Cross-ecosystem resource requests (between separate NEOS ecosystems) use the inter-unit coordination protocol (Layer V, deferred). This skill's routing logic can extend to include cross-ecosystem routing when Layer V is available.
 
 ## OmniOne Walkthrough
@@ -143,7 +143,7 @@ The Technology circle is deeply split on a $10,000 resource request to license p
 
 ### 5. Large-Scale Replication
 
-OmniOne scales to 5,000 participants across 15 SHUR locations and 80 circles. Resource requests scale through domain-scoped routing: a request from the Agriculture circle at SHUR Costa Rica involves only that circle's pool and members, not all 5,000 participants. The request template remains identical at every scale. What changes is the routing: with 80 circles each managing their own operational pools, most requests resolve at the circle level without ecosystem involvement. The pool steward discretion threshold (5% of pool) handles routine small requests without convening full consent processes. Cross-AZPO requests increase in frequency as circles collaborate across locations, but each request routes through the established cross-unit protocol rather than requiring a new process. The agreement registry tracks thousands of resource requests with consistent metadata, enabling pattern analysis through the commons-monitoring skill. Facilitator capacity scales through trained facilitators in each circle -- no single facilitator bottleneck exists.
+OmniOne scales to 5,000 participants across 15 SHUR locations and 80 circles. Resource requests scale through domain-scoped routing: a request from the Agriculture circle at SHUR Costa Rica involves only that circle's pool and members, not all 5,000 participants. The request template remains identical at every scale. What changes is the routing: with 80 circles each managing their own operational pools, most requests resolve at the circle level without ecosystem involvement. The pool steward discretion threshold (5% of pool) handles routine small requests without convening full consent processes. Cross-ETHOS requests increase in frequency as circles collaborate across locations, but each request routes through the established cross-unit protocol rather than requiring a new process. The agreement registry tracks thousands of resource requests with consistent metadata, enabling pattern analysis through the commons-monitoring skill. Facilitator capacity scales through trained facilitators in each circle -- no single facilitator bottleneck exists.
 
 ### 6. External Legal Pressure
 

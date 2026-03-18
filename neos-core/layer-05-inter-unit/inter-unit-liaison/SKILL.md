@@ -1,100 +1,100 @@
 ---
 name: inter-unit-liaison
-description: "Define and maintain ongoing cross-AZPO coordination through designated liaison roles -- with explicit mandate boundaries, accountability structures, and mandatory rotation to prevent information capture."
+description: "Define and maintain ongoing cross-ETHOS coordination through designated liaison roles -- with explicit mandate boundaries, accountability structures, and mandatory rotation to prevent information capture."
 layer: 5
 version: 0.1.0
-depends_on: [cross-azpo-request, federation-agreement, role-assignment]
+depends_on: [cross-ethos-request, federation-agreement, role-assignment]
 ---
 
 # inter-unit-liaison
 
 ## A. Structural Problem It Solves
 
-Without designated liaison roles, cross-AZPO coordination depends on whoever happens to know someone in the other unit -- informal channels that concentrate information and influence in a few well-connected individuals. Alternatively, coordination falls to leadership figures who accumulate inter-unit authority through reputation rather than mandate. This skill creates formal liaison roles with explicit mandate boundaries so coordination is accountable, distributed, and does not become a bottleneck. Mandatory rotation prevents any individual from becoming the irreplaceable bridge between AZPOs.
+Without designated liaison roles, cross-ETHOS coordination depends on whoever happens to know someone in the other unit -- informal channels that concentrate information and influence in a few well-connected individuals. Alternatively, coordination falls to leadership figures who accumulate inter-unit authority through reputation rather than mandate. This skill creates formal liaison roles with explicit mandate boundaries so coordination is accountable, distributed, and does not become a bottleneck. Mandatory rotation prevents any individual from becoming the irreplaceable bridge between ETHOS.
 
 ## B. Domain Scope
 
-This skill applies to any ongoing coordination relationship between AZPOs that benefits from a designated point person. Liaison types include:
+This skill applies to any ongoing coordination relationship between ETHOS that benefits from a designated point person. Liaison types include:
 
-- **Bilateral liaison** -- between two AZPOs for general or domain-specific coordination
-- **Multilateral coordinator** -- across three or more AZPOs for a shared domain (e.g., economics, education, governance)
+- **Bilateral liaison** -- between two ETHOS for general or domain-specific coordination
+- **Multilateral coordinator** -- across three or more ETHOS for a shared domain (e.g., economics, education, governance)
 - **Domain-specific liaison** -- focused on a particular area like resource sharing, member mobility, or conflict resolution
 
-The liaison role does not replace the cross-azpo-request process. Other members can still communicate across AZPO boundaries directly. The liaison is not a gatekeeper.
+The liaison role does not replace the cross-ethos-request process. Other members can still communicate across ETHOS boundaries directly. The liaison is not a gatekeeper.
 
 ## C. Trigger Conditions
 
-- A federation agreement specifies that participating AZPOs designate liaison contacts for ongoing coordination
-- A shared resource stewardship arrangement generates recurring cross-AZPO communication exceeding what ad-hoc requests can efficiently handle
-- Cross-AZPO request volume between two AZPOs warrants a standing coordination point
-- A multilateral coordination group needs a named point person from each participating AZPO
+- A federation agreement specifies that participating ETHOS designate liaison contacts for ongoing coordination
+- A shared resource stewardship arrangement generates recurring cross-ETHOS communication exceeding what ad-hoc requests can efficiently handle
+- Cross-ETHOS request volume between two ETHOS warrants a standing coordination point
+- A multilateral coordination group needs a named point person from each participating ETHOS
 
 ## D. Required Inputs
 
-- **Participating AZPOs** -- all units involved in the liaison relationship (mandatory)
+- **Participating ETHOS** -- all units involved in the liaison relationship (mandatory)
 - **Liaison type** -- bilateral, multilateral, or domain-specific (mandatory)
-- **Proposed mandate scope** -- defined in four layers: (a) can communicate freely, (b) can explore and discuss, (c) can recommend to home AZPO, (d) requires home AZPO consent before proceeding (mandatory)
-- **Proposed person** -- named individual, must be a member in good standing of their home AZPO (mandatory)
-- **Reporting cadence** -- how often the liaison reports to their home AZPO (mandatory; default: monthly)
+- **Proposed mandate scope** -- defined in four layers: (a) can communicate freely, (b) can explore and discuss, (c) can recommend to home ETHOS, (d) requires home ETHOS consent before proceeding (mandatory)
+- **Proposed person** -- named individual, must be a member in good standing of their home ETHOS (mandatory)
+- **Reporting cadence** -- how often the liaison reports to their home ETHOS (mandatory; default: monthly)
 - **Term duration** -- proposed term length (default: 12 months; maximum: 24 months total with one extension)
 
 ## E. Step-by-Step Process
 
-1. **Identify coordination need.** One or more AZPOs recognize that ongoing cross-unit coordination warrants a standing liaison role. The trigger condition is documented.
-2. **Draft liaison proposal.** The proposing AZPO drafts the proposal specifying type, proposed person, mandate scope in four layers, reporting cadence, and term. The four-layer mandate makes authority boundaries explicit.
-3. **Mandate review by all participating AZPOs.** Each AZPO runs an internal advice phase on the mandate scope. Each may propose adjustments. The mandate is collaboratively refined until all AZPOs consent to the boundary definitions.
-4. **Appoint liaison through role-assignment.** The home AZPO appoints the liaison using the role-assignment skill, with the mandate as the authority scope. Appointment recorded in the home AZPO's registry.
-5. **Register in all participating AZPOs' registries.** The liaison role agreement is registered in every participating AZPO's registry with linked entries.
-6. **Operate with regular reporting.** The liaison reports on: topics discussed, items explored, recommendations made, items escalated for home AZPO consent, and mandate boundary questions encountered.
-7. **Mid-term check (optional).** At 6 months, the home AZPO reviews the reporting log and confirms the mandate remains appropriate. Mandate adjustments require re-running Step 3.
-8. **Term review.** At term end, the home AZPO reviews mandate adherence, reporting quality, and coordination outcomes. Options: conclude the role, extend for one additional 12-month term, or rotate to a new liaison.
+1. **Identify coordination need.** One or more ETHOS recognize that ongoing cross-unit coordination warrants a standing liaison role. The trigger condition is documented.
+2. **Draft liaison proposal.** The proposing ETHOS drafts the proposal specifying type, proposed person, mandate scope in four layers, reporting cadence, and term. The four-layer mandate makes authority boundaries explicit.
+3. **Mandate review by all participating ETHOS.** Each ETHOS runs an internal advice phase on the mandate scope. Each may propose adjustments. The mandate is collaboratively refined until all ETHOS consent to the boundary definitions.
+4. **Appoint liaison through role-assignment.** The home ETHOS appoints the liaison using the role-assignment skill, with the mandate as the authority scope. Appointment recorded in the home ETHOS's registry.
+5. **Register in all participating ETHOS' registries.** The liaison role agreement is registered in every participating ETHOS's registry with linked entries.
+6. **Operate with regular reporting.** The liaison reports on: topics discussed, items explored, recommendations made, items escalated for home ETHOS consent, and mandate boundary questions encountered.
+7. **Mid-term check (optional).** At 6 months, the home ETHOS reviews the reporting log and confirms the mandate remains appropriate. Mandate adjustments require re-running Step 3.
+8. **Term review.** At term end, the home ETHOS reviews mandate adherence, reporting quality, and coordination outcomes. Options: conclude the role, extend for one additional 12-month term, or rotate to a new liaison.
 9. **Rotation.** At the mandatory rotation point, the outgoing liaison documents all in-progress coordination items. The successor is appointed through Steps 3-5 with a fresh mandate review.
 
 ## F. Output Artifact
 
-A liaison role agreement following `assets/liaison-mandate-template.yaml`, containing: role ID, liaison name, home AZPO, participating AZPOs, liaison type, four-layer mandate scope, reporting cadence, term dates, maximum term date, review schedule, and designated successor process. Registered in all participating AZPOs' registries with linked entries.
+A liaison role agreement following `assets/liaison-mandate-template.yaml`, containing: role ID, liaison name, home ETHOS, participating ETHOS, liaison type, four-layer mandate scope, reporting cadence, term dates, maximum term date, review schedule, and designated successor process. Registered in all participating ETHOS' registries with linked entries.
 
 ## G. Authority Boundary Check
 
 - **No binding commitments** without explicit authorization for the specific commitment. Commitments outside the mandate are void.
-- **No intra-AZPO authority** in any participating AZPO except within the mandate scope. The liaison is a coordination channel, not a decision-maker.
-- **Others can still communicate** across AZPO boundaries without routing through the liaison. The liaison does not become a gatekeeper or exclusive channel.
-- **Mandate scope requires mutual consent** from all participating AZPOs. One AZPO cannot unilaterally expand the liaison's authority.
+- **No intra-ETHOS authority** in any participating ETHOS except within the mandate scope. The liaison is a coordination channel, not a decision-maker.
+- **Others can still communicate** across ETHOS boundaries without routing through the liaison. The liaison does not become a gatekeeper or exclusive channel.
+- **Mandate scope requires mutual consent** from all participating ETHOS. One ETHOS cannot unilaterally expand the liaison's authority.
 - **Maximum term is structurally enforced.** No individual holds the same liaison role for more than 24 months. This is not configurable above 24 months.
 
 ## H. Capture Resistance Check
 
-**Information asymmetry capture.** The liaison accumulates knowledge about inter-AZPO affairs that no other person holds, gaining informal influence beyond their mandate. Resistance: monthly reporting requires sharing information with the home AZPO. Reports are visible to participating AZPOs. Omissions surface as reviewable gaps. The mandatory rotation ensures no individual is the permanent keeper of inter-unit knowledge.
+**Information asymmetry capture.** The liaison accumulates knowledge about inter-ETHOS affairs that no other person holds, gaining informal influence beyond their mandate. Resistance: monthly reporting requires sharing information with the home ETHOS. Reports are visible to participating ETHOS. Omissions surface as reviewable gaps. The mandatory rotation ensures no individual is the permanent keeper of inter-unit knowledge.
 
 **Relationship capture.** The liaison develops personal relationships with counterparts that override structural accountability -- sharing information outside mandate scope, making informal commitments, or softening positions to maintain personal goodwill. Resistance: reporting logs document what topics were discussed and positions taken. Patterns deviating from mandate scope become visible over time. Mid-term checks review this explicitly.
 
-**Bottleneck capture.** The liaison becomes the only practical channel for cross-AZPO communication, creating a single point of failure and concentrated informal power. Resistance: the skill affirms that any member can use cross-azpo-request directly. If a liaison actively discourages direct cross-AZPO contact, this is treated as mandate overreach.
+**Bottleneck capture.** The liaison becomes the only practical channel for cross-ETHOS communication, creating a single point of failure and concentrated informal power. Resistance: the skill affirms that any member can use cross-ethos-request directly. If a liaison actively discourages direct cross-ETHOS contact, this is treated as mandate overreach.
 
-**Home AZPO capture.** The liaison prioritizes their home AZPO's interests, making them an ineffective coordination channel. Resistance: the mandate is defined collaboratively by all participating AZPOs, not just the liaison's home unit. Multilateral coordinators are reviewed by all participating AZPOs, not just the home AZPO.
+**Home ETHOS capture.** The liaison prioritizes their home ETHOS's interests, making them an ineffective coordination channel. Resistance: the mandate is defined collaboratively by all participating ETHOS, not just the liaison's home unit. Multilateral coordinators are reviewed by all participating ETHOS, not just the home ETHOS.
 
 ## I. Failure Containment Logic
 
-- **Liaison exceeds mandate:** Any commitment outside the four-layer scope is void. The affected AZPO notifies the liaison's home AZPO. First instance: documented warning and mandate clarification. Second instance: role review and possible early rotation.
-- **Liaison role becomes vacant:** Cross-AZPO coordination continues through direct cross-azpo-request process. The vacancy does not suspend coordination. Successor appointment begins within 30 days.
+- **Liaison exceeds mandate:** Any commitment outside the four-layer scope is void. The affected ETHOS notifies the liaison's home ETHOS. First instance: documented warning and mandate clarification. Second instance: role review and possible early rotation.
+- **Liaison role becomes vacant:** Cross-ETHOS coordination continues through direct cross-ethos-request process. The vacancy does not suspend coordination. Successor appointment begins within 30 days.
 - **Liaison conflicts with counterpart:** The liaison flags the conflict in their reporting log. If structural (not personal), escalation goes to polycentric-conflict-navigation.
-- **Mandate scope contested:** A participating AZPO believes the liaison acted within mandate but the receiving AZPO disagrees. Joint review of the specific incident against the documented mandate. If unresolved, escalate to polycentric-conflict-navigation.
+- **Mandate scope contested:** A participating ETHOS believes the liaison acted within mandate but the receiving ETHOS disagrees. Joint review of the specific incident against the documented mandate. If unresolved, escalate to polycentric-conflict-navigation.
 
 ## J. Expiry / Review Condition
 
 - **Default term:** 12 months with one 12-month extension. Maximum total: 24 months.
 - **Mandatory rotation:** After maximum term, the same person cannot hold the same role for at least 12 months.
-- **Reporting cadence:** Monthly recommended. Two consecutive missed reports trigger a mandatory check-in with the home AZPO's relevant circle.
+- **Reporting cadence:** Monthly recommended. Two consecutive missed reports trigger a mandatory check-in with the home ETHOS's relevant circle.
 - **Term review** uses the role-assignment review process. If the role continues, a new liaison is appointed (rotation) or the current liaison is extended through a fresh consent round.
 
 ## K. Exit Compatibility Check
 
-- **Liaison exits AZPO or ecosystem:** Role vacated immediately. Home AZPO notifies participating AZPOs within 7 days. In-progress coordination items are documented by the home AZPO within 14 days. Successor appointment begins immediately.
-- **No binding obligations survive exit.** Explorations are not commitments. Items that reached the "requires AZPO consent" layer but did not receive consent are treated as open threads for the successor.
-- **Home AZPO responsibility:** Documentation of in-progress items is the home AZPO's obligation, not solely the departing liaison's. This ensures institutional memory survives exit.
+- **Liaison exits ETHOS or ecosystem:** Role vacated immediately. Home ETHOS notifies participating ETHOS within 7 days. In-progress coordination items are documented by the home ETHOS within 14 days. Successor appointment begins immediately.
+- **No binding obligations survive exit.** Explorations are not commitments. Items that reached the "requires ETHOS consent" layer but did not receive consent are treated as open threads for the successor.
+- **Home ETHOS responsibility:** Documentation of in-progress items is the home ETHOS's obligation, not solely the departing liaison's. This ensures institutional memory survives exit.
 
 ## L. Cross-Unit Interoperability Impact
 
-The liaison role agreement is registered in all participating AZPOs' registries. No AZPO is the "owner" of the liaison relationship. Changes to the mandate require consent from all participating AZPOs. When the role spans more than two AZPOs, the agreement lists all participants and is registered in each. The liaison skill references cross-azpo-request (fallback when no liaison exists), federation-agreement (the broader framework within which liaison roles often operate), and role-assignment (how the liaison is formally appointed).
+The liaison role agreement is registered in all participating ETHOS' registries. No ETHOS is the "owner" of the liaison relationship. Changes to the mandate require consent from all participating ETHOS. When the role spans more than two ETHOS, the agreement lists all participants and is registered in each. The liaison skill references cross-ethos-request (fallback when no liaison exists), federation-agreement (the broader framework within which liaison roles often operate), and role-assignment (how the liaison is formally appointed).
 
 ## OmniOne Walkthrough
 
@@ -130,7 +130,7 @@ Flooding displaces Costa Rica SHUR members, creating urgent need for inter-SHUR 
 
 ### 3. Leadership Charisma Capture
 
-Rafi is widely liked across all three SHURs. Other AZPOs begin directing non-Economics requests to him -- housing, governance, member transfers. Rafi enjoys the expanded role. His June report lists topics outside the Economics domain. Bali's circle convenes a review: the mandate is scoped to Economics, and the informal expansion is not sanctioned. The circle communicates to other SHURs that cross-domain requests should route through cross-azpo-request or domain-specific liaisons. The mid-term check becomes mandatory. The rotation provision ensures this pattern cannot persist beyond the maximum 24-month term.
+Rafi is widely liked across all three SHURs. Other ETHOS begin directing non-Economics requests to him -- housing, governance, member transfers. Rafi enjoys the expanded role. His June report lists topics outside the Economics domain. Bali's circle convenes a review: the mandate is scoped to Economics, and the informal expansion is not sanctioned. The circle communicates to other SHURs that cross-domain requests should route through cross-ethos-request or domain-specific liaisons. The mid-term check becomes mandatory. The rotation provision ensures this pattern cannot persist beyond the maximum 24-month term.
 
 ### 4. High Conflict
 
@@ -138,7 +138,7 @@ A significant policy disagreement emerges between Bali and Costa Rica about trav
 
 ### 5. Large-Scale Replication
 
-OmniOne grows to 15 SHURs with 5 coordination domains. The skill scales through two provisions: (a) domain-specific types mean each domain has its own liaison with its own mandate (recommended: one active liaison role per person at a time); (b) multilateral coordinators allow one person per AZPO per domain rather than needing separate bilateral liaisons for each pair. With 15 SHURs and 5 domains, total roles are manageable. The agreement registry's cross-linked entries make the liaison network visible. Mandatory rotation prevents a permanent liaison class from forming.
+OmniOne grows to 15 SHURs with 5 coordination domains. The skill scales through two provisions: (a) domain-specific types mean each domain has its own liaison with its own mandate (recommended: one active liaison role per person at a time); (b) multilateral coordinators allow one person per ETHOS per domain rather than needing separate bilateral liaisons for each pair. With 15 SHURs and 5 domains, total roles are manageable. The agreement registry's cross-linked entries make the liaison network visible. Mandatory rotation prevents a permanent liaison class from forming.
 
 ### 6. External Legal Pressure
 
@@ -146,4 +146,4 @@ Indonesia requires inter-organizational coordination bodies to designate a legal
 
 ### 7. Sudden Exit of 30% of Participants
 
-Six liaison role-holders across three SHURs exit simultaneously. The cross-azpo-request process handles all coordination during vacancies. Each home AZPO documents in-progress threads within 14 days. Successor appointments begin within 30 days. No in-progress coordination thread creates binding obligation simply because a liaison was exploring it. The 30-day documentation period allows coordination groups to assess whether all vacant roles need immediate refilling or whether some can be consolidated.
+Six liaison role-holders across three SHURs exit simultaneously. The cross-ethos-request process handles all coordination during vacancies. Each home ETHOS documents in-progress threads within 14 days. Successor appointments begin within 30 days. No in-progress coordination thread creates binding obligation simply because a liaison was exploring it. The 30-day documentation period allows coordination groups to assess whether all vacant roles need immediate refilling or whether some can be consolidated.

@@ -1,15 +1,15 @@
-# Cross-AZPO Request Template
+# Cross-ETHOS Request Template
 # Layer V -- Inter-Unit Coordination
-# Use this template for any request crossing AZPO boundaries
+# Use this template for any request crossing ETHOS boundaries
 
-request_id: "XAZR-[OriginAZPO]-[TargetAZPO]-[YYYY]-[Seq]"
+request_id: "XAZR-[OriginETHOS]-[TargetETHOS]-[YYYY]-[Seq]"
 
-originating_azpo:
+originating_ethos:
   name: ""
   contact_person: ""
   contact_role: ""
 
-target_azpo:
+target_ethos:
   name: ""
   inbound_contact: ""
 
@@ -34,7 +34,7 @@ desired_timeline:
 authority_basis: ""  # what gives the requester standing
 
 outbound_authorization:
-  method: ""  # circle-consent | steward-authorization | azpo-consent
+  method: ""  # circle-consent | steward-authorization | ethos-consent
   date: ""
   participants: []
   positions: []  # consent | stand-aside | objection
@@ -57,5 +57,5 @@ resolution:
   review_date: ""  # required if ongoing commitments exist
 
 registry_entries:
-  originating_azpo_registry_id: ""
-  target_azpo_registry_id: ""
+  originating_ethos_registry_id: ""
+  target_ethos_registry_id: ""

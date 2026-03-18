@@ -70,7 +70,7 @@ _PRINCIPLES = [
 ]
 
 _TERMINOLOGY: list[tuple[str, str]] = [
-    ("AZPO", "Autonomous Zone of Purposeful Operation — an organizational unit"),
+    ("ETHOS", "Emergent Thriving Holonic Organizational Structure — an organizational unit"),
     ("Current-See", "Influence currency (111 per person, equal)"),
     ("Steward", "Person who holds responsibility, not ownership"),
     ("Domain", "Boundary within which a circle can make decisions"),

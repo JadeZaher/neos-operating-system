@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 chat_bp = Blueprint("chat", url_prefix="/chat")
 
-# Maximum messages kept in session context
-_MAX_MESSAGES = 50
+# Maximum messages kept in session context (user + assistant pairs)
+_MAX_MESSAGES = 30
 
 # Maximum tool-use loop iterations to prevent runaway
 _MAX_TOOL_TURNS = 5
@@ -442,7 +442,7 @@ async def send_message(request: Request):
 
             # Working message list for the API (may include tool_use /
             # tool_result blocks within a single user turn)
-            api_messages = list(messages[-20:])
+            api_messages = list(messages[-10:])
 
             response_text = ""
             tool_calls_made: list[dict] = []

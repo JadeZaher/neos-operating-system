@@ -14,7 +14,7 @@ member:
   display_name: ""                # human-readable name (if member consents)
   membership_start: ""            # ISO date
   membership_end: ""              # ISO date (blank if still active)
-  departure_status: ""            # "active" | "departed" | "dissolved-azpo"
+  departure_status: ""            # "active" | "departed" | "dissolved-ethos"
 
 ecosystems:
   - ecosystem_name: ""            # e.g. "OmniOne"
@@ -22,14 +22,14 @@ ecosystems:
     membership_period:
       start: ""                   # ISO date
       end: ""                     # ISO date or "present"
-    azpos_participated: []        # list of AZPO names
+    ethos_participated: []        # list of ETHOS names
 
 roles:                            # included if member selects "full" or "summary"
   detail_level: ""                # full | summary | excluded
   entries:
     - role_name: ""
       circle: ""
-      azpo: ""
+      ethos: ""
       start_date: ""              # ISO date
       end_date: ""                # ISO date
       tenure_cycles: 0
@@ -104,9 +104,9 @@ current_see_history:              # included if member selects "full" or "summar
 departure_records:                # always included (mandatory minimum)
   - departure_id: ""
     departure_date: ""            # ISO date
-    scope: ""                     # "azpo" | "ecosystem"
+    scope: ""                     # "ethos" | "ecosystem"
     ecosystem: ""
-    azpo: ""
+    ethos: ""
     re_entry_eligible: true
     source_ref: ""
 

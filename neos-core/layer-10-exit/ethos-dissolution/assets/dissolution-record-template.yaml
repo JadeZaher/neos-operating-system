@@ -1,14 +1,14 @@
-# Dissolution Record Template -- output artifact of azpo-dissolution
-# One record per AZPO dissolution. Filed in governance memory (Layer IX).
+# Dissolution Record Template -- output artifact of ethos-dissolution
+# One record per ETHOS dissolution. Filed in governance memory (Layer IX).
 
 dissolution:
   dissolution_id: ""              # e.g. DISS-LG-2026-001
-  azpo_name: ""                   # name of the dissolving AZPO
-  azpo_id: ""                     # ecosystem identifier
+  ethos_name: ""                   # name of the dissolving ETHOS
+  ethos_id: ""                     # ecosystem identifier
   ecosystem: ""                   # parent ecosystem name
   effective_date: ""              # ISO date -- when dissolution becomes final
   coordinator_id: ""              # identity of the dissolution coordinator
-  coordinator_affiliation: ""     # coordinator's home AZPO (must differ from dissolving AZPO)
+  coordinator_affiliation: ""     # coordinator's home ETHOS (must differ from dissolving ETHOS)
 
 trigger:
   trigger_type: ""                # supermajority-consent | governance-incapacity | ecosystem-intervention | zero-membership
@@ -49,14 +49,14 @@ asset_disposition:
 
 member_transitions:
   total_members_at_dissolution: 0
-  transferred_to_existing_azpo: 0
-  forming_new_azpo: 0
+  transferred_to_existing_ethos: 0
+  forming_new_ethos: 0
   departed_ecosystem: 0
   unreachable: 0
   transitions:
     - member_id: ""
-      transition_type: ""         # transfer | new-azpo | departure | unreachable
-      receiving_azpo: ""          # if transfer
+      transition_type: ""         # transfer | new-ethos | departure | unreachable
+      receiving_ethos: ""          # if transfer
       portable_record_id: ""      # reference to generated portable record
       departure_record_id: ""     # if departing ecosystem
       notes: ""
@@ -72,6 +72,6 @@ archive:
   governance_history_archived: false
   archive_location: ""            # reference to Layer IX storage
   records_included: []            # list of record types archived (decision-logs, agreements, roles, audits, etc.)
-  accessible_to: ""               # "all ecosystem members and former AZPO members"
+  accessible_to: ""               # "all ecosystem members and former ETHOS members"
 
 notes: ""                         # additional context (e.g., emergency conditions, informal commitments noted)

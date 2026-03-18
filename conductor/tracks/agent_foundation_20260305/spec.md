@@ -246,10 +246,10 @@ class SkillRegistry:
 |-------|----------------|------------|
 | `proposals` | proposal-template.yaml | id, ecosystem_id, proposal_id, type, decision_type, title, version, status, proposer, affected_domain, urgency, proposed_change, rationale |
 | `advice_logs` | advice-log-template.yaml | id, proposal_id, advice_window_start, advice_window_end, urgency, summary, proposer_modifications |
-| `advice_entries` | advice-log-template.yaml (entries) | id, advice_log_id, advisor, role, azpo, date, advice_text, proposer_response, integration_status, rationale |
+| `advice_entries` | advice-log-template.yaml (entries) | id, advice_log_id, advisor, role, ethos, date, advice_text, proposer_response, integration_status, rationale |
 | `advice_non_respondents` | advice-log-template.yaml (non_respondents) | id, advice_log_id, name, notified_date, follow_up_sent |
 | `consent_records` | consent-record-template.yaml | id, proposal_id, consent_mode, weighting_model, facilitator, date, quorum_required, quorum_met, outcome, escalation_level, final_proposal_version |
-| `consent_participants` | consent-record-template.yaml (participants) | id, consent_record_id, name, role, azpo, position, reason, round |
+| `consent_participants` | consent-record-template.yaml (participants) | id, consent_record_id, name, role, ethos, position, reason, round |
 | `consent_integration_rounds` | consent-record-template.yaml (integration_rounds) | id, consent_record_id, round_number, modifications_made, outcome |
 | `consent_objections_addressed` | consent-record-template.yaml (objections_addressed) | id, integration_round_id, objector, objection, resolution |
 | `test_reports` | test-report-template.yaml | id, proposal_id, test_start_date, test_end_date, midpoint_checkin_date, revert_procedure, observations, outcome |

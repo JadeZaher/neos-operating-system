@@ -58,7 +58,7 @@ Universal > Ecosystem > Access > Stewardship > ETHOS > Culture Code > Personal
 
 1. GAIA level numbering doesn't match source (missing Next Steps Process)
 2. Field agreement example references "Moneyless Society" — predecessor org, plan should flag
-3. "ETHOS" used in source but not defined in terminology — needs ETHOS-to-AZPO mapping
+3. "ETHOS" used in source but not defined in terminology — needs ETHOS-to-ETHOS mapping
 4. Plan Verification 3 says "5 completed skills" but lists 6
 5. `scripts/` dir in tech-stack but not in spec file structure
 

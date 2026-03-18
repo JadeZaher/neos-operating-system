@@ -97,7 +97,7 @@ If the **incoming steward exits within the 30-day post-transfer window**, the do
 
 ## L. Cross-Unit Interoperability Impact
 
-**Cross-AZPO transfers** — where a role bridges or moves between AZPOs — require coordination between both AZPOs' delegating bodies. Each delegating body must consent from their side. The relationship map in the handover document must explicitly include all cross-AZPO contacts. Transfer records for cross-AZPO roles are registered in both AZPOs' registries with linked entries. Notification of dependent and adjacent domains includes all cross-AZPO parties in the relationship map.
+**Cross-ETHOS transfers** — where a role bridges or moves between ETHOS — require coordination between both ETHOS' delegating bodies. Each delegating body must consent from their side. The relationship map in the handover document must explicitly include all cross-ETHOS contacts. Transfer records for cross-ETHOS roles are registered in both ETHOS' registries with linked entries. Notification of dependent and adjacent domains includes all cross-ETHOS parties in the relationship map.
 
 ## OmniOne Walkthrough
 
@@ -133,7 +133,7 @@ Two factions within the AE have opposing views on who should steward the Economi
 
 ### 5. Large-Scale Replication
 
-OmniOne grows to 200 circles across 15 AZPOs, and role transfers happen continuously — an estimated 3-5 per week at steady state. The role-transfer skill scales because the process is document-driven: each transfer produces a self-contained transfer record that does not require ecosystem-wide awareness. The handover checklist is standardized, so incoming stewards everywhere receive consistent information regardless of which circle they are joining. The relationship map and notification requirement ensure that at-scale transfers do not create information voids in adjacent domains — the burden is on the transferring role, not on adjacent domains to notice the change. The delegating body's consent requirement keeps transfers locally authorized without requiring OSC involvement except for OSC-level roles.
+OmniOne grows to 200 circles across 15 ETHOS, and role transfers happen continuously — an estimated 3-5 per week at steady state. The role-transfer skill scales because the process is document-driven: each transfer produces a self-contained transfer record that does not require ecosystem-wide awareness. The handover checklist is standardized, so incoming stewards everywhere receive consistent information regardless of which circle they are joining. The relationship map and notification requirement ensure that at-scale transfers do not create information voids in adjacent domains — the burden is on the transferring role, not on adjacent domains to notice the change. The delegating body's consent requirement keeps transfers locally authorized without requiring OSC involvement except for OSC-level roles.
 
 ### 6. External Legal Pressure
 

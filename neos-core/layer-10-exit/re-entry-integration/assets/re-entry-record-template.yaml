@@ -4,15 +4,15 @@
 re_entry:
   re_entry_id: ""                 # e.g. RER-SHUR-2027-008
   member_identity: ""             # returning member's ecosystem identity
-  re_entry_scope: ""              # "azpo" or "ecosystem"
-  receiving_azpo: ""              # AZPO the member is joining
+  re_entry_scope: ""              # "ethos" or "ecosystem"
+  receiving_ethos: ""              # ETHOS the member is joining
   ecosystem: ""                   # ecosystem name
   request_date: ""                # ISO date -- when member expressed intent to return
   effective_re_entry_date: ""     # ISO date -- when membership becomes active
 
 coordinator:
   coordinator_id: ""              # identity of the re-entry coordinator
-  coordinator_circle: ""          # coordinator's circle within receiving AZPO
+  coordinator_circle: ""          # coordinator's circle within receiving ETHOS
   assignment_date: ""             # ISO date
 
 departure_context:

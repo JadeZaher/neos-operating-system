@@ -51,7 +51,7 @@ An amendment record per `assets/amendment-record-template.yaml` linked to the pa
 
 ## G. Authority Boundary Check
 
-- **Amendment scope cannot exceed the amending body's domain.** A circle cannot amend an ecosystem-level agreement. An AZPO cannot amend another AZPO's agreement field.
+- **Amendment scope cannot exceed the amending body's domain.** A circle cannot amend an ecosystem-level agreement. An ETHOS cannot amend another ETHOS's agreement field.
 - **UAF amendments require OSC consensus** — this cannot be delegated to any sub-body. The highest-bar decision process applies to the highest-level agreement.
 - **Amendment cannot create authority** that the original agreement did not grant. If the original agreement defines circle-level authority, an amendment cannot expand that to ecosystem-level authority without going through the appropriate ecosystem-level ACT process.
 - **The proposer cannot reclassify** the amendment type after ACT routing — if the facilitator determines a "minor clarification" is actually a substantive change, the process escalates to the appropriate level.
@@ -87,8 +87,8 @@ Authority scope is defined by the domain contract (see domain-mapping skill, Lay
 
 ## L. Cross-Unit Interoperability Impact
 
-- Amendments to agreements that span multiple AZPOs require consent from each affected AZPO's deciding body.
-- When a parent agreement is amended, the registry notifies all AZPOs that hold linked entries (child agreements that reference the parent).
+- Amendments to agreements that span multiple ETHOS require consent from each affected ETHOS's deciding body.
+- When a parent agreement is amended, the registry notifies all ETHOS that hold linked entries (child agreements that reference the parent).
 - Cross-ecosystem agreement amendments follow inter-unit coordination (Layer V, deferred). Both ecosystems must consent through their own processes.
 
 ## OmniOne Walkthrough

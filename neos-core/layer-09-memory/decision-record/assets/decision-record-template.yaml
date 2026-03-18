@@ -32,7 +32,7 @@ decision_record:
   semantic_tags:
     topic: []                  # Free-text keyword tags
     affected_parties: []       # Who is impacted
-    ecosystem_scope: ""        # single-azpo | cross-azpo | ecosystem-wide
+    ecosystem_scope: ""        # single-ethos | cross-ethos | ecosystem-wide
     urgency_at_time: ""        # normal | elevated | emergency
     related_precedents: []     # Decision record IDs of related precedents
 

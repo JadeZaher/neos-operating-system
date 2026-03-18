@@ -81,9 +81,9 @@ Agreements they authored remain valid after their departure.
 
 ## L. Cross-Unit Interoperability Impact
 
-Actions in one AZPO that affect another trigger cross-unit notification.
-The affected AZPO must consent through their own ACT process.
-Cross-AZPO outcomes are registered in both units' registries.
+Actions in one ETHOS that affect another trigger cross-unit notification.
+The affected ETHOS must consent through their own ACT process.
+Cross-ETHOS outcomes are registered in both units' registries.
 Federation with other NEOS ecosystems uses inter-unit coordination (Layer V).
 
 ## OmniOne Walkthrough
@@ -110,7 +110,7 @@ Two factions within OmniOne want mutually exclusive outcomes. The coaching escal
 
 ### 5. Large-Scale Replication
 
-OmniOne grows from 50 to 5,000 members across multiple AZPOs. The skill scales through domain-scoped action, meaning not all 5,000 members participate in every process. Local actions stay within their circle's domain and only ecosystem-level actions involve the full OSC. The agreement registry handles scale through domain-based filtering and query capabilities. The synergy check becomes more important at scale to prevent duplication. Facilitation training scales through a train-the-trainer model within each circle.
+OmniOne grows from 50 to 5,000 members across multiple ETHOS. The skill scales through domain-scoped action, meaning not all 5,000 members participate in every process. Local actions stay within their circle's domain and only ecosystem-level actions involve the full OSC. The agreement registry handles scale through domain-based filtering and query capabilities. The synergy check becomes more important at scale to prevent duplication. Facilitation training scales through a train-the-trainer model within each circle.
 
 ### 6. External Legal Pressure
 

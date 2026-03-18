@@ -11,7 +11,7 @@ checklist:
     - check: "No review body member has a direct financial interest in the review outcome"
     - check: "The circle steward who confirmed the emergency declaration is not on the review body"
     - check: "Review body includes at least three qualified members"
-    - check: "If local members insufficient, cross-AZPO members were appointed"
+    - check: "If local members insufficient, cross-ETHOS members were appointed"
 
   # Section 2: Emergency Declaration
   declaration_review:
@@ -81,7 +81,7 @@ checklist:
   # Section 9: Irreducible Constraints
   constraint_review:
     - check: "No UAF amendment was attempted or executed"
-    - check: "No AZPO dissolution was attempted or executed"
+    - check: "No ETHOS dissolution was attempted or executed"
     - check: "No member expulsion was attempted or executed"
     - check: "No emergency criteria were modified during the active emergency"
     - check: "No authority scope expansion was executed without emergency ACT consent"

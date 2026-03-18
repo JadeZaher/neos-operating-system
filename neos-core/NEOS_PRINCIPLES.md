@@ -80,11 +80,11 @@ OmniOne-specific configurations (Current-See amounts, SHUR structure, specific r
 
 **Definition:** No single point of failure can collapse the governance system. Failure stays local.
 
-**Structural mechanism:** Skills function independently -- each produces its own output artifact and defines its own failure containment logic (section I). AZPOs operate autonomously within their domains, so one AZPO's failure does not cascade to others. Layer X ensures that even mass departure (30% sudden exit) triggers quorum adaptation rather than system collapse.
+**Structural mechanism:** Skills function independently -- each produces its own output artifact and defines its own failure containment logic (section I). ETHOS operate autonomously within their domains, so one ETHOS's failure does not cascade to others. Layer X ensures that even mass departure (30% sudden exit) triggers quorum adaptation rather than system collapse.
 
-**Implementing skills:** All skills via section I (Failure Containment Logic), azpo-dissolution, voluntary-exit
+**Implementing skills:** All skills via section I (Failure Containment Logic), ethos-dissolution, voluntary-exit
 
-**This principle is violated when:** a single role's vacancy halts governance, when one AZPO's failure cascades across the ecosystem, or when the system requires full participation to function.
+**This principle is violated when:** a single role's vacancy halts governance, when one ETHOS's failure cascades across the ecosystem, or when the system requires full participation to function.
 
 ## 9. Governance Memory
 

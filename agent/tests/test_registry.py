@@ -39,7 +39,7 @@ Structural clarity is maintained through formal process.
 ## B. Domain Scope
 
 Applies to all formal decisions within TH or AE circles.
-Scope is bounded by the unit's AZPO.
+Scope is bounded by the unit's ETHOS.
 Cross-unit implications trigger inter-unit skill.
 
 ## C. Trigger Conditions
