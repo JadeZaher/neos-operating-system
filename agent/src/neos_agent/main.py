@@ -143,6 +143,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     async def auth_middleware(request: Request):
         from neos_agent.auth.middleware import is_public_route, verify_session_cookie
         from neos_agent.db.models import AuthSession, Ecosystem, Member as MemberModel
+        from neos_agent.views._rendering import EcosystemScope
 
         # Helper: parse selected ecosystem IDs from cookie
         def _parse_selected_cookie() -> list[uuid.UUID]:
@@ -199,7 +200,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 return None
             try:
                 async with app.ctx.db() as db:
-                    from datetime import datetime
+                    from datetime import datetime, timezone
                     result = await db.execute(
                         select(AuthSession).where(
                             AuthSession.id == uuid.UUID(sid),
@@ -224,8 +225,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     ecosystems, eco_ids = await _load_ecosystems(db, member, selected_ids)
             except Exception:
                 ecosystems, eco_ids = [], []
+                request.ctx.ecosystem_scope = EcosystemScope.empty()
             request.ctx.ecosystems = ecosystems
             request.ctx.selected_ecosystem_ids = eco_ids
+            request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
             return None
 
         cookie = request.cookies.get("neos_session")
@@ -238,7 +241,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
         try:
             async with app.ctx.db() as db:
-                from datetime import datetime
+                from datetime import datetime, timezone
                 result = await db.execute(
                     select(AuthSession).where(
                         AuthSession.id == uuid.UUID(session_id),
@@ -259,6 +262,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 ecosystems, eco_ids = await _load_ecosystems(db, member, selected_ids)
                 request.ctx.ecosystems = ecosystems
                 request.ctx.selected_ecosystem_ids = eco_ids
+                request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
         except Exception:
             logger.exception("Auth middleware error")
             return redirect("/auth/login")

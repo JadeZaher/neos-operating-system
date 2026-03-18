@@ -18,11 +18,22 @@ from sanic.response import redirect
 from sqlalchemy import select, func
 
 from neos_agent.db.models import EmergencyState
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
 emergency_bp = Blueprint("emergency", url_prefix="/dashboard/emergency")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _apply_filters(stmt, request: Request, eco_ids=None):
+    """Apply ecosystem scoping and optional filters to a query."""
+    if eco_ids:
+        stmt = stmt.where(EmergencyState.ecosystem_id.in_(eco_ids))
+    return stmt
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +50,7 @@ async def dashboard(request: Request):
             current_stmt = select(EmergencyState).order_by(
                 EmergencyState.declared_at.desc()
             )
-            if eco_ids:
-                current_stmt = current_stmt.where(EmergencyState.ecosystem_id.in_(eco_ids))
+            current_stmt = _apply_filters(current_stmt, request, eco_ids)
             current_stmt = current_stmt.limit(1)
             current_result = await session.execute(current_stmt)
             current_state = current_result.scalar_one_or_none()
@@ -49,8 +59,7 @@ async def dashboard(request: Request):
             history_stmt = select(EmergencyState).order_by(
                 EmergencyState.declared_at.desc()
             )
-            if eco_ids:
-                history_stmt = history_stmt.where(EmergencyState.ecosystem_id.in_(eco_ids))
+            history_stmt = _apply_filters(history_stmt, request, eco_ids)
             history_stmt = history_stmt.limit(20)
             history_result = await session.execute(history_stmt)
             history = history_result.scalars().all()
@@ -123,7 +132,7 @@ async def declare_emergency(request: Request):
         )
         return html(content, status=403)
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         auto_revert_days = int(form.get("auto_revert_days", 30))
 
         async with request.app.ctx.db() as session:
@@ -177,7 +186,7 @@ async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
                 )
 
             state.state = "closed"
-            state.closed_at = datetime.now(timezone.utc)
+            state.closed_at = datetime.utcnow()
             await session.commit()
             logger.info("Emergency %s resolved", emergency_id)
     except Exception:

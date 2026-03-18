@@ -1179,7 +1179,7 @@ async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | 
     )
     if result.scalar_one_or_none():
         return {"success": False, "error": "An emergency is already active."}
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     state = EmergencyState(
         id=uuid.uuid4(),
         ecosystem_id=eco_id,

@@ -19,7 +19,7 @@ from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import ConflictCase, RepairAgreementRecord
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 ConflictCase.case_id.ilike(pattern),
@@ -250,7 +250,7 @@ async def status_transition(request: Request, conflict_uuid: uuid.UUID):
 
             if new_status == "resolved":
                 conflict.resolution_summary = form.get("resolution_summary", "")
-                conflict.resolved_date = datetime.now(timezone.utc).date()
+                conflict.resolved_date = datetime.utcnow().date()
 
             await session.commit()
             logger.info(

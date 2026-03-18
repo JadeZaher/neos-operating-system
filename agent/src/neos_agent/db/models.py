@@ -728,6 +728,7 @@ class AgentSession(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, doc="All selected ecosystem UUIDs at session creation")
     member_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), ForeignKey("members.id"), nullable=True)
     skill_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     title: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

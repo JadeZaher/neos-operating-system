@@ -21,6 +21,7 @@ Tracks are ordered by layer number for sequential implementation. Each track's d
 14. Sync & Deploy                  <- depends on #11, #12, #13 (GunDB, IPFS, Railway)
 15. Member Profile Harden          <- depends on #12 (bug fix track)
 16. Chat & Messaging               <- depends on #11, #12, #13 (member-to-member messaging)
+17. Ecosystem Scope Management     <- depends on #12, #11 (unified scoping, security fixes)
 ```
 
 ---
@@ -92,6 +93,40 @@ Real-time member-to-member messaging with DM (1:1), group conversations (multi-p
 
 **Spec:** `conductor/tracks/chat_messaging_20260313/spec.md`
 **Plan:** `conductor/tracks/chat_messaging_20260313/plan.md`
+
+---
+
+### 17. [ ] ecosystem_scope_20260318 -- Unified Ecosystem Scope Management
+**Priority:** P0
+**Type:** Bug Fix + Refactor
+**Status:** Pending
+**Created:** 2026-03-18
+**Depends on:** dashboard_views_20260305, agent_foundation_20260305
+
+Centralize ecosystem selection state management across all views, templates, forms, and AI chat. Fix variable naming collisions (ecosystems vs selected_ecosystems), ILIKE injection in 7 views, IDOR in ecosystem CRUD, empty-scope bypass in get_scoped_entity(), and missing ecosystem_id in emergency/safeguards forms. Introduce typed EcosystemScope dataclass, shared escape_like(), multi-ecosystem picker for creation forms, and consistent _apply_filters pattern across all 12 entity views.
+
+**Critical Fixes:**
+- [ ] ILIKE wildcard injection (7 views use raw f"%{search}%")
+- [ ] Ecosystem CRUD IDOR (edit/update has no authorization check)
+
+**Deliverables:**
+- [ ] EcosystemScope typed dataclass on request.ctx
+- [ ] Shared escape_like() utility in _rendering.py
+- [ ] get_scoped_entity() fail-safe (deny when eco_ids empty)
+- [ ] Ecosystem picker partial for multi-select creation forms
+- [ ] _apply_filters pattern for safeguards and emergency views
+- [ ] Ecosystem CRUD authorization checks
+- [ ] Chat agent multi-ecosystem session support
+
+**Phases:**
+- [ ] Phase 1: EcosystemScope dataclass + shared utilities
+- [ ] Phase 2: Middleware + render() refactor
+- [ ] Phase 3: View hardening (all 12 entity views)
+- [ ] Phase 4: Template + form fixes
+- [ ] Phase 5: Chat agent scope propagation
+
+**Spec:** `conductor/tracks/ecosystem_scope_20260318/spec.md`
+**Plan:** `conductor/tracks/ecosystem_scope_20260318/plan.md`
 
 ---
 

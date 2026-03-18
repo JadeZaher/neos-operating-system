@@ -27,7 +27,7 @@ from neos_agent.db.models import (
     TestReport,
 )
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     domain = request.args.get("domain")
     if domain:
-        stmt = stmt.where(Proposal.affected_domain.ilike(f"%{domain}%"))
+        stmt = stmt.where(Proposal.affected_domain.ilike(f"%{escape_like(domain)}%"))
 
     urgency = request.args.get("urgency")
     if urgency:
@@ -61,7 +61,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 Proposal.title.ilike(pattern),
@@ -130,7 +130,7 @@ async def create_proposal(request: Request):
             proposal=None,
             error="Invalid or unauthorized ecosystem.",
         )
-        return html(content, status=400)
+        return html(content, status=403)
     try:
         async with request.app.ctx.db() as session:
             proposal = Proposal(

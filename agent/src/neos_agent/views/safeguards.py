@@ -18,11 +18,22 @@ from sanic.response import redirect
 from sqlalchemy import select, func
 
 from neos_agent.db.models import GovernanceHealthAudit
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
 safeguards_bp = Blueprint("safeguards", url_prefix="/dashboard/safeguards")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _apply_filters(stmt, request: Request, eco_ids=None):
+    """Apply ecosystem scoping and optional filters to a query."""
+    if eco_ids:
+        stmt = stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+    return stmt
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +50,7 @@ async def dashboard(request: Request):
             latest_stmt = select(GovernanceHealthAudit).order_by(
                 GovernanceHealthAudit.audit_date.desc()
             )
-            if eco_ids:
-                latest_stmt = latest_stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            latest_stmt = _apply_filters(latest_stmt, request, eco_ids)
             latest_stmt = latest_stmt.limit(1)
             latest_result = await session.execute(latest_stmt)
             latest_audit = latest_result.scalar_one_or_none()
@@ -49,16 +59,14 @@ async def dashboard(request: Request):
             recent_stmt = select(GovernanceHealthAudit).order_by(
                 GovernanceHealthAudit.audit_date.desc()
             )
-            if eco_ids:
-                recent_stmt = recent_stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            recent_stmt = _apply_filters(recent_stmt, request, eco_ids)
             recent_stmt = recent_stmt.limit(10)
             recent_result = await session.execute(recent_stmt)
             recent_audits = recent_result.scalars().all()
 
             # Total audits count
             count_base = select(func.count()).select_from(GovernanceHealthAudit)
-            if eco_ids:
-                count_base = count_base.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            count_base = _apply_filters(count_base, request, eco_ids)
             total = await session.scalar(count_base) or 0
     except Exception:
         logger.exception("Failed to load safeguards dashboard")
@@ -87,8 +95,7 @@ async def list_audits(request: Request):
             stmt = select(GovernanceHealthAudit).order_by(
                 GovernanceHealthAudit.audit_date.desc()
             )
-            if eco_ids:
-                stmt = stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            stmt = _apply_filters(stmt, request, eco_ids)
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = await session.scalar(count_stmt) or 0
 

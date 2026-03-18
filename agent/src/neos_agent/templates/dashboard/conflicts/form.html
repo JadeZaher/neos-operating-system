@@ -20,7 +20,8 @@
   <p class="text-sm text-neos-muted mb-6">Describe the conflict. The AI governance agent will help assess the appropriate escalation tier.</p>
 
   <form method="POST" action="/dashboard/conflicts" class="bg-neos-surface border border-neos-border rounded-xl p-6 space-y-5">
-    <input type="hidden" name="ecosystem_id" value="{{ conflict.ecosystem_id if conflict else '' }}">
+    {% set current_ecosystem_id = conflict.ecosystem_id if conflict and conflict.ecosystem_id else '' %}
+    {% include "partials/ecosystem_picker.html" %}
 
     <div>
       <label for="scope" class="block text-sm font-medium text-neos-text mb-1">Scope</label>

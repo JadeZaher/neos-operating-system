@@ -32,7 +32,7 @@ from neos_agent.db.models import (
     MemberOnboarding,
     MemberStatusTransition,
 )
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, html_fragment
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, html_fragment, escape_like
 from neos_agent.views.onboarding import UAF_SECTIONS, apply_section_consent
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
     # Text search across name and member_id
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 Member.display_name.ilike(pattern),
@@ -412,7 +412,7 @@ async def onboarding_consent(request: Request, member_id: uuid.UUID):
         return redirect(f"/dashboard/members/{member_id}")
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         async with request.app.ctx.db() as session:
             member = await get_scoped_entity(session, Member, member_id, request)
             if member is None:
@@ -459,7 +459,7 @@ async def onboarding_finalize(request: Request, member_id: uuid.UUID):
         return redirect(f"/dashboard/members/{member_id}")
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         async with request.app.ctx.db() as session:
             member = await get_scoped_entity(session, Member, member_id, request)
             if member is None:

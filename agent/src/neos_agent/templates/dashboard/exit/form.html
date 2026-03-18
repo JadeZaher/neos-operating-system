@@ -20,8 +20,9 @@
   <p class="text-sm text-neos-muted mb-6">NEOS guarantees the right to exit. This process ensures all commitments are properly unwound and your portable record is prepared.</p>
 
   <form method="POST" action="/dashboard/exit" class="bg-neos-surface border border-neos-border rounded-xl p-6 space-y-5">
-    <input type="hidden" name="ecosystem_id" value="">
-    <input type="hidden" name="member_id" value="">
+    {% set current_ecosystem_id = '' %}
+    {% include "partials/ecosystem_picker.html" %}
+    <input type="hidden" name="member_id" value="{{ current_user.id if current_user else '' }}">
 
     <div>
       <label for="exit_type" class="block text-sm font-medium text-neos-text mb-1">Exit Type</label>

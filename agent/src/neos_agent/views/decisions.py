@@ -22,7 +22,7 @@ from neos_agent.db.models import (
     DecisionParticipant,
     DecisionSemanticTag,
 )
-from neos_agent.views._rendering import render, html_fragment, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity
+from neos_agent.views._rendering import render, html_fragment, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     domain = request.args.get("domain")
     if domain:
-        stmt = stmt.where(DecisionRecord.domain.ilike(f"%{domain}%"))
+        stmt = stmt.where(DecisionRecord.domain.ilike(f"%{escape_like(domain)}%"))
 
     source_layer = request.args.get("source_layer")
     if source_layer:
@@ -63,7 +63,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 DecisionRecord.record_id.ilike(pattern),

@@ -308,12 +308,12 @@
           </button>
 
           <a href="/ecosystems" class="flex items-center gap-1.5" title="Change ecosystem selection">
-            {% if ecosystems is defined and ecosystems|length > 0 %}
-              {% for eco in ecosystems[:3] %}
+            {% if selected_ecosystems is defined and selected_ecosystems|length > 0 %}
+              {% for eco in selected_ecosystems[:3] %}
                 <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-neos-accent/15 text-neos-primary border border-neos-accent/30">{{ eco.name }}</span>
               {% endfor %}
-              {% if ecosystems|length > 3 %}
-                <span class="text-xs text-neos-muted">+{{ ecosystems|length - 3 }}</span>
+              {% if selected_ecosystems|length > 3 %}
+                <span class="text-xs text-neos-muted">+{{ selected_ecosystems|length - 3 }}</span>
               {% endif %}
             {% else %}
               <span class="text-sm text-neos-muted hover:text-neos-primary transition-colors">Select Ecosystems</span>
@@ -368,13 +368,13 @@
       <div class="bg-neos-surface border-b border-neos-border px-4 lg:px-6 py-2">
         <nav class="flex items-center gap-1.5 text-sm text-neos-muted" aria-label="Breadcrumb">
           <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
-          {% if ecosystems is defined and ecosystems|length > 0 %}
+          {% if selected_ecosystems is defined and selected_ecosystems|length > 0 %}
             <span aria-hidden="true">/</span>
             <a href="/ecosystems" class="font-medium text-neos-text hover:text-neos-primary transition-colors">
-              {% if ecosystems|length == 1 %}
-                {{ ecosystems[0].name }}
+              {% if selected_ecosystems|length == 1 %}
+                {{ selected_ecosystems[0].name }}
               {% else %}
-                {{ ecosystems|length }} Ecosystems
+                {{ selected_ecosystems|length }} Ecosystems
               {% endif %}
             </a>
           {% endif %}

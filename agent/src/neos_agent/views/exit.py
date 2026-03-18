@@ -18,7 +18,7 @@ from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import ExitRecord
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(ExitRecord.departure_notice.ilike(pattern))
 
     return stmt
@@ -116,7 +116,7 @@ async def create_exit(request: Request):
         return html(content, status=403)
     try:
         exit_type = form.get("exit_type", "standard")
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         cooling_days = 30 if exit_type == "standard" else 7
 
         async with request.app.ctx.db() as session:
@@ -221,7 +221,7 @@ async def status_transition(request: Request, exit_uuid: uuid.UUID):
             record.status = new_status
 
             if new_status == "completed":
-                record.completed_date = datetime.now(timezone.utc).date()
+                record.completed_date = datetime.utcnow().date()
 
             await session.commit()
             logger.info(

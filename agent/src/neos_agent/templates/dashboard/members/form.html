@@ -40,7 +40,8 @@
       method="post"
       action="/dashboard/members{{ '/' + (member.id | string) if member is defined and member else '' }}"
     >
-      <input type="hidden" name="ecosystem_id" value="{{ member.ecosystem_id if member is defined and member and member.ecosystem_id else '' }}">
+      {% set current_ecosystem_id = member.ecosystem_id if member is defined and member and member.ecosystem_id else '' %}
+      {% include "partials/ecosystem_picker.html" %}
 
       {# Display Name + Member ID (2-col) #}
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">

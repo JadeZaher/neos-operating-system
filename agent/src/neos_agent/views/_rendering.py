@@ -6,13 +6,57 @@ and ecosystem-scoping helpers.
 
 from __future__ import annotations
 
+import re
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 T = TypeVar("T")
+
+
+@dataclass
+class EcosystemScope:
+    """Typed ecosystem selection context attached to every request.
+
+    Provides a single source of truth for which ecosystems the current
+    user has selected, replacing loose request.ctx attributes.
+    """
+    selected: list = field(default_factory=list)      # ORM Ecosystem objects
+    selected_ids: list = field(default_factory=list)   # list[uuid.UUID]
+    active: object = None                              # First ecosystem if single-select
+    active_id: uuid.UUID | None = None                 # Convenience: active.id
+
+    @property
+    def is_multi(self) -> bool:
+        """True when more than one ecosystem is selected."""
+        return len(self.selected) > 1
+
+    def require_ids(self) -> list:
+        """Return selected_ids or raise if empty (fail-safe)."""
+        if not self.selected_ids:
+            raise ValueError("No ecosystem scope active")
+        return self.selected_ids
+
+    @classmethod
+    def empty(cls) -> "EcosystemScope":
+        """Create an empty scope (no ecosystems selected)."""
+        return cls()
+
+    @classmethod
+    def from_ecosystems(cls, ecosystems: list, eco_ids: list) -> "EcosystemScope":
+        """Build scope from loaded ecosystem objects and their IDs."""
+        active = ecosystems[0] if len(ecosystems) == 1 else None
+        active_id = eco_ids[0] if len(eco_ids) == 1 else None
+        return cls(
+            selected=ecosystems,
+            selected_ids=eco_ids,
+            active=active,
+            active_id=active_id,
+        )
+
 
 import mistune
 import nh3
@@ -96,8 +140,13 @@ async def render(template_name: str, *, request=None, **context) -> str:
         # Relationship attributes (ecosystem, onboarding) will raise MissingGreenlet.
         context["current_user"] = member          # always the logged-in user
         context.setdefault("member", member)      # backward compat for views that don't pass member
-        ecosystems = getattr(request.ctx, "ecosystems", [])
-        context.setdefault("ecosystems", ecosystems)
+        scope = getattr(request.ctx, "ecosystem_scope", None)
+        if scope is None:
+            ecosystems = getattr(request.ctx, "ecosystems", [])
+            eco_ids = getattr(request.ctx, "selected_ecosystem_ids", [])
+            scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids) if ecosystems else EcosystemScope.empty()
+        context["ecosystem_scope"] = scope
+        context["selected_ecosystems"] = scope.selected  # never overridable
     template = _env.get_template(template_name)
     return await template.render_async(**context)
 
@@ -138,6 +187,11 @@ def parse_pagination(request) -> tuple[int, int]:
     return offset, limit
 
 
+def escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcard characters (%, _, \\)."""
+    return re.sub(r"([%_\\])", r"\\\1", value)
+
+
 def get_ecosystem_id(request) -> uuid.UUID | None:
     """Extract the active ecosystem UUID from the authenticated member.
 
@@ -152,10 +206,14 @@ def get_ecosystem_id(request) -> uuid.UUID | None:
 def get_selected_ecosystem_ids(request) -> list[uuid.UUID]:
     """Return the list of ecosystem UUIDs the user has selected.
 
-    Reads from ``request.ctx.selected_ecosystem_ids`` (set by auth middleware
-    from the ``neos_selected_ecosystems`` cookie).  Falls back to the
-    member's own ecosystem if nothing is selected.
+    Reads from ``request.ctx.ecosystem_scope`` first, then falls back to
+    ``request.ctx.selected_ecosystem_ids`` (set by auth middleware from the
+    ``neos_selected_ecosystems`` cookie). Falls back to the member's own
+    ecosystem if nothing is selected.
     """
+    scope = getattr(getattr(request, "ctx", None), "ecosystem_scope", None)
+    if scope is not None and scope.selected_ids:
+        return list(scope.selected_ids)
     ids = getattr(getattr(request, "ctx", None), "selected_ecosystem_ids", None)
     if ids:
         return list(ids)
@@ -178,6 +236,7 @@ async def get_scoped_entity(
 
     Returns the entity if it exists AND belongs to one of the user's
     selected ecosystems.  Returns ``None`` otherwise (prevents IDOR).
+    Also denies access when no ecosystems are selected (fail-safe).
 
     Args:
         session: SQLAlchemy async session.
@@ -193,7 +252,10 @@ async def get_scoped_entity(
     if entity is None:
         return None
     eco_ids = get_selected_ecosystem_ids(request)
-    if eco_ids and hasattr(entity, ecosystem_attr):
+    if hasattr(entity, ecosystem_attr):
+        # Fail-safe: deny access when no ecosystems are selected
+        if not eco_ids:
+            return None
         if getattr(entity, ecosystem_attr) not in eco_ids:
             return None
     return entity
@@ -213,6 +275,6 @@ def validate_ecosystem_id(
     except (ValueError, TypeError):
         return None
     eco_ids = get_selected_ecosystem_ids(request)
-    if eco_ids and eco_uuid not in eco_ids:
+    if not eco_ids or eco_uuid not in eco_ids:
         return None
     return eco_uuid

@@ -10,7 +10,7 @@ a recent activity feed of the last 10 governance actions.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sanic import Blueprint, html
 from sanic.request import Request

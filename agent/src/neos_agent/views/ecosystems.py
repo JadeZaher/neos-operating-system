@@ -9,7 +9,6 @@ CRUD for creating and editing ecosystems.
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from datetime import date
 
@@ -19,7 +18,7 @@ from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Ecosystem, Member
-from neos_agent.views._rendering import render, parse_pagination
+from neos_agent.views._rendering import render, parse_pagination, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +35,6 @@ def _require_auth(request: Request):
     if not member:
         return redirect("/auth/login")
     return None
-
-
-def _escape_like(value: str) -> str:
-    """Escape SQL LIKE/ILIKE wildcards."""
-    return re.sub(r"([%_\\])", r"\\\1", value)
 
 
 def _sanitize_url(url: str) -> str:
@@ -71,7 +65,7 @@ def _apply_filters(stmt, request: Request):
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{_escape_like(search)}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 Ecosystem.name.ilike(pattern),
@@ -318,6 +312,30 @@ async def edit_form(request: Request, ecosystem_id: uuid.UUID):
                     ),
                     status=404,
                 )
+
+            # Verify the user is a member of this ecosystem
+            member = request.ctx.member
+            if not member:
+                return redirect("/auth/login")
+
+            from neos_agent.db.models import Member as MemberModel
+            member_check = await session.execute(
+                select(MemberModel).where(
+                    MemberModel.did == member.did,
+                    MemberModel.ecosystem_id == ecosystem_id,
+                    MemberModel.current_status == "active",
+                )
+            )
+            if member_check.scalar_one_or_none() is None:
+                content = await render(
+                    "ecosystems/form.html",
+                    request=request,
+                    ecosystem=None,
+                    error="You do not have permission to edit this ecosystem.",
+                    active_page="ecosystems",
+                )
+                return html(content, status=403)
+
             content = await render("ecosystems/form.html", request=request, ecosystem=ecosystem, active_page="ecosystems")
     except Exception:
         logger.exception("Failed to load ecosystem for editing")
@@ -357,6 +375,29 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
                     ),
                     status=404,
                 )
+
+            # Verify the user is a member of this ecosystem
+            member = request.ctx.member
+            if not member:
+                return redirect("/auth/login")
+
+            from neos_agent.db.models import Member as MemberModel
+            member_check = await session.execute(
+                select(MemberModel).where(
+                    MemberModel.did == member.did,
+                    MemberModel.ecosystem_id == ecosystem_id,
+                    MemberModel.current_status == "active",
+                )
+            )
+            if member_check.scalar_one_or_none() is None:
+                content = await render(
+                    "ecosystems/form.html",
+                    request=request,
+                    ecosystem=None,
+                    error="You do not have permission to edit this ecosystem.",
+                    active_page="ecosystems",
+                )
+                return html(content, status=403)
 
             if form.get("name"):
                 ecosystem.name = form.get("name").strip()

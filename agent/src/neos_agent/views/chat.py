@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Optional
 
@@ -283,6 +283,7 @@ async def get_or_create_session(
             agent_session = AgentSession(
                 id=sid,
                 ecosystem_id=eco_id,
+                ecosystem_ids=[str(eid) for eid in ecosystem_ids] if ecosystem_ids else None,
                 member_id=member_id,
                 status="active",
                 context={"messages": []},
@@ -413,6 +414,16 @@ async def send_message(request: Request):
                 skill_registry=getattr(request.app.ctx, "skills", None),
                 page_context=context_page,
             )
+            # Prepend explicit multi-ecosystem scope context
+            if len(eco_names) == 1:
+                eco_scope_note = f"You are assisting within the {eco_names[0]} ecosystem."
+            else:
+                names_str = ", ".join(eco_names)
+                eco_scope_note = (
+                    f"The user has {len(eco_names)} ecosystems selected: {names_str}. "
+                    f"Scope your responses to these ecosystems."
+                )
+            system_prompt = eco_scope_note + "\n\n" + system_prompt
         except ImportError:
             system_prompt = "You are the NEOS Governance Agent."
 
@@ -726,7 +737,8 @@ async def list_conversations(request: Request):
         )
 
         if search:
-            pattern = f"%{search}%"
+            from neos_agent.views._rendering import escape_like
+            pattern = f"%{escape_like(search)}%"
             stmt = stmt.where(
                 or_(
                     AgentSession.title.ilike(pattern),

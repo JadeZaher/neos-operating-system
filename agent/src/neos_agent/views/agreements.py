@@ -25,7 +25,7 @@ from neos_agent.db.models import (
     AgreementRatificationRecord,
 )
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, html_fragment, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, html_fragment, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +51,11 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     domain = request.args.get("domain")
     if domain:
-        stmt = stmt.where(Agreement.domain.ilike(f"%{domain}%"))
+        stmt = stmt.where(Agreement.domain.ilike(f"%{escape_like(domain)}%"))
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 Agreement.title.ilike(pattern),

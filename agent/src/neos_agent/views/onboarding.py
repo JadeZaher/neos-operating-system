@@ -167,7 +167,7 @@ async def ceremony(request: Request, onboarding_id: uuid.UUID):
             # Get member info and verify ecosystem scope
             member = await session.get(Member, onboarding.member_id)
             eco_ids = get_selected_ecosystem_ids(request)
-            if eco_ids and (member is None or member.ecosystem_id not in eco_ids):
+            if not eco_ids or member is None or member.ecosystem_id not in eco_ids:
                 content = await render(
                     "dashboard/onboarding/list.html",
                     request=request,
@@ -211,7 +211,7 @@ async def record_consent(request: Request, onboarding_id: uuid.UUID):
         return redirect(f"/dashboard/onboarding/ceremony/{onboarding_id}")
 
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         async with request.app.ctx.db() as session:
             onboarding = await session.get(MemberOnboarding, onboarding_id)
             if onboarding is None:
@@ -220,7 +220,7 @@ async def record_consent(request: Request, onboarding_id: uuid.UUID):
             # Verify ecosystem scope through parent member
             member = await session.get(Member, onboarding.member_id)
             eco_ids = get_selected_ecosystem_ids(request)
-            if eco_ids and (member is None or member.ecosystem_id not in eco_ids):
+            if not eco_ids or member is None or member.ecosystem_id not in eco_ids:
                 return redirect("/dashboard/onboarding")
 
             apply_section_consent(onboarding, section_key, now)
@@ -253,7 +253,7 @@ async def start_onboarding(request: Request):
             # Verify the member belongs to one of the user's selected ecosystems
             member = await session.get(Member, member_id)
             eco_ids = get_selected_ecosystem_ids(request)
-            if member is None or (eco_ids and member.ecosystem_id not in eco_ids):
+            if member is None or not eco_ids or member.ecosystem_id not in eco_ids:
                 content = await render(
                     "dashboard/onboarding/list.html",
                     request=request,
@@ -293,7 +293,7 @@ async def finalize_onboarding(request: Request, onboarding_id: uuid.UUID):
     Only succeeds if all sections are consented and cooling-off period has passed.
     """
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         async with request.app.ctx.db() as session:
             onboarding = await session.get(MemberOnboarding, onboarding_id)
             if onboarding is None:
@@ -302,7 +302,7 @@ async def finalize_onboarding(request: Request, onboarding_id: uuid.UUID):
             # Verify ecosystem scope through parent member
             member = await session.get(Member, onboarding.member_id)
             eco_ids = get_selected_ecosystem_ids(request)
-            if eco_ids and (member is None or member.ecosystem_id not in eco_ids):
+            if not eco_ids or member is None or member.ecosystem_id not in eco_ids:
                 return redirect("/dashboard/onboarding")
 
             # Verify all 6 UAF sections are consented

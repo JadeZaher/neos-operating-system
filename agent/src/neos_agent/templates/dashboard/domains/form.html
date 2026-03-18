@@ -52,8 +52,9 @@
       <input type="hidden" name="_method" value="PUT">
     {% endif %}
 
-    {# Hidden ecosystem_id #}
-    <input type="hidden" name="ecosystem_id" value="{{ domain.ecosystem_id if domain else '' }}">
+    {# Ecosystem picker — handles single/multi selection #}
+    {% set current_ecosystem_id = domain.ecosystem_id if domain and domain.ecosystem_id else '' %}
+    {% include "partials/ecosystem_picker.html" %}
 
     {# ---- Basic Information ---- #}
     <fieldset class="p-6">

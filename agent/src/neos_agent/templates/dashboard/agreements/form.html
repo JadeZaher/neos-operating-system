@@ -51,12 +51,9 @@
       method="post"
       action="{% if agreement is defined and agreement %}/dashboard/agreements/{{ agreement.id }}{% else %}/dashboard/agreements{% endif %}"
     >
-      {# Hidden ecosystem_id #}
-      <input
-        type="hidden"
-        name="ecosystem_id"
-        value="{{ agreement.ecosystem_id if agreement is defined and agreement and agreement.ecosystem_id else '' }}"
-      >
+      {# Ecosystem picker — handles single/multi selection #}
+      {% set current_ecosystem_id = agreement.ecosystem_id if agreement is defined and agreement and agreement.ecosystem_id else '' %}
+      {% include "partials/ecosystem_picker.html" %}
 
       {# ---- Agreement ID ---- #}
       <div class="mb-5">

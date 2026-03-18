@@ -20,7 +20,7 @@ from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Domain, DomainElement, DomainMetric
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +42,20 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
 
     delegator = request.args.get("delegator")
     if delegator:
-        stmt = stmt.where(Domain.created_by.ilike(f"%{delegator}%"))
+        stmt = stmt.where(Domain.created_by.ilike(f"%{escape_like(delegator)}%"))
 
     steward = request.args.get("steward")
     if steward:
         stmt = stmt.where(
             or_(
-                Domain.current_steward.ilike(f"%{steward}%"),
-                Domain.domain_id.ilike(f"%{steward}%"),
+                Domain.current_steward.ilike(f"%{escape_like(steward)}%"),
+                Domain.domain_id.ilike(f"%{escape_like(steward)}%"),
             )
         )
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{search}%"
+        pattern = f"%{escape_like(search)}%"
         stmt = stmt.where(
             or_(
                 Domain.domain_id.ilike(pattern),
@@ -316,3 +316,9 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         )
 
     return redirect(f"/dashboard/domains/{domain_id}")
+
+
+@domains_bp.post("/<domain_id:uuid>")
+async def update_domain_post(request: Request, domain_id: uuid.UUID):
+    """POST /dashboard/domains/{id} — delegates to PUT for HTML form compat."""
+    return await update_domain(request, domain_id)

@@ -40,7 +40,8 @@
       method="post"
       action="{% if proposal is defined and proposal %}/dashboard/proposals/{{ proposal.id }}{% else %}/dashboard/proposals{% endif %}"
     >
-      <input type="hidden" name="ecosystem_id" value="{{ proposal.ecosystem_id if proposal is defined and proposal and proposal.ecosystem_id else '' }}">
+      {% set current_ecosystem_id = proposal.ecosystem_id if proposal is defined and proposal and proposal.ecosystem_id else '' %}
+      {% include "partials/ecosystem_picker.html" %}
 
       {# Proposal ID #}
       <div class="mb-5">
