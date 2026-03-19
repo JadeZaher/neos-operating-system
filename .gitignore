@@ -14,7 +14,10 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
+venv/
 
 # Claude
 .claude/
+.env
 agent/.env
