@@ -436,10 +436,14 @@ async def send_message(request: Request):
             )
 
             settings = request.app.ctx.settings
-            client = anthropic.AsyncAnthropic(
-                api_key=settings.ANTHROPIC_API_KEY,
-                timeout=httpx.Timeout(120.0, connect=10.0),
-            )
+            client_kwargs = {
+                "api_key": settings.ANTHROPIC_API_KEY,
+                "timeout": httpx.Timeout(120.0, connect=10.0),
+            }
+            if settings.ANTHROPIC_BASE_URL:
+                client_kwargs["base_url"] = settings.ANTHROPIC_BASE_URL
+            
+            client = anthropic.AsyncAnthropic(**client_kwargs)
 
             # Build messages from session context
             messages = (

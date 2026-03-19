@@ -28,7 +28,7 @@ echo Installing LiteLLM for local LLM support...
 REM Create .env file if it doesn't exist
 if not exist "agent\.env" (
     echo Creating .env file...
-    copy .env.example agent\.env
+    copy agent\.env.example agent\.env
     echo Please edit agent\.env and add your ANTHROPIC_API_KEY
 )
 
