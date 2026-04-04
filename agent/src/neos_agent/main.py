@@ -72,6 +72,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         try:
             from neos_agent.db.session import setup_db
             await setup_db(app, loop)
+            import neos_agent.db.course_models  # noqa: F401 — register course/quiz tables
             logger.info("Database initialized")
         except Exception as e:
             logger.error("Failed to initialize database: %s", e)
@@ -125,6 +126,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.onboarding import onboarding_api_bp
     from neos_agent.api.conflicts import conflicts_api_bp
     from neos_agent.api.messaging import messaging_api_bp
+    from neos_agent.api.courses import courses_api_bp
+    from neos_agent.api.quizzes import quizzes_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -139,6 +142,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(onboarding_api_bp)
     app.blueprint(conflicts_api_bp)
     app.blueprint(messaging_api_bp)
+    app.blueprint(courses_api_bp)
+    app.blueprint(quizzes_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views
