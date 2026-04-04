@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     NEOS_CORE_PATH: str = "../neos-core"
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
     LOG_LEVEL: str = "info"
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
     SESSION_SECRET: str = "change-me-in-production"
     SESSION_MAX_AGE_HOURS: int = 24
 

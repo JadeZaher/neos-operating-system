@@ -10,6 +10,8 @@ from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import text
 
+from neos_agent.api.schemas import HealthResponse
+
 health_bp = Blueprint("health", url_prefix="/api/v1")
 
 
@@ -34,10 +36,11 @@ async def health_check(request: Request):
         except Exception:
             db_status = "disconnected"
 
-    return json({
-        "status": "healthy",
-        "skills_loaded": skills_loaded,
-        "skills_available": skills_available,
-        "database": db_status,
-        "version": __version__,
-    })
+    response = HealthResponse(
+        status="healthy",
+        skills_loaded=skills_loaded,
+        skills_available=skills_available,
+        database=db_status,
+        version=__version__,
+    )
+    return json(response.model_dump())
