@@ -107,3 +107,29 @@ class EcosystemUpdateRequest(BaseModel):
     governance_summary: str | None = None
     visibility: str | None = None
     status: str | None = None
+
+
+# --- Dashboard schemas ---
+
+
+class SummaryCard(BaseModel):
+    label: str
+    value: int
+    trend: str | None = None
+    href: str
+    breakdown: dict[str, int] | None = None
+
+
+class ActivityItem(BaseModel):
+    id: str
+    type: str
+    title: str
+    status: str
+    timestamp: datetime
+    label: str
+    href: str
+
+
+class DashboardSummary(BaseModel):
+    cards: list[SummaryCard]
+    activity: list[ActivityItem]
