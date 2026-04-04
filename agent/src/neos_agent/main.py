@@ -128,6 +128,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.messaging import messaging_api_bp
     from neos_agent.api.courses import courses_api_bp
     from neos_agent.api.quizzes import quizzes_api_bp
+    from neos_agent.api.chat import chat_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -144,6 +145,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(messaging_api_bp)
     app.blueprint(courses_api_bp)
     app.blueprint(quizzes_api_bp)
+    app.blueprint(chat_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views
