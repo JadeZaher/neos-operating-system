@@ -117,12 +117,16 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.auth import auth_api_bp
     from neos_agent.api.ecosystems import ecosystems_api_bp
     from neos_agent.api.dashboard import dashboard_api_bp
+    from neos_agent.api.agreements import agreements_api_bp
+    from neos_agent.api.proposals import proposals_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
     app.blueprint(auth_api_bp)
     app.blueprint(ecosystems_api_bp)
     app.blueprint(dashboard_api_bp)
+    app.blueprint(agreements_api_bp)
+    app.blueprint(proposals_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views

@@ -133,3 +133,94 @@ class ActivityItem(BaseModel):
 class DashboardSummary(BaseModel):
     cards: list[SummaryCard]
     activity: list[ActivityItem]
+
+
+# --- Agreement schemas ---
+
+
+class AgreementListItem(BaseModel):
+    id: UUID
+    agreement_id: str
+    type: str
+    title: str
+    version: str
+    status: str
+    proposer: str | None = None
+    domain: str | None = None
+    hierarchy_level: str
+    review_date: date | None = None
+    sunset_date: date | None = None
+    created_at: datetime
+
+
+class RatificationRecordSchema(BaseModel):
+    id: UUID
+    participant: str
+    role: str | None = None
+    position: str | None = None
+    date: date | None = None
+
+
+class AgreementDetail(AgreementListItem):
+    ecosystem_id: UUID
+    text: str | None = None
+    affected_parties: list[str] | None = None
+    parent_agreement_id: UUID | None = None
+    ratification_date: date | None = None
+    created_date: date | None = None
+    updated_at: datetime
+    ratification_records: list[RatificationRecordSchema] = []
+
+
+class AgreementCreateRequest(BaseModel):
+    ecosystem_id: UUID
+    type: str
+    title: str
+    text: str | None = None
+    proposer: str | None = None
+    domain: str | None = None
+    hierarchy_level: str = "domain"
+    affected_parties: list[str] | None = None
+    review_date: date | None = None
+    sunset_date: date | None = None
+
+
+class AgreementUpdateRequest(BaseModel):
+    title: str | None = None
+    text: str | None = None
+    proposer: str | None = None
+    domain: str | None = None
+    hierarchy_level: str | None = None
+    affected_parties: list[str] | None = None
+    review_date: date | None = None
+    sunset_date: date | None = None
+    status: str | None = None
+
+
+class AmendmentRecordSchema(BaseModel):
+    id: UUID
+    amendment_id: str
+    amendment_type: str
+    proposed_by: str | None = None
+    date: date | None = None
+    changes: dict | None = None
+    rationale: str | None = None
+    status: str
+    new_agreement_version: str | None = None
+    created_at: datetime
+
+
+class ReviewRecordSchema(BaseModel):
+    id: UUID
+    review_id: str
+    review_type: str
+    trigger: str | None = None
+    date: date | None = None
+    outcome: str | None = None
+    next_review_date: date | None = None
+    created_at: datetime
+
+
+class AgreementHistoryResponse(BaseModel):
+    amendments: list[AmendmentRecordSchema]
+    reviews: list[ReviewRecordSchema]
