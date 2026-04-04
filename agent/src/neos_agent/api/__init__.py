@@ -1,1 +1,1 @@
-"""API blueprints for health check and skill index endpoints."""
+"""API blueprints for health, skills, auth, and ecosystem endpoints."""

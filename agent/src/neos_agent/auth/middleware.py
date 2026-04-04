@@ -13,6 +13,8 @@ import hmac
 PUBLIC_PREFIXES = (
     "/auth/",
     "/api/v1/health",
+    "/api/v1/auth/",
+    "/api/v1/skills",
     "/static/",
     "/ecosystems",
     "/chat/shared/",
