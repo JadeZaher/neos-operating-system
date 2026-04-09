@@ -13,7 +13,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import date, datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -41,14 +41,14 @@ class RepairAgreementSchema(BaseModel):
     commitments: dict | None = None
     responsible_party: str | None = None
     status: str
-    checkin_30_date: date | None = None
+    checkin_30_date: _dt.date | None = None
     checkin_30_notes: str | None = None
-    checkin_60_date: date | None = None
+    checkin_60_date: _dt.date | None = None
     checkin_60_notes: str | None = None
-    checkin_90_date: date | None = None
+    checkin_90_date: _dt.date | None = None
     checkin_90_notes: str | None = None
-    completed_date: date | None = None
-    created_at: datetime
+    completed_date: _dt.date | None = None
+    created_at: _dt.datetime
 
 
 class ConflictListItem(BaseModel):
@@ -62,7 +62,7 @@ class ConflictListItem(BaseModel):
     urgency: str | None = None
     safety_flag: bool = False
     domain: str | None = None
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class ConflictDetail(ConflictListItem):
@@ -74,8 +74,8 @@ class ConflictDetail(ConflictListItem):
     facilitator_id: uuid.UUID | None = None
     triage_notes: str | None = None
     resolution_summary: str | None = None
-    resolved_date: date | None = None
-    updated_at: datetime
+    resolved_date: _dt.date | None = None
+    updated_at: _dt.datetime
     repair_agreements: list[RepairAgreementSchema] = []
 
 
@@ -109,16 +109,16 @@ class ConflictUpdateRequest(BaseModel):
     domain: str | None = None
     triage_notes: str | None = None
     resolution_summary: str | None = None
-    resolved_date: date | None = None
+    resolved_date: _dt.date | None = None
 
 
 class RepairCreateRequest(BaseModel):
     title: str
     commitments: dict | None = None
     responsible_party: str | None = None
-    checkin_30_date: date | None = None
-    checkin_60_date: date | None = None
-    checkin_90_date: date | None = None
+    checkin_30_date: _dt.date | None = None
+    checkin_60_date: _dt.date | None = None
+    checkin_90_date: _dt.date | None = None
 
 
 class RepairUpdateRequest(BaseModel):
@@ -126,13 +126,13 @@ class RepairUpdateRequest(BaseModel):
     commitments: dict | None = None
     responsible_party: str | None = None
     status: str | None = None
-    checkin_30_date: date | None = None
+    checkin_30_date: _dt.date | None = None
     checkin_30_notes: str | None = None
-    checkin_60_date: date | None = None
+    checkin_60_date: _dt.date | None = None
     checkin_60_notes: str | None = None
-    checkin_90_date: date | None = None
+    checkin_90_date: _dt.date | None = None
     checkin_90_notes: str | None = None
-    completed_date: date | None = None
+    completed_date: _dt.date | None = None
 
 
 # ---------------------------------------------------------------------------

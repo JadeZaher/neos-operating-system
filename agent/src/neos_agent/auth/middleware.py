@@ -1,7 +1,7 @@
 """Authentication middleware for Sanic.
 
 Provides HMAC-signed session cookies and route protection.
-Unauthenticated requests to protected routes redirect to /auth/login.
+Unauthenticated requests to protected routes receive a JSON 401 response.
 """
 
 from __future__ import annotations
@@ -15,16 +15,13 @@ PUBLIC_PREFIXES = (
     "/api/v1/health",
     "/api/v1/auth/",
     "/api/v1/skills",
-    "/static/",
-    "/ecosystems",
-    "/chat/shared/",
 )
 
 PUBLIC_EXACT = frozenset({
-    "/auth/login",
     "/auth/challenge",
     "/auth/verify",
     "/auth/logout",
+    "/",
 })
 
 

@@ -16,7 +16,7 @@ import uuid
 
 from sanic import Sanic
 from sanic.request import Request
-from sanic.response import redirect
+from sanic.response import json as json_response
 from sqlalchemy import select
 
 if TYPE_CHECKING:
@@ -129,6 +129,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.courses import courses_api_bp
     from neos_agent.api.quizzes import quizzes_api_bp
     from neos_agent.api.chat import chat_api_bp
+    from neos_agent.api.emergency import emergency_api_bp
+    from neos_agent.api.exit import exit_api_bp
+    from neos_agent.api.safeguards import safeguards_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -146,18 +149,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(courses_api_bp)
     app.blueprint(quizzes_api_bp)
     app.blueprint(chat_api_bp)
-
-    # Register dashboard view blueprints
-    from neos_agent.views import register_views
-    register_views(app)
-
-    # Register ecosystem directory blueprint (public + auth routes)
-    from neos_agent.views.ecosystems import ecosystems_bp
-    app.blueprint(ecosystems_bp)
-
-    # Register chat blueprint
-    from neos_agent.views.chat import chat_bp
-    app.blueprint(chat_bp)
+    app.blueprint(emergency_api_bp)
+    app.blueprint(exit_api_bp)
+    app.blueprint(safeguards_api_bp)
 
     # Register auth blueprint
     from neos_agent.auth.routes import auth_bp
@@ -172,7 +166,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     async def auth_middleware(request: Request):
         from neos_agent.auth.middleware import is_public_route, verify_session_cookie
         from neos_agent.db.models import AuthSession, Ecosystem, Member as MemberModel
-        from neos_agent.views._rendering import EcosystemScope
+        from neos_agent.auth.ecosystem_scope import EcosystemScope
 
         # Helper: parse selected ecosystem IDs from cookie
         def _parse_selected_cookie() -> list[uuid.UUID]:
@@ -191,8 +185,6 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         async def _load_ecosystems(db, member, selected_ids):
             if selected_ids:
                 if member:
-                    # Verify membership: keep only ecosystems where this member's DID
-                    # has an active Member record, plus always include their own ecosystem.
                     member_result = await db.execute(
                         select(MemberModel.ecosystem_id).where(
                             MemberModel.did == member.did,
@@ -201,9 +193,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                         )
                     )
                     authorized_eco_ids = set(member_result.scalars().all())
-                    # Always include the member's own ecosystem
                     authorized_eco_ids.add(member.ecosystem_id)
-                    # Filter selected to only authorized
                     selected_ids = [eid for eid in selected_ids if eid in authorized_eco_ids]
 
                 result = await db.execute(
@@ -212,7 +202,6 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 ecosystems = list(result.scalars().all())
                 eco_ids = [e.id for e in ecosystems]
                 return ecosystems, eco_ids
-            # Fallback: member's own ecosystem
             if member:
                 eco = await db.get(Ecosystem, member.ecosystem_id)
                 if eco:
@@ -245,7 +234,6 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             return None
 
         if is_public_route(request.path):
-            # Still resolve session so logged-in users see personalized UI
             member = await _try_resolve_member()
             request.ctx.member = member
             selected_ids = _parse_selected_cookie()
@@ -262,11 +250,11 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
         cookie = request.cookies.get("neos_session")
         if not cookie:
-            return redirect("/auth/login")
+            return json_response({"error": "Unauthorized"}, status=401)
 
         session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
         if not session_id:
-            return redirect("/auth/login")
+            return json_response({"error": "Unauthorized"}, status=401)
 
         try:
             async with app.ctx.db() as db:
@@ -279,14 +267,13 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 )
                 auth_session = result.scalar_one_or_none()
                 if not auth_session:
-                    response = redirect("/auth/login")
+                    response = json_response({"error": "Unauthorized"}, status=401)
                     response.delete_cookie("neos_session", path="/")
                     return response
 
                 member = await db.get(MemberModel, auth_session.member_id)
                 request.ctx.member = member
 
-                # Load selected ecosystems from cookie (or fallback to member's)
                 selected_ids = _parse_selected_cookie()
                 ecosystems, eco_ids = await _load_ecosystems(db, member, selected_ids)
                 request.ctx.ecosystems = ecosystems
@@ -294,22 +281,20 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
         except Exception:
             logger.exception("Auth middleware error")
-            return redirect("/auth/login")
+            return json_response({"error": "Unauthorized"}, status=401)
 
         return None
 
-    # Root redirect
+    # Root route — API-only mode
     @app.get("/")
     async def root(request: Request):
-        if hasattr(request.ctx, "member") and request.ctx.member:
-            return redirect("/dashboard")
-        return redirect("/auth/login")
+        return json_response({"service": "neos-agent", "status": "ok"})
 
-    # Catch-all: redirect unknown paths to the dashboard
+    # Catch-all 404 handler
     from sanic.exceptions import NotFound
     @app.exception(NotFound)
     async def catch_not_found(request, exception):
-        return redirect("/dashboard")
+        return json_response({"error": "Not found"}, status=404)
 
     return app
 

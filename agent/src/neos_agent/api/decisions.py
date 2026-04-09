@@ -13,7 +13,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import date, datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -64,14 +64,14 @@ class SemanticTagSchema(BaseModel):
 class DecisionListItem(BaseModel):
     id: uuid.UUID
     record_id: str
-    date: date | None = None
+    date: _dt.date | None = None
     holding: str | None = None
     source_skill: str | None = None
     source_layer: int | None = None
     domain: str | None = None
     precedent_level: str | None = None
     status: str
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class DecisionDetail(DecisionListItem):
@@ -84,12 +84,12 @@ class DecisionDetail(DecisionListItem):
     overruled_by: str | None = None
     superseded_by: str | None = None
     related_records: dict | None = None
-    review_date: date | None = None
+    review_date: _dt.date | None = None
     recorder: str | None = None
     recorder_role: str | None = None
     verification_by: str | None = None
-    verification_date: date | None = None
-    updated_at: datetime
+    verification_date: _dt.date | None = None
+    updated_at: _dt.datetime
     dissent_records: list[DissentRecordSchema] = []
     participants: list[ParticipantSchema] = []
     semantic_tags: list[SemanticTagSchema] = []

@@ -13,7 +13,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import date, datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -45,7 +45,7 @@ class MemberListItem(BaseModel):
     phone: str | None = None
     profile_picture: str | None = None
     onboarding_status: str | None = None
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class MemberDetail(MemberListItem):
@@ -55,9 +55,9 @@ class MemberDetail(MemberListItem):
     skills_needed: dict | None = None
     interests: dict | None = None
     kyc_status: str | None = None
-    last_governance_activity_date: date | None = None
+    last_governance_activity_date: _dt.date | None = None
     notes: str | None = None
-    updated_at: datetime
+    updated_at: _dt.datetime
     onboarding: OnboardingSnapshot | None = None
 
 
@@ -65,9 +65,9 @@ class OnboardingSnapshot(BaseModel):
     id: uuid.UUID
     facilitator: str | None = None
     completion_percentage: int | None = 0
-    consent_date: date | None = None
-    cooling_off_start: date | None = None
-    cooling_off_end: date | None = None
+    consent_date: _dt.date | None = None
+    cooling_off_start: _dt.date | None = None
+    cooling_off_end: _dt.date | None = None
 
 
 # Rebuild MemberDetail now that OnboardingSnapshot is defined
@@ -108,9 +108,9 @@ class OnboardingChecklistItem(BaseModel):
     facilitator: str | None = None
     mentor_id: uuid.UUID | None = None
     uaf_version_consented: str | None = None
-    consent_date: date | None = None
-    cooling_off_start: date | None = None
-    cooling_off_end: date | None = None
+    consent_date: _dt.date | None = None
+    cooling_off_start: _dt.date | None = None
+    cooling_off_end: _dt.date | None = None
     section_consents: dict | None = None
     checklist_items: dict | None = None
     completion_percentage: int | None = 0
@@ -409,7 +409,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
             member_id=m.id,
             from_status=old_status,
             to_status=req.status,
-            date=date.today(),
+            date=_dt.date.today(),
             trigger=req.trigger,
             notes=req.notes,
         )

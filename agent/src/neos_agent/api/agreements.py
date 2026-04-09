@@ -12,7 +12,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import date
+import datetime as _dt
 
 from sanic import Blueprint, json
 from sanic.request import Request
@@ -282,7 +282,7 @@ async def create_agreement(request: Request):
             affected_parties=create_req.affected_parties,
             review_date=create_req.review_date,
             sunset_date=create_req.sunset_date,
-            created_date=date.today(),
+            created_date=_dt.date.today(),
         )
         db.add(agreement)
         await db.commit()
@@ -397,7 +397,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         agreement.status = new_status
 
         if new_status == "ratified" and agreement.ratification_date is None:
-            agreement.ratification_date = date.today()
+            agreement.ratification_date = _dt.date.today()
 
         await db.commit()
         await db.refresh(agreement)

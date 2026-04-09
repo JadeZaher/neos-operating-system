@@ -13,7 +13,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import date, datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -51,19 +51,19 @@ class OnboardingListItem(BaseModel):
     member_display_name: str | None = None
     facilitator: str | None = None
     completion_percentage: int | None = 0
-    consent_date: date | None = None
-    cooling_off_start: date | None = None
-    cooling_off_end: date | None = None
-    created_at: datetime
+    consent_date: _dt.date | None = None
+    cooling_off_start: _dt.date | None = None
+    cooling_off_end: _dt.date | None = None
+    created_at: _dt.datetime
 
 
 class CeremonyState(BaseModel):
     member_id: uuid.UUID
     section_consents: dict
     completion_percentage: int
-    cooling_off_start: date | None = None
-    cooling_off_end: date | None = None
-    consent_date: date | None = None
+    cooling_off_start: _dt.date | None = None
+    cooling_off_end: _dt.date | None = None
+    consent_date: _dt.date | None = None
     facilitator: str | None = None
     uaf_version_consented: str | None = None
 
@@ -290,7 +290,7 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
 
         # If fully complete and no consent_date yet, set it
         if ob.completion_percentage == 100 and ob.consent_date is None:
-            ob.consent_date = date.today()
+            ob.consent_date = _dt.date.today()
 
         await session.commit()
         await session.refresh(ob)

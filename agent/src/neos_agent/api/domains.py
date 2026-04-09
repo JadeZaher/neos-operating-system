@@ -13,7 +13,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -57,7 +57,7 @@ class DomainListItem(BaseModel):
     purpose: str | None = None
     current_steward: str | None = None
     parent_domain_id: uuid.UUID | None = None
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class DomainDetail(DomainListItem):
@@ -66,7 +66,7 @@ class DomainDetail(DomainListItem):
     created_by: str | None = None
     metric_definitions: dict | None = None
     elements: dict | None = None
-    updated_at: datetime
+    updated_at: _dt.datetime
     domain_elements: list[DomainElementSchema] = []
     domain_metrics: list[DomainMetricSchema] = []
 

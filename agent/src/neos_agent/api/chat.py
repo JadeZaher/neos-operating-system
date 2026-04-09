@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+import datetime as _dt
 
 from pydantic import BaseModel
 from sanic import Blueprint, json as json_response

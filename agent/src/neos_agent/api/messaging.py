@@ -12,7 +12,7 @@ from __future__ import annotations
 import json as json_module
 import logging
 import uuid
-from datetime import datetime
+import datetime as _dt
 
 from pydantic import BaseModel
 from sanic import Blueprint, json
@@ -46,7 +46,7 @@ class ConversationSummary(BaseModel):
     type: str
     title: str | None = None
     last_message: str | None = None
-    last_message_at: datetime | None = None
+    last_message_at: _dt.datetime | None = None
     unread_count: int = 0
     participants: list[ParticipantSummary] = []
 
@@ -57,8 +57,8 @@ class MessageSchema(BaseModel):
     sender_name: str
     content: str
     message_type: str
-    created_at: datetime
-    edited_at: datetime | None = None
+    created_at: _dt.datetime
+    edited_at: _dt.datetime | None = None
 
 
 class ConversationDetailSchema(BaseModel):
@@ -224,7 +224,7 @@ async def list_conversations(request: Request):
 
         # Sort by last message timestamp desc (conversations with no messages last)
         summaries.sort(
-            key=lambda s: s.last_message_at or datetime.min,
+            key=lambda s: s.last_message_at or _dt.datetime.min,
             reverse=True,
         )
 

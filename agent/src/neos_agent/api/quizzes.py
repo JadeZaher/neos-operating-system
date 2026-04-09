@@ -12,7 +12,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -47,8 +47,8 @@ class QuizListItem(BaseModel):
     time_limit: Optional[int] = None
     passing_score: Optional[int] = None
     allow_retakes: bool
-    created_at: datetime
-    updated_at: datetime
+    created_at: _dt.datetime
+    updated_at: _dt.datetime
 
 
 class QuizDetail(QuizListItem):
@@ -98,7 +98,7 @@ class QuizResultItem(BaseModel):
     score: Optional[float] = None
     is_passed: Optional[bool] = None
     time_spent: Optional[int] = None
-    completed_at: Optional[datetime] = None
+    completed_at: Optional[_dt.datetime] = None
 
 
 class UserTagItem(BaseModel):
@@ -122,7 +122,7 @@ class UserBadgeItem(BaseModel):
     badge_icon: Optional[str] = None
     strength: Optional[float] = None
     source_tag_keys: Optional[dict] = None
-    earned_at: Optional[datetime] = None
+    earned_at: Optional[_dt.datetime] = None
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,8 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+import datetime as _dt
+from datetime import timedelta
 
 from sanic import Blueprint, json
 from sanic.request import Request
@@ -54,7 +55,7 @@ async def api_challenge(request: Request):
         return json({"error": "Invalid DID format"}, status=400)
 
     challenge_hex = os.urandom(32).hex()
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    expires_at = _dt.datetime.utcnow() + timedelta(minutes=5)
 
     async with request.app.ctx.db() as session:
         challenge = AuthChallenge(
@@ -93,7 +94,7 @@ async def api_verify(request: Request):
                 AuthChallenge.did == did,
                 AuthChallenge.challenge == challenge_hex,
                 AuthChallenge.used == False,
-                AuthChallenge.expires_at > datetime.utcnow(),
+                AuthChallenge.expires_at > _dt.datetime.utcnow(),
             )
         )
         auth_challenge = result.scalar_one_or_none()
@@ -136,7 +137,7 @@ async def api_verify(request: Request):
 
         # Create auth session
         session_id = uuid.uuid4()
-        expires_at = datetime.utcnow() + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+        expires_at = _dt.datetime.utcnow() + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
             member_id=member.id,
@@ -191,7 +192,7 @@ async def api_me(request: Request):
         result = await db.execute(
             select(AuthSession).where(
                 AuthSession.id == uuid.UUID(session_id),
-                AuthSession.expires_at > datetime.utcnow(),
+                AuthSession.expires_at > _dt.datetime.utcnow(),
             )
         )
         auth_session = result.scalar_one_or_none()

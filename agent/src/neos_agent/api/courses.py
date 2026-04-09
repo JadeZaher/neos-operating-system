@@ -12,7 +12,7 @@ import json as json_module
 import logging
 import re
 import uuid
-from datetime import datetime
+import datetime as _dt
 from typing import Optional
 
 from pydantic import BaseModel
@@ -39,8 +39,8 @@ class CourseListItem(BaseModel):
     description: Optional[str] = None
     is_onboarding_required: bool
     sort_order: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: _dt.datetime
+    updated_at: _dt.datetime
 
 
 class QuizSummary(BaseModel):

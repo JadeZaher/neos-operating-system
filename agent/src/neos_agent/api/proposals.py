@@ -12,7 +12,7 @@ from __future__ import annotations
 import json as json_module
 import logging
 import uuid
-from datetime import date, datetime
+import datetime as _dt
 
 from pydantic import BaseModel
 from sanic import Blueprint, json
@@ -49,7 +49,7 @@ class ProposalListItem(BaseModel):
     proposer: str | None = None
     affected_domain: str | None = None
     urgency: str | None = None
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class AdviceEntrySchema(BaseModel):
@@ -60,13 +60,13 @@ class AdviceEntrySchema(BaseModel):
     advice_type: str | None = None
     content: str | None = None
     concerns: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
 
 
 class AdviceLogSchema(BaseModel):
     id: uuid.UUID
-    advice_window_start: date | None = None
-    advice_window_end: date | None = None
+    advice_window_start: _dt.date | None = None
+    advice_window_end: _dt.date | None = None
     urgency: str | None = None
     summary: str | None = None
     proposer_modifications: str | None = None
@@ -80,7 +80,7 @@ class ConsentParticipantSchema(BaseModel):
     objection_text: str | None = None
     integration_attempted: bool | None = None
     integration_outcome: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
 
 
 class ConsentRecordSchema(BaseModel):
@@ -88,7 +88,7 @@ class ConsentRecordSchema(BaseModel):
     consent_mode: str
     weighting_model: str | None = None
     facilitator: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
     quorum_required: str | None = None
     quorum_met: bool = False
     outcome: str | None = None
@@ -108,8 +108,8 @@ class TestSuccessCriterionSchema(BaseModel):
 
 class TestReportSchema(BaseModel):
     id: uuid.UUID
-    test_start_date: date | None = None
-    test_end_date: date | None = None
+    test_start_date: _dt.date | None = None
+    test_end_date: _dt.date | None = None
     outcome: str | None = None
     observations: str | None = None
     midpoint_findings: str | None = None
@@ -125,11 +125,11 @@ class ProposalDetail(ProposalListItem):
     impacted_parties: list[str] | None = None
     proposed_change: str | None = None
     rationale: str | None = None
-    created_date: date | None = None
-    advice_deadline: date | None = None
-    consent_deadline: date | None = None
+    created_date: _dt.date | None = None
+    advice_deadline: _dt.date | None = None
+    consent_deadline: _dt.date | None = None
     test_duration: str | None = None
-    updated_at: datetime
+    updated_at: _dt.datetime
     advice_logs: list[AdviceLogSchema] = []
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
@@ -145,7 +145,7 @@ class ProposalCreateRequest(BaseModel):
     urgency: str | None = None
     proposed_change: str | None = None
     rationale: str | None = None
-    advice_deadline: date | None = None
+    advice_deadline: _dt.date | None = None
 
 
 class ProposalUpdateRequest(BaseModel):
@@ -154,8 +154,8 @@ class ProposalUpdateRequest(BaseModel):
     rationale: str | None = None
     affected_domain: str | None = None
     urgency: str | None = None
-    advice_deadline: date | None = None
-    consent_deadline: date | None = None
+    advice_deadline: _dt.date | None = None
+    consent_deadline: _dt.date | None = None
 
 
 class AdviceEntryCreateRequest(BaseModel):
@@ -510,7 +510,7 @@ async def create_proposal(request: Request):
             urgency=create_req.urgency or "standard",
             proposed_change=create_req.proposed_change,
             rationale=create_req.rationale,
-            created_date=date.today(),
+            created_date=_dt.date.today(),
             advice_deadline=create_req.advice_deadline,
         )
         session.add(proposal)
@@ -745,7 +745,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             advice_log = AdviceLog(
                 id=uuid.uuid4(),
                 proposal_id=proposal_id,
-                advice_window_start=date.today(),
+                advice_window_start=_dt.date.today(),
                 advice_window_end=proposal.advice_deadline,
                 urgency=proposal.urgency,
             )
@@ -759,7 +759,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             advisor=create_req.advisor,
             role=create_req.role,
             ethos=create_req.ethos,
-            date=date.today(),
+            date=_dt.date.today(),
             advice_text=create_req.content,
             integration_status="pending",
         )
@@ -857,7 +857,7 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
                 id=uuid.uuid4(),
                 proposal_id=proposal_id,
                 consent_mode="consent",
-                date=date.today(),
+                date=_dt.date.today(),
                 quorum_met=False,
                 outcome="pending",
             )

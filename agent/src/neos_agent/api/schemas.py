@@ -1,8 +1,6 @@
 """Pydantic v2 response schemas for the NEOS agent API."""
 
-from __future__ import annotations
-
-from datetime import date, datetime
+import datetime as _dt
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -75,7 +73,7 @@ class AuthMeResponse(BaseModel):
 
 class EcosystemDetail(EcosystemSummary):
     website: str | None = None
-    founded_date: date | None = None
+    founded_date: _dt.date | None = None
     tags: list[str] | None = None
     contact_email: str | None = None
     governance_summary: str | None = None
@@ -88,7 +86,7 @@ class EcosystemCreateRequest(BaseModel):
     location: str | None = None
     website: str | None = None
     logo_url: str | None = None
-    founded_date: date | None = None
+    founded_date: _dt.date | None = None
     tags: list[str] | None = None
     contact_email: str | None = None
     governance_summary: str | None = None
@@ -101,7 +99,7 @@ class EcosystemUpdateRequest(BaseModel):
     location: str | None = None
     website: str | None = None
     logo_url: str | None = None
-    founded_date: date | None = None
+    founded_date: _dt.date | None = None
     tags: list[str] | None = None
     contact_email: str | None = None
     governance_summary: str | None = None
@@ -125,7 +123,7 @@ class ActivityItem(BaseModel):
     type: str
     title: str
     status: str
-    timestamp: datetime
+    timestamp: _dt.datetime
     label: str
     href: str
 
@@ -148,9 +146,9 @@ class AgreementListItem(BaseModel):
     proposer: str | None = None
     domain: str | None = None
     hierarchy_level: str
-    review_date: date | None = None
-    sunset_date: date | None = None
-    created_at: datetime
+    review_date: _dt.date | None = None
+    sunset_date: _dt.date | None = None
+    created_at: _dt.datetime
 
 
 class RatificationRecordSchema(BaseModel):
@@ -158,7 +156,7 @@ class RatificationRecordSchema(BaseModel):
     participant: str
     role: str | None = None
     position: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
 
 
 class AgreementDetail(AgreementListItem):
@@ -166,9 +164,9 @@ class AgreementDetail(AgreementListItem):
     text: str | None = None
     affected_parties: list[str] | None = None
     parent_agreement_id: UUID | None = None
-    ratification_date: date | None = None
-    created_date: date | None = None
-    updated_at: datetime
+    ratification_date: _dt.date | None = None
+    created_date: _dt.date | None = None
+    updated_at: _dt.datetime
     ratification_records: list[RatificationRecordSchema] = []
 
 
@@ -181,8 +179,8 @@ class AgreementCreateRequest(BaseModel):
     domain: str | None = None
     hierarchy_level: str = "domain"
     affected_parties: list[str] | None = None
-    review_date: date | None = None
-    sunset_date: date | None = None
+    review_date: _dt.date | None = None
+    sunset_date: _dt.date | None = None
 
 
 class AgreementUpdateRequest(BaseModel):
@@ -192,8 +190,8 @@ class AgreementUpdateRequest(BaseModel):
     domain: str | None = None
     hierarchy_level: str | None = None
     affected_parties: list[str] | None = None
-    review_date: date | None = None
-    sunset_date: date | None = None
+    review_date: _dt.date | None = None
+    sunset_date: _dt.date | None = None
     status: str | None = None
 
 
@@ -202,12 +200,12 @@ class AmendmentRecordSchema(BaseModel):
     amendment_id: str
     amendment_type: str
     proposed_by: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
     changes: dict | None = None
     rationale: str | None = None
     status: str
     new_agreement_version: str | None = None
-    created_at: datetime
+    created_at: _dt.datetime
 
 
 class ReviewRecordSchema(BaseModel):
@@ -215,10 +213,10 @@ class ReviewRecordSchema(BaseModel):
     review_id: str
     review_type: str
     trigger: str | None = None
-    date: date | None = None
+    date: _dt.date | None = None
     outcome: str | None = None
-    next_review_date: date | None = None
-    created_at: datetime
+    next_review_date: _dt.date | None = None
+    created_at: _dt.datetime
 
 
 class AgreementHistoryResponse(BaseModel):
