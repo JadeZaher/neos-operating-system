@@ -399,11 +399,20 @@ async def send_message(request: Request):
         # 3. Load or create session (with member association)
         member = getattr(request.ctx, "member", None)
         member_id = member.id if member else None
-        session = await get_or_create_session(
-            session_id, request.app,
-            ecosystem_ids=selected_eco_ids or None,
-            member_id=member_id,
-        )
+        try:
+            session = await get_or_create_session(
+                session_id, request.app,
+                ecosystem_ids=selected_eco_ids or None,
+                member_id=member_id,
+            )
+        except Exception as exc:
+            logger.exception("Failed to load chat session: %s", exc)
+            await emit_chat_event(response, "morph", '<div id="typing-indicator"></div>')
+            await emit_chat_event(response, "append", render_system_message(
+                "error", "Unable to start a session. Please try again."
+            ))
+            await emit_chat_event(response, "done", "")
+            return
 
         # 4. Build system prompt
         try:
@@ -436,6 +445,14 @@ async def send_message(request: Request):
             )
 
             settings = request.app.ctx.settings
+            if not settings.ANTHROPIC_API_KEY:
+                await emit_chat_event(response, "morph", '<div id="typing-indicator"></div>')
+                await emit_chat_event(response, "append", render_system_message(
+                    "error",
+                    "The AI assistant is not configured. Please contact your administrator.",
+                ))
+                await emit_chat_event(response, "done", "")
+                return
             client_kwargs = {
                 "api_key": settings.ANTHROPIC_API_KEY,
                 "timeout": httpx.Timeout(120.0, connect=10.0),

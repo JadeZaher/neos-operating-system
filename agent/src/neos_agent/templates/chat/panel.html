@@ -481,11 +481,6 @@
         } catch(e) {
           loadConversation(sharedSessionId, { shared: true });
         }
-        // Auto-open the chat panel
-        const panel = document.getElementById('chat-panel-wrapper');
-        if (panel && panel.classList.contains('translate-x-full')) {
-          if (typeof toggleChat === 'function') toggleChat();
-        }
       })();
     } else {
       // Always start on conversation list so user can choose or start new

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     DATABASE_URL: str
-    ANTHROPIC_API_KEY: str
+    ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_BASE_URL: str | None = None
     NEOS_CORE_PATH: str = "../neos-core"
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"

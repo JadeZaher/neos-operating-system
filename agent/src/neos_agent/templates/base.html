@@ -512,20 +512,6 @@
     if (!localStorage.getItem('neos_theme')) updateThemeIcon();
   });
 
-  // Auto-open chat panel if share link detected
-  (function() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('chat_session')) {
-      // Panel init script in panel.html handles loading the conversation;
-      // here we just make sure the panel is visible
-      setTimeout(function() {
-        const panel = document.getElementById('chat-panel-wrapper');
-        if (panel && panel.classList.contains('translate-x-full')) {
-          toggleChat();
-        }
-      }, 200);
-    }
-  })();
-  </script>
+</script>
 </body>
 </html>
