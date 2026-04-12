@@ -8,6 +8,7 @@ Requires-Dist: sanic-ext<26.0,>=25.0
 Requires-Dist: sqlalchemy[asyncio]<3.0,>=2.0
 Requires-Dist: asyncpg>=0.29
 Requires-Dist: alembic>=1.13
+Requires-Dist: pydantic>=2.0
 Requires-Dist: pydantic-settings>=2.0
 Requires-Dist: anthropic>=0.40
 Requires-Dist: datastar-py>=0.8

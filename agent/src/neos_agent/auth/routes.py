@@ -13,26 +13,17 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sanic import Blueprint, html, json
+from sanic import Blueprint, json
 from sanic.request import Request
-from sanic.response import redirect
 from sqlalchemy import select
 
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie
 from neos_agent.db.models import AuthChallenge, AuthSession, Member
-from neos_agent.views._rendering import render
 
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", url_prefix="/auth")
-
-
-@auth_bp.get("/login")
-async def login_page(request: Request):
-    """Render the self-sovereign sign-in page."""
-    content = await render("auth/login.html")
-    return html(content)
 
 
 @auth_bp.post("/challenge")
@@ -184,6 +175,6 @@ async def logout(request: Request):
             except Exception:
                 logger.exception("Error during logout session cleanup")
 
-    response = redirect("/auth/login")
+    response = json({"success": True})
     response.delete_cookie("neos_session", path="/")
     return response
