@@ -22,6 +22,11 @@ src/neos_agent/auth/routes.py
 src/neos_agent/db/__init__.py
 src/neos_agent/db/models.py
 src/neos_agent/db/session.py
+src/neos_agent/messaging/__init__.py
+src/neos_agent/messaging/connections.py
+src/neos_agent/messaging/handlers.py
+src/neos_agent/messaging/queries.py
+src/neos_agent/messaging/routes.py
 src/neos_agent/skills/__init__.py
 src/neos_agent/skills/graph.py
 src/neos_agent/skills/loader.py
@@ -54,6 +59,7 @@ src/neos_agent/templates/dashboard/exit/_list_rows.html
 src/neos_agent/templates/dashboard/exit/detail.html
 src/neos_agent/templates/dashboard/exit/form.html
 src/neos_agent/templates/dashboard/exit/list.html
+src/neos_agent/templates/dashboard/members/_onboarding_checklist.html
 src/neos_agent/templates/dashboard/members/detail.html
 src/neos_agent/templates/dashboard/members/form.html
 src/neos_agent/templates/dashboard/members/list.html
@@ -71,6 +77,13 @@ src/neos_agent/templates/dashboard/safeguards/dashboard.html
 src/neos_agent/templates/ecosystems/detail.html
 src/neos_agent/templates/ecosystems/form.html
 src/neos_agent/templates/ecosystems/list.html
+src/neos_agent/templates/messaging/conversation_detail.html
+src/neos_agent/templates/messaging/conversation_list.html
+src/neos_agent/templates/messaging/index.html
+src/neos_agent/templates/messaging/member_picker.html
+src/neos_agent/templates/messaging/message_list.html
+src/neos_agent/templates/messaging/search_results.html
+src/neos_agent/templates/partials/ecosystem_picker.html
 src/neos_agent/templates/partials/loading.html
 src/neos_agent/templates/partials/notification.html
 src/neos_agent/templates/partials/pagination.html
@@ -91,6 +104,7 @@ src/neos_agent/views/proposals.py
 src/neos_agent/views/safeguards.py
 tests/test_chat.py
 tests/test_config.py
+tests/test_connection_manager.py
 tests/test_governance_tools.py
 tests/test_graph.py
 tests/test_graph_integration.py
@@ -99,6 +113,9 @@ tests/test_loader.py
 tests/test_main.py
 tests/test_markdown.py
 tests/test_members.py
+tests/test_messaging_models.py
+tests/test_messaging_views.py
+tests/test_messaging_ws.py
 tests/test_registry.py
 tests/test_router.py
 tests/test_session.py

@@ -295,11 +295,17 @@ if __name__ == "__main__":
     parser.add_argument("--dev", action="store_true", help="Enable debug + auto-reload")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--single-process", action="store_true", help="Run in single process")
+    parser.add_argument("--ssl-cert", default=None, help="Path to TLS certificate file")
+    parser.add_argument("--ssl-key", default=None, help="Path to TLS private key file")
     args = parser.parse_args()
 
-    # On Windows, Sanic's multiprocess reloader can't resolve the factory,
-    # so we fall back to single_process + debug (no auto-reload).
-    single = args.single_process or (args.dev and sys.platform == "win32")
+    # Sanic's multiprocess reloader can't resolve the factory when the app is
+    # instantiated inside __main__, so dev mode always runs single-process.
+    single = args.single_process or args.dev
+
+    ssl = None
+    if args.ssl_cert and args.ssl_key:
+        ssl = {"cert": args.ssl_cert, "key": args.ssl_key}
 
     app = create_app()
     if single:
@@ -308,6 +314,7 @@ if __name__ == "__main__":
             port=args.port,
             debug=args.dev,
             single_process=True,
+            ssl=ssl,
         )
     else:
         app.run(
@@ -315,4 +322,5 @@ if __name__ == "__main__":
             port=args.port,
             dev=args.dev,
             workers=args.workers,
+            ssl=ssl,
         )
