@@ -1,0 +1,94 @@
+{# HTMX fragment — swaps #onboarding-checklist outerHTML.
+   Context: onboarding (MemberOnboarding), uaf_sections (list),
+   member (Member), is_own_profile (bool)
+#}
+
+<div id="onboarding-checklist" class="bg-neos-surface border border-neos-border rounded-xl mb-6">
+  <div class="px-6 py-4 border-b border-neos-border flex items-center justify-between">
+    <h2 class="text-base font-semibold text-neos-text">Onboarding Tasks</h2>
+    {% if onboarding and onboarding.completion_percentage is defined %}
+    <span class="text-sm text-neos-muted">{{ onboarding.completion_percentage }}% complete</span>
+    {% endif %}
+  </div>
+
+  {% if onboarding %}
+  {% set consent_data = onboarding.section_consents if onboarding.section_consents is mapping else {} %}
+
+  {# Progress bar #}
+  <div class="px-6 pt-4">
+    <div class="w-full bg-gray-200 rounded-full h-2">
+      <div class="bg-neos-accent h-2 rounded-full transition-all duration-300"
+           style="width: {{ onboarding.completion_percentage | default(0) }}%"></div>
+    </div>
+  </div>
+
+  {# Task list #}
+  <div class="px-6 py-4 space-y-3">
+    {% for section in uaf_sections %}
+    {% set is_consented = consent_data.get(section.key, {}).get('consented', false) if consent_data is mapping else false %}
+    <div class="flex items-center gap-3 p-3 rounded-lg border
+      {% if is_consented %}border-green-200 bg-green-50/50{% else %}border-neos-border{% endif %}">
+
+      {# Status indicator #}
+      <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+        {% if is_consented %}bg-green-500 text-white{% else %}bg-gray-200 text-gray-600{% endif %}">
+        {% if is_consented %}&#10003;{% else %}{{ section.step }}{% endif %}
+      </div>
+
+      {# Section info #}
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-medium text-neos-text">{{ section.title }}</div>
+        <div class="text-xs text-neos-muted mt-0.5">{{ section.description }}</div>
+      </div>
+
+      {# Action #}
+      {% if is_own_profile and not is_consented %}
+      <form hx-post="/dashboard/members/{{ member.id }}/onboarding/consent"
+            hx-target="#onboarding-checklist"
+            hx-swap="outerHTML">
+        <input type="hidden" name="section_key" value="{{ section.key }}">
+        <button type="submit"
+                class="px-3 py-1.5 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors shrink-0">
+          Consent
+        </button>
+      </form>
+      {% elif is_consented %}
+      <span class="text-xs text-green-600 font-medium shrink-0">Done</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Cooling-off period and finalization #}
+  {% if onboarding.cooling_off_end %}
+  <div class="px-6 pb-4">
+    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+      <p class="text-sm font-medium text-yellow-800 mb-1">48-Hour Cooling Off Period</p>
+      <p class="text-xs text-yellow-700 mb-2">
+        All sections consented. Reflect before finalizing.
+        Ends: {{ onboarding.cooling_off_end.strftime('%Y-%m-%d') if onboarding.cooling_off_end else '—' }}
+      </p>
+      {% if is_own_profile %}
+      <form method="POST" action="/dashboard/members/{{ member.id }}/onboarding/finalize">
+        <button type="submit"
+                class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+          Finalize Onboarding
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Link to full ceremony #}
+  <div class="px-6 pb-4">
+    <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}"
+       class="text-xs text-neos-muted hover:text-neos-primary transition-colors">
+      View full consent ceremony &rarr;
+    </a>
+  </div>
+
+  {% else %}
+  <div class="px-6 py-4 text-sm text-neos-muted">No onboarding record found.</div>
+  {% endif %}
+</div>

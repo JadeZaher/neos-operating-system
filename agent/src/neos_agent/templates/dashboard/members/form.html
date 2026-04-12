@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Edit" if member is defined and member else "New" }} Member{% endblock %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <a href="/dashboard/members" class="hover:text-neos-primary transition-colors">Members</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">
+    {{ "Edit: " + member.display_name if member is defined and member else "New Member" }}
+  </span>
+</nav>
+
+{# Page Header #}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-neos-text tracking-tight">
+    {{ "Edit Member" if member is defined and member else "Add New Member" }}
+  </h1>
+  <p class="text-sm text-neos-muted mt-1">Register a member in the ecosystem</p>
+</div>
+
+{# Error Alert #}
+{% if error is defined and error %}
+<div class="flex items-start gap-3 px-4 py-3 mb-6 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert">
+  <span class="mt-0.5 shrink-0 text-base" aria-hidden="true">&#9888;</span>
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+{# Form Card #}
+<div class="bg-neos-surface border border-neos-border rounded-xl">
+  <div class="px-6 py-5 border-b border-neos-border">
+    <h2 class="text-base font-semibold text-neos-text">Member Details</h2>
+  </div>
+  <div class="px-6 py-6">
+    <form
+      method="post"
+      action="/dashboard/members{{ '/' + (member.id | string) if member is defined and member else '' }}"
+    >
+      {% set current_ecosystem_id = member.ecosystem_id if member is defined and member and member.ecosystem_id else '' %}
+      {% include "partials/ecosystem_picker.html" %}
+
+      {# Display Name + Member ID (2-col) #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <label for="member-name" class="block text-sm font-medium text-neos-text mb-1">
+            Display Name <span class="text-red-500">*</span>
+          </label>
+          <input
+            id="member-name"
+            type="text"
+            name="display_name"
+            value="{{ member.display_name if member is defined and member else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="Full name"
+            required
+          >
+        </div>
+
+        <div>
+          <label for="member-id" class="block text-sm font-medium text-neos-text mb-1">Member ID</label>
+          <input
+            id="member-id"
+            type="text"
+            name="member_id"
+            value="{{ member.member_id if member is defined and member else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="e.g., member-jane-doe"
+            {% if member is defined and member %}readonly{% endif %}
+          >
+          <p class="mt-1 text-xs text-neos-muted">Auto-generated if left blank</p>
+        </div>
+      </div>
+
+      {# Profile + Phone (2-col) #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <label for="member-profile" class="block text-sm font-medium text-neos-text mb-1">
+            Profile Type <span class="text-red-500">*</span>
+          </label>
+          <select
+            id="member-profile"
+            name="profile"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            required
+          >
+            <option value="" disabled {% if not (member is defined and member and member.profile) %}selected{% endif %}>Select profile type...</option>
+            <option value="co_creator" {% if member is defined and member and member.profile == 'co_creator' %}selected{% endif %}>Co-Creator</option>
+            <option value="builder" {% if member is defined and member and member.profile == 'builder' %}selected{% endif %}>Builder</option>
+            <option value="townhall" {% if member is defined and member and member.profile == 'townhall' %}selected{% endif %}>Town Hall</option>
+          </select>
+          <p class="mt-1 text-xs text-neos-muted">Determines governance participation level and Current-See allocation</p>
+        </div>
+
+        <div>
+          <label for="member-phone" class="block text-sm font-medium text-neos-text mb-1">Phone</label>
+          <input
+            id="member-phone"
+            type="tel"
+            name="phone"
+            value="{{ member.phone if member is defined and member and member.phone else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="+62..."
+          >
+        </div>
+      </div>
+
+      {# Skills Offered + Skills Needed (2-col) #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+        <div>
+          <label for="member-skills-offered" class="block text-sm font-medium text-neos-text mb-1">Skills Offered</label>
+          <input
+            id="member-skills-offered"
+            type="text"
+            name="skills_offered"
+            value="{{ member.skills_offered | join(', ') if member is defined and member and member.skills_offered else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="e.g., facilitation, design, coding"
+          >
+          <p class="mt-1 text-xs text-neos-muted">Comma-separated list of skills you can contribute</p>
+        </div>
+
+        <div>
+          <label for="member-skills-needed" class="block text-sm font-medium text-neos-text mb-1">Skills Needed</label>
+          <input
+            id="member-skills-needed"
+            type="text"
+            name="skills_needed"
+            value="{{ member.skills_needed | join(', ') if member is defined and member and member.skills_needed else '' }}"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="e.g., legal, marketing, accounting"
+          >
+          <p class="mt-1 text-xs text-neos-muted">Comma-separated list of skills you are looking for</p>
+        </div>
+      </div>
+
+      {# Interests #}
+      <div class="mb-5">
+        <label for="member-interests" class="block text-sm font-medium text-neos-text mb-1">Interests</label>
+        <input
+          id="member-interests"
+          type="text"
+          name="interests"
+          value="{{ member.interests | join(', ') if member is defined and member and member.interests else '' }}"
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          placeholder="e.g., regenerative agriculture, community currencies, permaculture"
+        >
+        <p class="mt-1 text-xs text-neos-muted">Comma-separated list of your interests</p>
+      </div>
+
+      {# ETHOS + Facilitator (2-col) #}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+        <div>
+          <label for="member-ethos" class="block text-sm font-medium text-neos-text mb-1">ETHOS</label>
+          <select
+            id="member-ethos"
+            name="ethos"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+          >
+            <option value="">No ETHOS assignment</option>
+            {% if ethos is defined %}
+              {% for ethos in ethos %}
+                <option value="{{ ethos }}">{{ ethos }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+          <p class="mt-1 text-xs text-neos-muted">Emergent Thriving Holonic Organizational Structure</p>
+        </div>
+
+        <div>
+          <label for="member-facilitator" class="block text-sm font-medium text-neos-text mb-1">Onboarding Facilitator</label>
+          <input
+            id="member-facilitator"
+            type="text"
+            name="facilitator"
+            class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
+            placeholder="Name of facilitator"
+          >
+          <p class="mt-1 text-xs text-neos-muted">The member who will guide the onboarding process</p>
+        </div>
+      </div>
+
+      {# Notes #}
+      <div class="mb-8">
+        <label for="member-notes" class="block text-sm font-medium text-neos-text mb-1">Notes</label>
+        <textarea
+          id="member-notes"
+          name="notes"
+          data-markdown-editor
+          class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-white text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent resize-y"
+          rows="3"
+          placeholder="Optional notes about this member"
+        >{{ member.notes if member is defined and member and member.notes else '' }}</textarea>
+      </div>
+
+      {# Form Actions #}
+      <div class="flex items-center gap-3 pt-4 border-t border-neos-border">
+        <button
+          type="submit"
+          class="inline-flex items-center px-5 py-2.5 bg-neos-primary text-white text-sm font-semibold rounded-lg hover:bg-neos-secondary transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+        >
+          {{ "Update Member" if member is defined and member else "Add Member" }}
+        </button>
+        <a
+          href="/dashboard/members"
+          class="inline-flex items-center px-5 py-2.5 border border-neos-border text-neos-text text-sm font-medium rounded-lg hover:bg-neos-surface-alt transition-colors focus:outline-none focus:ring-2 focus:ring-neos-accent focus:ring-offset-2"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

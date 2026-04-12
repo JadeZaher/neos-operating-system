@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Decision Records{% endblock %}
+
+{% block content %}
+{# Breadcrumb #}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border select-none">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Decision Records</span>
+</nav>
+
+{# Page Header #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text">Decision Records</h1>
+    <p class="text-sm text-neos-muted mt-1">Institutional memory — Layer IX governance trace</p>
+  </div>
+</div>
+
+{# Filter Bar — wrapped in a form so htmx can include all values #}
+<form
+  id="decisions-filter-form"
+  class="bg-neos-surface border border-neos-border rounded-xl p-4 mb-6 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3"
+>
+  <div class="relative flex-1 min-w-44">
+    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-neos-muted pointer-events-none" aria-hidden="true">&#128269;</span>
+    <input
+      type="search"
+      name="q"
+      value="{{ filters.get('q', '') if filters is mapping else '' }}"
+      class="w-full pl-9 pr-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text placeholder-neos-muted focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      placeholder="Search decisions..."
+      aria-label="Search decisions"
+      hx-get="/dashboard/decisions/search/results"
+      hx-trigger="input changed delay:300ms"
+      hx-target="#decisions-results"
+      hx-swap="outerHTML"
+      hx-include="#decisions-filter-form"
+    >
+  </div>
+
+  <div class="flex items-center gap-2">
+    <label for="filter-domain" class="text-sm text-neos-muted whitespace-nowrap">Domain:</label>
+    <input
+      id="filter-domain"
+      type="text"
+      name="domain"
+      value="{{ filters.get('domain', '') if filters is mapping else '' }}"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent w-32"
+      placeholder="Any"
+      hx-get="/dashboard/decisions/search/results"
+      hx-trigger="input changed delay:300ms"
+      hx-target="#decisions-results"
+      hx-swap="outerHTML"
+      hx-include="#decisions-filter-form"
+    >
+  </div>
+
+  <div class="flex items-center gap-2">
+    <label for="filter-precedent" class="text-sm text-neos-muted whitespace-nowrap">Precedent:</label>
+    <select
+      id="filter-precedent"
+      name="precedent_level"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      hx-get="/dashboard/decisions/search/results"
+      hx-trigger="change"
+      hx-target="#decisions-results"
+      hx-swap="outerHTML"
+      hx-include="#decisions-filter-form"
+    >
+      <option value="">All</option>
+      <option value="binding" {% if filters is mapping and filters.get('precedent_level') == 'binding' %}selected{% endif %}>Binding</option>
+      <option value="persuasive" {% if filters is mapping and filters.get('precedent_level') == 'persuasive' %}selected{% endif %}>Persuasive</option>
+      <option value="informational" {% if filters is mapping and filters.get('precedent_level') == 'informational' %}selected{% endif %}>Informational</option>
+    </select>
+  </div>
+
+  <div class="flex items-center gap-2">
+    <label for="filter-source" class="text-sm text-neos-muted whitespace-nowrap">Source Layer:</label>
+    <select
+      id="filter-source"
+      name="source_layer"
+      class="text-sm border border-neos-border rounded-lg px-3 py-2 bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent"
+      hx-get="/dashboard/decisions/search/results"
+      hx-trigger="change"
+      hx-target="#decisions-results"
+      hx-swap="outerHTML"
+      hx-include="#decisions-filter-form"
+    >
+      <option value="">All Layers</option>
+      {% for i in range(1, 11) %}
+      <option value="{{ i }}" {% if filters is mapping and filters.get('source_layer') | string == i | string %}selected{% endif %}>Layer {{ i }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <button
+    type="button"
+    class="text-sm text-neos-muted hover:text-neos-text underline underline-offset-2 transition-colors ml-auto"
+    onclick="this.closest('form').reset()"
+    hx-get="/dashboard/decisions/search/results"
+    hx-target="#decisions-results"
+    hx-swap="outerHTML"
+  >
+    Clear filters
+  </button>
+</form>
+
+{# Decision Records Table — server-rendered on initial load #}
+<div id="decisions-results">
+  {# Desktop table — hidden on mobile #}
+  <div class="hidden sm:block bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm" aria-label="Decision records">
+        <thead>
+          <tr class="border-b border-neos-border bg-neos-surface-alt">
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Record ID</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Holding</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Domain</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Source</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Precedent</th>
+            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Date</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-neos-border">
+          {% for decision in decisions %}
+          <tr
+            class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
+            onclick="window.location.href='/dashboard/decisions/{{ decision.id }}'"
+          >
+            <td class="px-4 py-3">
+              <a
+                href="/dashboard/decisions/{{ decision.id }}"
+                class="font-semibold text-neos-text hover:text-neos-primary transition-colors font-mono text-xs"
+                onclick="event.stopPropagation()"
+              >{{ decision.record_id }}</a>
+            </td>
+            <td class="px-4 py-3 text-neos-text max-w-xs truncate">{{ decision.holding | default('—') | truncate(80) }}</td>
+            <td class="px-4 py-3 text-neos-muted">{{ decision.domain | default('—') }}</td>
+            <td class="px-4 py-3">
+              {% if decision.source_skill %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{{ decision.source_skill }}</span>
+              {% else %}
+              <span class="text-neos-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% set pl = decision.precedent_level | default('') %}
+              {% if pl %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                {%- if pl == 'binding' %} bg-red-100 text-red-700
+                {%- elif pl == 'persuasive' %} bg-yellow-100 text-yellow-700
+                {%- elif pl == 'informational' %} bg-blue-100 text-blue-700
+                {%- else %} bg-gray-100 text-gray-600
+                {%- endif %}">{{ pl }}</span>
+              {% else %}
+              <span class="text-neos-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-neos-muted text-xs">{{ decision.date | default('—') }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-4 py-20 text-center">
+              <div class="flex flex-col items-center gap-3 max-w-xs mx-auto">
+                <span class="text-5xl text-neos-border" aria-hidden="true">&#128214;</span>
+                <p class="font-semibold text-neos-text">No decision records found</p>
+                <p class="text-sm text-neos-muted">Decision records are created automatically when governance processes complete.</p>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Mobile card layout #}
+  <div class="sm:hidden space-y-3">
+    {% for decision in decisions %}
+    <a href="/dashboard/decisions/{{ decision.id }}" class="block bg-neos-surface border border-neos-border rounded-xl p-4 hover:border-neos-accent transition-colors">
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <span class="font-semibold text-neos-text font-mono text-xs">{{ decision.record_id }}</span>
+        {% set pl = decision.precedent_level | default('') %}
+        {% if pl %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium shrink-0
+          {%- if pl == 'binding' %} bg-red-100 text-red-700
+          {%- elif pl == 'persuasive' %} bg-yellow-100 text-yellow-700
+          {%- elif pl == 'informational' %} bg-blue-100 text-blue-700
+          {%- else %} bg-gray-100 text-gray-600
+          {%- endif %}">{{ pl }}</span>
+        {% endif %}
+      </div>
+      <p class="text-sm text-neos-text mb-2 line-clamp-2">{{ decision.holding | default('—') | truncate(100) }}</p>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-neos-muted">
+        <span>{{ decision.domain | default('—') }}</span>
+        {% if decision.source_skill %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700">{{ decision.source_skill }}</span>
+        {% endif %}
+        <span>{{ decision.date | default('—') }}</span>
+      </div>
+    </a>
+    {% else %}
+    <div class="flex flex-col items-center gap-3 py-20 text-center">
+      <span class="text-5xl text-neos-border" aria-hidden="true">&#128214;</span>
+      <p class="font-semibold text-neos-text">No decision records found</p>
+      <p class="text-sm text-neos-muted">Decision records are created automatically when governance processes complete.</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if total is defined and total > limit %}
+  <nav
+    class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-neos-border"
+    aria-label="Pagination"
+  >
+    <span class="text-sm text-neos-muted">
+      Showing {{ offset + 1 }}–{{ [offset + limit, total] | min }} of {{ total }} records
+    </span>
+    <div class="flex items-center gap-1">
+      {% if offset > 0 %}
+      <a
+        href="?offset={{ [offset - limit, 0] | max }}&limit={{ limit }}"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
+        aria-label="Previous page"
+      >&#8249; Prev</a>
+      {% endif %}
+      {% if offset + limit < total %}
+      <a
+        href="?offset={{ offset + limit }}&limit={{ limit }}"
+        class="px-3 py-1.5 text-sm rounded-lg border border-neos-border bg-neos-surface hover:bg-neos-bg transition-colors"
+        aria-label="Next page"
+      >Next &#8250;</a>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}

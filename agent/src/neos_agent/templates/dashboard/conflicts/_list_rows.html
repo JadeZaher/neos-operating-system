@@ -1,0 +1,49 @@
+{# Partial: conflict list rows for htmx filter updates #}
+<div class="bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm" aria-label="Conflicts list">
+      <thead>
+        <tr class="border-b border-neos-border bg-neos-surface-alt">
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">ID</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Severity</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Tier</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Scope</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Safety</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Created</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-neos-border">
+        {% for conflict in conflicts %}
+        <tr class="hover:bg-neos-surface-alt cursor-pointer transition-colors"
+            onclick="window.location.href='/dashboard/conflicts/{{ conflict.id }}'">
+          <td class="px-4 py-3 font-mono text-xs font-semibold">{{ conflict.case_id }}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
+              {% if conflict.status == 'open' %}bg-yellow-100 text-yellow-700
+              {% elif conflict.status == 'in_progress' %}bg-blue-100 text-blue-700
+              {% elif conflict.status == 'resolved' %}bg-green-100 text-green-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">{{ conflict.status | replace('_', ' ') }}</span>
+          </td>
+          <td class="px-4 py-3 capitalize text-neos-muted">{{ conflict.severity }}</td>
+          <td class="px-4 py-3 text-neos-muted">Tier {{ conflict.tier }}</td>
+          <td class="px-4 py-3 capitalize text-neos-muted">{{ conflict.scope }}</td>
+          <td class="px-4 py-3">
+            {% if conflict.safety_flag %}
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">&#9888; Safety</span>
+            {% else %}
+            <span class="text-neos-muted text-xs">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ conflict.created_at.strftime('%Y-%m-%d') if conflict.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not conflicts %}
+        <tr>
+          <td colspan="7" class="px-4 py-12 text-center text-neos-muted">No conflicts match your filters.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>

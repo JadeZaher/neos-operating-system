@@ -16,7 +16,7 @@ import uuid
 
 from sanic import Sanic
 from sanic.request import Request
-from sanic.response import json as json_response
+from sanic.response import json as json_response, redirect
 from sqlalchemy import select
 
 if TYPE_CHECKING:
@@ -153,6 +153,18 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(exit_api_bp)
     app.blueprint(safeguards_api_bp)
 
+    # Register dashboard view blueprints
+    from neos_agent.views import register_views
+    register_views(app)
+
+    # Register ecosystem directory blueprint (public + auth routes)
+    from neos_agent.views.ecosystems import ecosystems_bp
+    app.blueprint(ecosystems_bp)
+
+    # Register chat blueprint
+    from neos_agent.views.chat import chat_bp
+    app.blueprint(chat_bp)
+
     # Register auth blueprint
     from neos_agent.auth.routes import auth_bp
     app.blueprint(auth_bp)
@@ -285,16 +297,18 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
         return None
 
-    # Root route — API-only mode
+    # Root redirect
     @app.get("/")
     async def root(request: Request):
-        return json_response({"service": "neos-agent", "status": "ok"})
+        if hasattr(request.ctx, "member") and request.ctx.member:
+            return redirect("/dashboard")
+        return redirect("/auth/login")
 
-    # Catch-all 404 handler
+    # Catch-all: redirect unknown paths to the dashboard
     from sanic.exceptions import NotFound
     @app.exception(NotFound)
     async def catch_not_found(request, exception):
-        return json_response({"error": "Not found"}, status=404)
+        return redirect("/dashboard")
 
     return app
 

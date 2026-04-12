@@ -1,0 +1,13 @@
+{# Loading indicator — displayed when htmx is making a request.
+   Uses htmx's built-in htmx-indicator CSS class pattern. #}
+<style>
+  .htmx-indicator { opacity: 0; transition: opacity 300ms; }
+  .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+</style>
+<div id="global-loading"
+  class="htmx-indicator fixed top-0 left-0 right-0 h-1 z-50"
+  role="progressbar"
+  aria-hidden="true"
+>
+  <div class="h-full bg-neos-accent animate-pulse w-full"></div>
+</div>
