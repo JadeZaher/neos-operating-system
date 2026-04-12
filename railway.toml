@@ -1,6 +1,5 @@
 [build]
-buildCommand = ""
-watchPatterns = ["neos-operating-system/agent/**"]
+dockerfilePath = "agent/Dockerfile"
 
 [deploy]
 startCommand = "python -m neos_agent.main --port $PORT"
