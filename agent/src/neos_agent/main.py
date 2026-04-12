@@ -260,13 +260,25 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
             return None
 
+        def _unauth(delete_cookie: bool = False):
+            """Return 401 JSON for API routes; redirect browsers to login."""
+            if request.path.startswith("/api/"):
+                resp = json_response({"error": "Unauthorized"}, status=401)
+                if delete_cookie:
+                    resp.delete_cookie("neos_session", path="/")
+                return resp
+            resp = redirect("/auth/login")
+            if delete_cookie:
+                resp.delete_cookie("neos_session", path="/")
+            return resp
+
         cookie = request.cookies.get("neos_session")
         if not cookie:
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth()
 
         session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
         if not session_id:
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth(delete_cookie=True)
 
         try:
             async with app.ctx.db() as db:
@@ -279,9 +291,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 )
                 auth_session = result.scalar_one_or_none()
                 if not auth_session:
-                    response = json_response({"error": "Unauthorized"}, status=401)
-                    response.delete_cookie("neos_session", path="/")
-                    return response
+                    return _unauth(delete_cookie=True)
 
                 member = await db.get(MemberModel, auth_session.member_id)
                 request.ctx.member = member
@@ -293,7 +303,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
         except Exception:
             logger.exception("Auth middleware error")
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth()
 
         return None
 

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from sanic import Blueprint, json
 from sanic.request import Request
+from sanic.response import redirect
 from sqlalchemy import select
 
 from neos_agent.auth.did import verify_did_signature
@@ -24,6 +25,20 @@ from neos_agent.db.models import AuthChallenge, AuthSession, Member
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", url_prefix="/auth")
+
+
+@auth_bp.get("/login")
+async def login_page(request: Request):
+    """Render the login page. Redirect to dashboard if already authenticated."""
+    member = getattr(request.ctx, "member", None)
+    if member:
+        return redirect("/dashboard")
+
+    from sanic import html
+    from neos_agent.views._rendering import render
+
+    content = await render("auth/login.html", request=request)
+    return html(content)
 
 
 @auth_bp.post("/challenge")
