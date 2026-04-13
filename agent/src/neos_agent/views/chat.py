@@ -746,34 +746,41 @@ async def list_conversations(request: Request):
     except (ValueError, TypeError):
         limit = 20
 
-    async with request.app.ctx.db() as db:
-        stmt = (
-            select(AgentSession)
-            .where(
-                AgentSession.member_id == member.id,
-                AgentSession.archived == False,  # noqa: E712
-                AgentSession.status == "active",
-            )
-            .order_by(AgentSession.updated_at.desc())
-        )
-
-        if search:
-            from neos_agent.views._rendering import escape_like
-            pattern = f"%{escape_like(search)}%"
-            stmt = stmt.where(
-                or_(
-                    AgentSession.title.ilike(pattern),
-                    AgentSession.context.cast(Text).ilike(pattern),
+    try:
+        async with request.app.ctx.db() as db:
+            stmt = (
+                select(AgentSession)
+                .where(
+                    AgentSession.member_id == member.id,
+                    AgentSession.archived == False,  # noqa: E712
+                    AgentSession.status == "active",
                 )
+                .order_by(AgentSession.updated_at.desc())
             )
 
-        # Get total count for pagination
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = (await db.execute(count_stmt)).scalar() or 0
+            if search:
+                from neos_agent.views._rendering import escape_like
+                pattern = f"%{escape_like(search)}%"
+                stmt = stmt.where(
+                    or_(
+                        AgentSession.title.ilike(pattern),
+                        AgentSession.context.cast(Text).ilike(pattern),
+                    )
+                )
 
-        # Get paginated results
-        result = await db.execute(stmt.offset(offset).limit(limit))
-        sessions = result.scalars().all()
+            # Get total count for pagination
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+
+            # Get paginated results
+            result = await db.execute(stmt.offset(offset).limit(limit))
+            sessions = result.scalars().all()
+    except Exception:
+        logger.exception("Failed to load conversation list")
+        return html_response(
+            '<div class="px-4 py-8 text-center text-sm text-neos-muted">'
+            "Conversations unavailable. Please try again.</div>"
+        )
 
     # Build conversation list as HTML fragment
     items: list[str] = []
