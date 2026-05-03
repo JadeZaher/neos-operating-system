@@ -1,6 +1,8 @@
 # Stage 1: Builder
 # Build context is the REPO ROOT (set Railway root directory to "/" or blank,
 # and Dockerfile path to "Dockerfile").
+# Force rebuild - 2026-05-03 - Railway deployment attempt
+# Multi-stage build for Railway deployment
 FROM python:3.12-slim AS builder
 WORKDIR /app
 COPY ./agent/pyproject.toml .
