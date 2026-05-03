@@ -15,7 +15,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY ./agent/src/ src/
 COPY ./agent/alembic/ alembic/
 COPY ./agent/alembic.ini .
-COPY ./neos-core/ neos-core/
+# Temporarily comment out neos-core copy to test if build context is the issue
+# COPY ./neos-core/ neos-core/
 RUN adduser --disabled-password --gecos "" neos && chown -R neos:neos /app
 USER neos
 CMD ["sh", "-c", "alembic upgrade head && sanic neos_agent.main:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory"]
