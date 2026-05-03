@@ -13,6 +13,7 @@ The module also exports:
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -842,10 +843,7 @@ async def check_quorum(args: dict, db: AsyncSession, ecosystem_ids: list | None 
     else:
         required_fraction = 2 / 3
 
-    required_count = int(total_deciding_body * required_fraction)
-    # Ensure at least 1 is required when there are members
-    if total_deciding_body > 0 and required_count == 0:
-        required_count = 1
+    required_count = math.ceil(total_deciding_body * required_fraction)
 
     quorum_met = present_count >= required_count
 
@@ -1179,7 +1177,7 @@ async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | 
     )
     if result.scalar_one_or_none():
         return {"success": False, "error": "An emergency is already active."}
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     state = EmergencyState(
         id=uuid.uuid4(),
         ecosystem_id=eco_id,

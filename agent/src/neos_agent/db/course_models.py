@@ -80,6 +80,8 @@ class Quiz(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_quizzes_course_id", "course_id"),
         Index("ix_quizzes_created_by", "created_by"),
+        Index("ix_quizzes_ecosystem_id", "ecosystem_id"),
+        Index("ix_quizzes_domain_id", "domain_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
@@ -97,6 +99,15 @@ class Quiz(TimestampMixin, Base):
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(), ForeignKey("members.id"), nullable=True
+    )
+    ecosystem_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("ecosystems.id"), nullable=True
+    )
+    domain_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("domains.id"), nullable=True
+    )
+    is_entry_quiz: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
     )
 
     # Relationships

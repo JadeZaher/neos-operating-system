@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import uuid
 import datetime as _dt
@@ -29,6 +28,7 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +121,8 @@ class TestReportSchema(BaseModel):
 
 class ProposalDetail(ProposalListItem):
     ecosystem_id: uuid.UUID
-    co_sponsors: list[str] | None = None
-    impacted_parties: list[str] | None = None
+    co_sponsors: list | dict | None = None
+    impacted_parties: list | dict | None = None
     proposed_change: str | None = None
     rationale: str | None = None
     created_date: _dt.date | None = None
@@ -198,19 +198,6 @@ def _escape_like(value: str) -> str:
     return value.replace("%", "\\%").replace("_", "\\_")
 
 
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    """Extract selected ecosystem IDs from cookie or auth context."""
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = None):
@@ -250,12 +237,6 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
     return stmt
 
 
-def _require_auth(request: Request):
-    """Return the authenticated member or None with a 401 JSON response."""
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
 
 
 def _proposal_to_list_item(p: Proposal) -> ProposalListItem:
@@ -402,11 +383,11 @@ async def list_proposals(request: Request):
     Query params: phase, type, domain, urgency, q, page (default 1), per_page (default 20).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = int(request.args.get("page", 1))
     per_page = min(int(request.args.get("per_page", 20)), 100)
@@ -436,7 +417,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
     Eager-loads advice_logs.entries, consent_records.participants,
     test_reports.success_criteria.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -456,7 +437,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
         )
 
         # Scope to selected ecosystems
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         if eco_ids:
             stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
 
@@ -477,7 +458,7 @@ async def create_proposal(request: Request):
     Accepts JSON: ProposalCreateRequest
     Returns JSON: ProposalDetail with 201 status.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -488,7 +469,7 @@ async def create_proposal(request: Request):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     # Verify ecosystem access
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied to this ecosystem"}, status=403)
 
@@ -545,7 +526,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
     Accepts JSON: ProposalUpdateRequest
     Returns JSON: ProposalDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -557,7 +538,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Scope to selected ecosystems
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -604,7 +585,7 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
     test->ratified, any->withdrawn.
     Returns JSON: ProposalDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -614,7 +595,7 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         return json({"error": "\"status\" field is required"}, status=400)
 
     async with request.app.ctx.db() as session:
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -676,13 +657,13 @@ async def get_advice(request: Request, proposal_id: uuid.UUID):
 
     Returns JSON: {"advice_logs": [...]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -710,7 +691,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
     Accepts JSON: AdviceEntryCreateRequest
     Returns JSON: AdviceLogSchema
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -722,7 +703,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -785,13 +766,13 @@ async def get_consent(request: Request, proposal_id: uuid.UUID):
 
     Returns JSON: {"consent_records": [...]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -821,7 +802,7 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
     Accepts JSON: ConsentPositionRequest
     Returns JSON: ConsentRecordSchema
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -833,7 +814,7 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
@@ -894,13 +875,13 @@ async def get_test_reports(request: Request, proposal_id: uuid.UUID):
 
     Returns JSON: {"test_reports": [...]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = _get_ecosystem_ids(request)
+        eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))

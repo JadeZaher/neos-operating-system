@@ -46,6 +46,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
     # Configure CORS — sanic-ext reads app.config.CORS_ORIGINS automatically.
     app.config.CORS_ORIGINS = settings.CORS_ORIGINS
+    # Credentials cannot be used with wildcard origins per the CORS spec.
+    app.config.CORS_SUPPORTS_CREDENTIALS = settings.CORS_ORIGINS != "*"
 
     # Configure logging
     logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
@@ -132,6 +134,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.emergency import emergency_api_bp
     from neos_agent.api.exit import exit_api_bp
     from neos_agent.api.safeguards import safeguards_api_bp
+    from neos_agent.api.discover import discover_api_bp
+    from neos_agent.api.ai_assist import ai_assist_bp
+    from neos_agent.api.compliance import compliance_api_bp
+    from neos_agent.api.notifications import notifications_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -152,14 +158,31 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(emergency_api_bp)
     app.blueprint(exit_api_bp)
     app.blueprint(safeguards_api_bp)
-
-    # Register auth blueprint
-    from neos_agent.auth.routes import auth_bp
-    app.blueprint(auth_bp)
+    app.blueprint(discover_api_bp)
+    app.blueprint(ai_assist_bp)
+    app.blueprint(compliance_api_bp)
+    app.blueprint(notifications_api_bp)
 
     # Register messaging blueprint (WebSocket + REST)
     from neos_agent.messaging.routes import messaging_bp
     app.blueprint(messaging_bp)
+
+    # Start background cron service
+    @app.after_server_start
+    async def start_cron(app, loop):
+        """Start the background cron loop for governance deadlines."""
+        import asyncio
+        from neos_agent.services.cron import run_cron_loop
+        app.ctx.cron_task = asyncio.create_task(run_cron_loop(app))
+        logger.info("Cron service started")
+
+    @app.before_server_stop
+    async def stop_cron(app, loop):
+        """Cancel the background cron loop."""
+        cron_task = getattr(app.ctx, "cron_task", None)
+        if cron_task and not cron_task.done():
+            cron_task.cancel()
+            logger.info("Cron service stopped")
 
     # Auth middleware — protect all non-public routes
     @app.on_request
@@ -222,7 +245,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     result = await db.execute(
                         select(AuthSession).where(
                             AuthSession.id == uuid.UUID(sid),
-                            AuthSession.expires_at > datetime.utcnow(),
+                            AuthSession.expires_at > datetime.now(timezone.utc),
                         )
                     )
                     auth_session = result.scalar_one_or_none()
@@ -262,7 +285,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 result = await db.execute(
                     select(AuthSession).where(
                         AuthSession.id == uuid.UUID(session_id),
-                        AuthSession.expires_at > datetime.utcnow(),
+                        AuthSession.expires_at > datetime.now(timezone.utc),
                     )
                 )
                 auth_session = result.scalar_one_or_none()

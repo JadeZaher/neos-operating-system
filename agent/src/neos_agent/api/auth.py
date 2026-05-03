@@ -8,11 +8,14 @@ JSON responses only (no HTML rendering or redirects).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
+import re
 import uuid
 import datetime as _dt
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from sanic import Blueprint, json
 from sanic.request import Request
@@ -22,11 +25,36 @@ from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie, verify_session_cookie
 from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member
 
-from .schemas import AuthMeResponse, AuthVerifyResponse, EcosystemSummary, MemberSummary
+from .schemas import (
+    AuthMeResponse,
+    AuthVerifyResponse,
+    EcosystemSummary,
+    LoginRequest,
+    MemberSummary,
+    SetCredentialsRequest,
+    SetCredentialsResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 auth_api_bp = Blueprint("auth_api", url_prefix="/api/v1/auth")
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,50}$")
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with PBKDF2-SHA256 and a random salt."""
+    salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+    return salt.hex() + ":" + key.hex()
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored PBKDF2-SHA256 hash."""
+    salt_hex, key_hex = stored.split(":")
+    salt = bytes.fromhex(salt_hex)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+    return hmac.compare_digest(key.hex(), key_hex)
 
 
 def _member_to_summary(member: Member) -> MemberSummary:
@@ -55,7 +83,7 @@ async def api_challenge(request: Request):
         return json({"error": "Invalid DID format"}, status=400)
 
     challenge_hex = os.urandom(32).hex()
-    expires_at = _dt.datetime.utcnow() + timedelta(minutes=5)
+    expires_at = _dt.datetime.now(timezone.utc) + timedelta(minutes=5)
 
     async with request.app.ctx.db() as session:
         challenge = AuthChallenge(
@@ -94,7 +122,7 @@ async def api_verify(request: Request):
                 AuthChallenge.did == did,
                 AuthChallenge.challenge == challenge_hex,
                 AuthChallenge.used == False,
-                AuthChallenge.expires_at > _dt.datetime.utcnow(),
+                AuthChallenge.expires_at > _dt.datetime.now(timezone.utc),
             )
         )
         auth_challenge = result.scalar_one_or_none()
@@ -137,7 +165,7 @@ async def api_verify(request: Request):
 
         # Create auth session
         session_id = uuid.uuid4()
-        expires_at = _dt.datetime.utcnow() + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+        expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
             member_id=member.id,
@@ -192,7 +220,7 @@ async def api_me(request: Request):
         result = await db.execute(
             select(AuthSession).where(
                 AuthSession.id == uuid.UUID(session_id),
-                AuthSession.expires_at > _dt.datetime.utcnow(),
+                AuthSession.expires_at > _dt.datetime.now(timezone.utc),
             )
         )
         auth_session = result.scalar_one_or_none()
@@ -272,3 +300,141 @@ async def api_logout(request: Request):
     response = json({"success": True})
     response.delete_cookie("neos_session", path="/")
     return response
+
+
+@auth_api_bp.post("/login")
+async def api_login(request: Request):
+    """Authenticate with username and password.
+
+    Accepts JSON: {"username": "...", "password": "..."}
+    Returns JSON: AuthVerifyResponse with member info + sets neos_session cookie.
+    """
+    body = request.json or {}
+    try:
+        payload = LoginRequest(**body)
+    except Exception:
+        return json({"error": "Invalid request body"}, status=400)
+
+    username = payload.username.strip()
+    password = payload.password
+
+    if not username or not password:
+        return json({"error": "Username and password are required"}, status=400)
+
+    settings = request.app.ctx.settings
+
+    async with request.app.ctx.db() as session:
+        result = await session.execute(
+            select(Member).where(Member.username == username)
+        )
+        member = result.scalar_one_or_none()
+
+        if member is None or not member.password_hash:
+            return json({"error": "Invalid username or password"}, status=401)
+
+        if not _verify_password(password, member.password_hash):
+            return json({"error": "Invalid username or password"}, status=401)
+
+        # Create auth session (same flow as DID verify)
+        session_id = uuid.uuid4()
+        expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+        auth_session = AuthSession(
+            id=session_id,
+            member_id=member.id,
+            did=member.did,
+            expires_at=expires_at,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.remote_addr,
+        )
+        session.add(auth_session)
+        await session.commit()
+
+        member_summary = _member_to_summary(member)
+
+    cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
+    response_data = AuthVerifyResponse(
+        success=True,
+        display_name=member.display_name,
+        member=member_summary,
+    )
+    response = json(response_data.model_dump(mode="json"), status=200)
+    response.add_cookie(
+        "neos_session",
+        cookie_value,
+        httponly=True,
+        samesite="Lax",
+        max_age=settings.SESSION_MAX_AGE_HOURS * 3600,
+        path="/",
+    )
+    return response
+
+
+@auth_api_bp.post("/set-credentials")
+async def api_set_credentials(request: Request):
+    """Set username and password on the current authenticated member.
+
+    Requires an active session (neos_session cookie).
+    Accepts JSON: {"username": "...", "password": "..."}
+    Returns JSON: {"success": true, "username": "..."}
+    """
+    settings = request.app.ctx.settings
+    cookie = request.cookies.get("neos_session")
+
+    if not cookie:
+        return json({"error": "Not authenticated"}, status=401)
+
+    session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
+    if not session_id:
+        return json({"error": "Invalid session"}, status=401)
+
+    body = request.json or {}
+    try:
+        payload = SetCredentialsRequest(**body)
+    except Exception:
+        return json({"error": "Invalid request body"}, status=400)
+
+    username = payload.username.strip()
+    password = payload.password
+
+    # Validate username: 3-50 chars, alphanumeric + underscore
+    if not _USERNAME_RE.match(username):
+        return json(
+            {"error": "Username must be 3-50 characters, alphanumeric or underscore only"},
+            status=400,
+        )
+
+    # Validate password: min 8 chars
+    if len(password) < 8:
+        return json({"error": "Password must be at least 8 characters"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        # Verify session is still valid
+        result = await db.execute(
+            select(AuthSession).where(
+                AuthSession.id == uuid.UUID(session_id),
+                AuthSession.expires_at > _dt.datetime.now(timezone.utc),
+            )
+        )
+        auth_session = result.scalar_one_or_none()
+        if not auth_session:
+            return json({"error": "Session expired"}, status=401)
+
+        # Load the member
+        member = await db.get(Member, auth_session.member_id)
+        if not member:
+            return json({"error": "Member not found"}, status=401)
+
+        # Check username uniqueness
+        existing = await db.execute(
+            select(Member.id).where(Member.username == username, Member.id != member.id)
+        )
+        if existing.scalar_one_or_none() is not None:
+            return json({"error": "Username already taken"}, status=409)
+
+        # Update credentials
+        member.username = username
+        member.password_hash = _hash_password(password)
+        await db.commit()
+
+    response_data = SetCredentialsResponse(success=True, username=username)
+    return json(response_data.model_dump(mode="json"))

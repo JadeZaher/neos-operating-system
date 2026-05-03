@@ -8,7 +8,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -27,6 +26,8 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
+from neos_agent.db.models import Member
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,14 @@ logger = logging.getLogger(__name__)
 class QuizListItem(BaseModel):
     id: uuid.UUID
     course_id: Optional[uuid.UUID] = None
+    ecosystem_id: Optional[uuid.UUID] = None
+    domain_id: Optional[uuid.UUID] = None
     title: str
     description: Optional[str] = None
     mode: str
     visibility: str
     is_published: bool
+    is_entry_quiz: bool = False
     time_limit: Optional[int] = None
     passing_score: Optional[int] = None
     allow_retakes: bool
@@ -137,26 +141,6 @@ quizzes_api_bp = Blueprint("quizzes_api", url_prefix="/api/v1")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
@@ -166,11 +150,14 @@ def _quiz_to_list_item(q: Quiz) -> dict:
     return QuizListItem(
         id=q.id,
         course_id=q.course_id,
+        ecosystem_id=q.ecosystem_id,
+        domain_id=q.domain_id,
         title=q.title,
         description=q.description,
         mode=q.mode,
         visibility=q.visibility,
         is_published=q.is_published,
+        is_entry_quiz=q.is_entry_quiz,
         time_limit=q.time_limit,
         passing_score=q.passing_score,
         allow_retakes=q.allow_retakes,
@@ -250,7 +237,7 @@ async def list_quizzes(request: Request):
     Query params: course_id, visibility, is_published, q (search title),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -305,7 +292,7 @@ async def list_quizzes(request: Request):
 @quizzes_api_bp.get("/quizzes/<quiz_id:str>")
 async def get_quiz(request: Request, quiz_id: str):
     """GET /api/v1/quizzes/:id -- Quiz detail with survey_json."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -327,7 +314,7 @@ async def get_quiz(request: Request, quiz_id: str):
 @quizzes_api_bp.post("/quizzes")
 async def create_quiz(request: Request):
     """POST /api/v1/quizzes -- Create a new quiz."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -362,7 +349,7 @@ async def create_quiz(request: Request):
 @quizzes_api_bp.put("/quizzes/<quiz_id:str>")
 async def update_quiz(request: Request, quiz_id: str):
     """PUT /api/v1/quizzes/:id -- Update an existing quiz."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -413,7 +400,7 @@ async def update_quiz(request: Request, quiz_id: str):
 @quizzes_api_bp.post("/quizzes/<quiz_id:str>/submit")
 async def submit_quiz(request: Request, quiz_id: str):
     """POST /api/v1/quizzes/:id/submit -- Submit a quiz result."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -454,7 +441,7 @@ async def submit_quiz(request: Request, quiz_id: str):
 @quizzes_api_bp.get("/quizzes/<quiz_id:str>/results")
 async def get_quiz_results(request: Request, quiz_id: str):
     """GET /api/v1/quizzes/:id/results -- All results for a quiz."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -490,6 +477,71 @@ async def get_quiz_results(request: Request, quiz_id: str):
     })
 
 
+@quizzes_api_bp.get("/quizzes/<quiz_id:str>/results/all")
+async def get_quiz_results_admin(request: Request, quiz_id: str):
+    """GET /api/v1/quizzes/:id/results/all -- All results with member info (admin view).
+
+    Returns all quiz results enriched with member display_name.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        qid = uuid.UUID(quiz_id)
+    except ValueError:
+        return json({"error": "Invalid quiz ID"}, status=400)
+
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
+    offset = (page - 1) * per_page
+
+    async with request.app.ctx.db() as session:
+        quiz = await session.get(Quiz, qid)
+        if quiz is None:
+            return json({"error": "Quiz not found"}, status=404)
+
+        total_result = await session.execute(
+            select(QuizResult.id).where(QuizResult.quiz_id == qid)
+        )
+        total = len(total_result.scalars().all())
+
+        result = await session.execute(
+            select(QuizResult)
+            .where(QuizResult.quiz_id == qid)
+            .order_by(QuizResult.completed_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        results = result.scalars().all()
+
+        # Fetch member display names
+        member_ids = list({r.member_id for r in results})
+        member_names: dict[uuid.UUID, str] = {}
+        if member_ids:
+            member_rows = await session.execute(
+                select(Member.id, Member.display_name).where(
+                    Member.id.in_(member_ids)
+                )
+            )
+            for mid, dname in member_rows.all():
+                member_names[mid] = dname or "Unknown"
+
+    return json({
+        "items": [
+            {
+                **_result_to_item(r),
+                "member_name": member_names.get(r.member_id, "Unknown"),
+            }
+            for r in results
+        ],
+        "quiz_title": quiz.title,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Member Profile Endpoints
 # ---------------------------------------------------------------------------
@@ -498,7 +550,7 @@ async def get_quiz_results(request: Request, quiz_id: str):
 @quizzes_api_bp.get("/members/<member_id:str>/quiz-history")
 async def get_member_quiz_history(request: Request, member_id: str):
     """GET /api/v1/members/:member_id/quiz-history -- Member's quiz results."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -537,7 +589,7 @@ async def get_member_quiz_history(request: Request, member_id: str):
 @quizzes_api_bp.get("/members/<member_id:str>/badges")
 async def get_member_badges(request: Request, member_id: str):
     """GET /api/v1/members/:member_id/badges -- Member's earned badges."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -560,7 +612,7 @@ async def get_member_badges(request: Request, member_id: str):
 @quizzes_api_bp.get("/members/<member_id:str>/tags")
 async def get_member_tags(request: Request, member_id: str):
     """GET /api/v1/members/:member_id/tags -- Member's profile tags."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 

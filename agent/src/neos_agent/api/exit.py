@@ -9,12 +9,11 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
 import datetime as _dt
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Optional
 
 from pydantic import BaseModel
@@ -23,6 +22,7 @@ from sanic.request import Request
 from sqlalchemy import func, or_, select
 
 from neos_agent.db.models import ExitRecord
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class ExitListItem(BaseModel):
 class ExitDetail(ExitListItem):
     ecosystem_id: uuid.UUID
     coordinator_id: uuid.UUID | None = None
-    commitment_inventory: dict | None = None
+    commitment_inventory: list | dict | None = None
     unwinding_status: dict | None = None
     data_export_requested: bool = False
     data_export_completed: _dt.date | None = None
@@ -78,26 +78,6 @@ exit_api_bp = Blueprint("exit_api", url_prefix="/api/v1/exit")
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 def _escape_like(value: str) -> str:
@@ -152,11 +132,11 @@ async def list_exits(request: Request):
     Query params: status, exit_type, q (search departure_notice),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -199,11 +179,11 @@ async def list_exits(request: Request):
 @exit_api_bp.get("/<exit_id:uuid>")
 async def get_exit(request: Request, exit_id: uuid.UUID):
     """GET /api/v1/exit/:id -- exit process detail with unwinding tracker."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
@@ -226,7 +206,7 @@ async def create_exit(request: Request):
     Accepts JSON: ExitCreateRequest
     Returns JSON: ExitDetail with 201 status.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -236,11 +216,11 @@ async def create_exit(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
-    now = _dt.datetime.utcnow()
+    now = _dt.datetime.now(timezone.utc)
     cooling_days = 30 if create_req.exit_type == "standard" else 7
 
     async with request.app.ctx.db() as session:
@@ -274,7 +254,7 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
     Accepts JSON: {"new_status": "..."}
     Returns JSON: ExitDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -284,7 +264,7 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
@@ -301,7 +281,7 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
         record.status = status_req.new_status
 
         if status_req.new_status == "completed":
-            record.completed_date = _dt.datetime.utcnow().date()
+            record.completed_date = _dt.datetime.now(timezone.utc).date()
 
         await session.commit()
         await session.refresh(record)

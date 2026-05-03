@@ -8,7 +8,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -22,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.course_models import Course, Quiz
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -86,26 +86,6 @@ courses_api_bp = Blueprint("courses_api", url_prefix="/api/v1/courses")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
@@ -162,11 +142,11 @@ async def list_courses(request: Request):
 
     Query params: q (search title), page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -210,7 +190,7 @@ async def list_courses(request: Request):
 @courses_api_bp.get("/<course_id:str>")
 async def get_course(request: Request, course_id: str):
     """GET /api/v1/courses/:id -- Course detail with quizzes."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -236,7 +216,7 @@ async def get_course(request: Request, course_id: str):
 @courses_api_bp.post("/")
 async def create_course(request: Request):
     """POST /api/v1/courses -- Create a new course."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -267,7 +247,7 @@ async def create_course(request: Request):
 @courses_api_bp.put("/<course_id:str>")
 async def update_course(request: Request, course_id: str):
     """PUT /api/v1/courses/:id -- Update an existing course."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 

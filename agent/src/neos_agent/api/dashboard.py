@@ -9,7 +9,6 @@ returns DashboardSummary JSON instead of rendered HTML.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 
@@ -25,6 +24,7 @@ from neos_agent.db.models import (
     Member,
     Proposal,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 from neos_agent.api.schemas import ActivityItem, DashboardSummary, SummaryCard
 
 logger = logging.getLogger(__name__)
@@ -36,21 +36,6 @@ dashboard_api_bp = Blueprint("dashboard_api", url_prefix="/api/v1/dashboard")
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _get_ecosystem_ids_from_request(request) -> list[uuid.UUID]:
-    """Extract ecosystem IDs from cookie or member context."""
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json.JSONDecodeError, ValueError):
-            pass
-    # Fallback to member's ecosystem
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 async def _summary_counts(session, ecosystem_ids=None) -> dict:
@@ -164,11 +149,11 @@ async def _recent_activity(session, ecosystem_ids=None, limit: int = 10) -> list
 @dashboard_api_bp.get("/summary")
 async def dashboard_summary(request: Request) -> JSONResponse:
     """GET /api/v1/dashboard/summary -- return DashboardSummary JSON."""
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Unauthorized"}, status=401)
+    member, err = require_auth(request)
+    if err:
+        return err
 
-    ecosystem_ids = _get_ecosystem_ids_from_request(request)
+    ecosystem_ids = get_ecosystem_ids(request)
 
     try:
         async with request.app.ctx.db() as session:

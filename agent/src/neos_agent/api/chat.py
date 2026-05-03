@@ -2,7 +2,8 @@
 
 Blueprint: chat_api_bp, url_prefix="/api/v1/chat"
 
-Wraps the existing chat SSE handler to emit JSON events instead of HTML.
+Provides SSE streaming chat using the AI provider, with graceful
+fallback when AI is disabled.
 """
 from __future__ import annotations
 
@@ -14,9 +15,11 @@ import datetime as _dt
 from pydantic import BaseModel
 from sanic import Blueprint, json as json_response
 from sanic.request import Request
+from sanic.response import ResponseStream
 from sqlalchemy import select
 
 from neos_agent.db.models import AgentSession
+from neos_agent.ai.provider import acompletion, is_ai_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +77,10 @@ async def list_sessions(request: Request):
 
 @chat_api_bp.post("/send")
 async def send_message(request: Request):
-    """POST /api/v1/chat/send — JSON redirect for simpler integrations.
+    """POST /api/v1/chat/send — SSE streaming chat endpoint.
 
-    The primary SSE chat endpoint is POST /chat/send which streams HTML
-    fragments. The React ChatPanel uses that endpoint directly via fetch().
-
-    This endpoint handles session management and redirects clients to the
-    correct SSE endpoint for streaming.
+    Streams AI responses as SSE events. Falls back to a static message
+    when AI is not configured.
     """
     member = getattr(request.ctx, "member", None)
     if not member:
@@ -91,9 +91,47 @@ async def send_message(request: Request):
     if not message:
         return json_response({"error": "Message is required"}, status=400)
 
-    # For now, redirect to the existing /chat/send endpoint.
-    # The React ChatPanel already uses fetch() with SSE parsing.
-    return json_response({
-        "redirect": "/chat/send",
-        "note": "Use POST /chat/send directly for SSE streaming. This endpoint is for session management.",
-    })
+    if not is_ai_enabled():
+        async def disabled_stream(response):
+            msg = "AI chat is not configured. Set AI_API_KEY in the server environment to enable chat features."
+            await response.write(f"event: append\ndata: {msg}\n\n")
+            await response.write("event: done\ndata: \n\n")
+
+        return ResponseStream(
+            disabled_stream,
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    async def chat_stream(response):
+        try:
+            result = await acompletion(
+                messages=[{"role": "user", "content": message}],
+                system="You are a helpful governance assistant for the NEOS platform. Help users understand governance processes, agreements, proposals, and other platform features.",
+                max_tokens=1024,
+                temperature=0.7,
+                stream=True,
+            )
+
+            if result is None:
+                await response.write("event: append\ndata: AI is currently unavailable. Please try again later.\n\n")
+                await response.write("event: done\ndata: \n\n")
+                return
+
+            async for chunk in result:
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, "content") and delta.content:
+                        await response.write(f"event: append\ndata: {delta.content}\n\n")
+
+            await response.write("event: done\ndata: \n\n")
+        except Exception as exc:
+            logger.error("Chat streaming failed: %s", exc)
+            await response.write(f"event: append\ndata: Chat error: {exc}\n\n")
+            await response.write("event: done\ndata: \n\n")
+
+    return ResponseStream(
+        chat_stream,
+        content_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

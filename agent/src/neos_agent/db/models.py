@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 async ORM models for the NEOS governance database.
 
-37 tables organized by section:
+42 tables organized by section:
 - Core (7): ecosystems, members, member_onboarding, member_status_transitions,
   domains, domain_elements, domain_metrics
 - Agreements (4): agreements, agreement_ratification_records, amendment_records,
@@ -18,6 +18,9 @@
 - Auth (2): auth_sessions, auth_challenges
 - Messaging (4): conversations, conversation_participants, messages,
   conversation_links
+- Collaboration (4): circle_memberships, shares_needs, collaborations,
+  compliance_summaries
+- Push Notifications (1): push_subscriptions
 """
 
 from __future__ import annotations
@@ -130,12 +133,17 @@ class Ecosystem(TimestampMixin, Base):
 
 class Member(TimestampMixin, Base):
     __tablename__ = "members"
-    __table_args__ = (Index("ix_members_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_members_ecosystem_id", "ecosystem_id"),
+        UniqueConstraint("ecosystem_id", "did", name="uq_member_ecosystem_did"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
     member_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
-    did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, unique=True)
+    did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), nullable=False, default="prospective")
     profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, townhall
@@ -204,6 +212,7 @@ class Domain(TimestampMixin, Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     metric_definitions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     elements: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # JSONB for complex elements
+    version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="domains")
     domain_elements: Mapped[list[DomainElement]] = relationship(back_populates="domain")
@@ -262,6 +271,7 @@ class Agreement(TimestampMixin, Base):
     sunset_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     ratification_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="agreements")
     parent_agreement: Mapped[Optional[Agreement]] = relationship(remote_side="Agreement.id")
@@ -754,7 +764,7 @@ class AuthSession(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
     did: Mapped[str] = mapped_column(String(500), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
@@ -766,7 +776,7 @@ class AuthChallenge(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     did: Mapped[str] = mapped_column(String(500), nullable=False)
     challenge: Mapped[str] = mapped_column(String(128), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
@@ -852,3 +862,124 @@ class ConversationLink(TimestampMixin, Base):
 
     # Relationships
     conversation: Mapped["Conversation"] = relationship(back_populates="links")
+
+
+# ========================
+# CIRCLE MEMBERSHIP (1 model)
+# ========================
+
+class CircleMembership(TimestampMixin, Base):
+    """Links a member to a domain (circle) with a specific role."""
+    __tablename__ = "circle_memberships"
+    __table_args__ = (
+        UniqueConstraint("domain_id", "member_id", name="uq_circle_domain_member"),
+        Index("ix_circle_memberships_member_id", "member_id"),
+        Index("ix_circle_memberships_domain_id", "domain_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    domain_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("domains.id"), nullable=False)
+    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="member")  # steward, delegate, member
+    joined_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+
+
+# ========================
+# SHARES & NEEDS (1 model)
+# ========================
+
+class SharesNeeds(TimestampMixin, Base):
+    """A domain-level declaration of what resources/skills are shared or needed.
+
+    Used for cross-ecosystem discovery and collaboration matching.
+    """
+    __tablename__ = "shares_needs"
+    __table_args__ = (
+        Index("ix_shares_needs_domain_id", "domain_id"),
+        Index("ix_shares_needs_ecosystem_id", "ecosystem_id"),
+        Index("ix_shares_needs_type", "type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    domain_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("domains.id"), nullable=False)
+    type: Mapped[str] = mapped_column(String(10), nullable=False)  # "share" | "need"
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # skill, resource, knowledge, space, labor
+    capacity: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # availability level
+    tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="public")  # public, ecosystem, domain
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")  # active, fulfilled, withdrawn
+
+
+# ========================
+# COLLABORATIONS (1 model)
+# ========================
+
+class Collaboration(TimestampMixin, Base):
+    """A cross-domain or cross-ecosystem collaboration agreement.
+
+    Links two domains that have matched shares/needs and agreed to collaborate.
+    """
+    __tablename__ = "collaborations"
+    __table_args__ = (
+        Index("ix_collaborations_source_domain_id", "source_domain_id"),
+        Index("ix_collaborations_target_domain_id", "target_domain_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    source_domain_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("domains.id"), nullable=False)
+    target_domain_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("domains.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="proposed")  # proposed, active, completed, dissolved
+    engagement_tier: Mapped[str] = mapped_column(String(50), nullable=False, default="cooperate")  # observe, cooperate, federate, integrate
+    terms: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # collaboration-specific terms
+    linked_shares_needs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # IDs of matched shares/needs
+    started_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    review_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+
+# ========================
+# COMPLIANCE SUMMARY (1 model)
+# ========================
+
+class ComplianceSummary(TimestampMixin, Base):
+    """AI-generated compliance summary for an ecosystem, regenerated on a 30-day cycle."""
+    __tablename__ = "compliance_summaries"
+    __table_args__ = (
+        Index("ix_compliance_summaries_ecosystem_id", "ecosystem_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    score_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # structured compliance metrics
+    agreement_coverage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # which agreements are compliant
+    domain_health: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # domain-level compliance
+    flagged_issues: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # items needing attention
+
+
+# ========================
+# PUSH NOTIFICATIONS (1 model)
+# ========================
+
+class PushSubscription(TimestampMixin, Base):
+    """Web Push subscription for PWA notifications."""
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        Index("ix_push_subscriptions_member_id", "member_id"),
+        UniqueConstraint("member_id", "endpoint", name="uq_push_subscription_member_endpoint"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notification_types: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # which types user wants

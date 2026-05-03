@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import uuid
 import datetime as _dt
@@ -26,6 +25,7 @@ from neos_agent.db.models import (
     Member,
     Message,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -94,26 +94,6 @@ messaging_api_bp = Blueprint("messaging_api", url_prefix="/api/v1/messaging")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 async def _get_current_member_id(session, did: str, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
     """Resolve the authenticated DID to a member id within the active ecosystems."""
@@ -149,11 +129,11 @@ async def list_conversations(request: Request):
 
     Returns JSON: {"conversations": [ConversationSummary]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)
@@ -239,11 +219,11 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
 
     Returns JSON: ConversationDetailSchema
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)
@@ -320,7 +300,7 @@ async def create_conversation(request: Request):
     Accepts JSON: CreateConversationRequest
     Returns JSON: ConversationDetailSchema with 201 status.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -333,7 +313,7 @@ async def create_conversation(request: Request):
     if create_req.type not in ("dm", "group"):
         return json({"error": "type must be 'dm' or 'group'"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)
@@ -394,7 +374,7 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
     Query params: page (default 1), per_page (default 50)
     Returns JSON: {"messages": [MessageSchema], "total": N}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -402,7 +382,7 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
     per_page = min(100, max(1, int(request.args.get("per_page", 50))))
     offset = (page - 1) * per_page
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)
@@ -464,7 +444,7 @@ async def search_messages(request: Request):
     Scoped to conversations the member participates in.
     Returns JSON: {"messages": [MessageSchema]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -472,7 +452,7 @@ async def search_messages(request: Request):
     if not query:
         return json({"messages": []})
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)
@@ -527,11 +507,11 @@ async def list_members_for_picker(request: Request):
     Returns all members in the member's ecosystems (excluding self).
     Returns JSON: {"members": [MemberPickerItem]}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_id = await _get_current_member_id(session, member.did, eco_ids)

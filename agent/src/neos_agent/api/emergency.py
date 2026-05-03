@@ -9,12 +9,11 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
 import datetime as _dt
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Optional
 
 from pydantic import BaseModel
@@ -23,6 +22,7 @@ from sanic.request import Request
 from sqlalchemy import func, select
 
 from neos_agent.db.models import EmergencyState
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -72,26 +72,6 @@ emergency_api_bp = Blueprint("emergency_api", url_prefix="/api/v1/emergency")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 def _emergency_to_list_item(e: EmergencyState) -> dict:
     return EmergencyListItem(
@@ -139,11 +119,11 @@ async def list_emergencies(request: Request):
     of all emergency events.
     Query params: page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -181,11 +161,11 @@ async def list_emergencies(request: Request):
 @emergency_api_bp.get("/<emergency_id:uuid>")
 async def get_emergency(request: Request, emergency_id: uuid.UUID):
     """GET /api/v1/emergency/:id -- emergency event detail."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(EmergencyState).where(EmergencyState.id == emergency_id)
@@ -209,7 +189,7 @@ async def declare_emergency(request: Request):
     Creates a circuit breaker OPEN state with configurable auto-revert.
     Returns JSON: EmergencyDetail with 201 status.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -219,11 +199,11 @@ async def declare_emergency(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
-    now = _dt.datetime.utcnow()
+    now = _dt.datetime.now(timezone.utc).replace(tzinfo=None)
 
     async with request.app.ctx.db() as session:
         state = EmergencyState(
@@ -254,11 +234,11 @@ async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
 
     Returns JSON: EmergencyDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(EmergencyState).where(EmergencyState.id == emergency_id)
@@ -272,7 +252,7 @@ async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
             return json({"error": "Emergency record not found"}, status=404)
 
         state.state = "closed"
-        state.closed_at = _dt.datetime.utcnow()
+        state.closed_at = _dt.datetime.now(timezone.utc).replace(tzinfo=None)
 
         await session.commit()
         await session.refresh(state)

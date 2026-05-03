@@ -41,7 +41,7 @@ async def request_challenge(request: Request):
 
     settings = request.app.ctx.settings
     challenge_hex = os.urandom(32).hex()
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
     async with request.app.ctx.db() as session:
         challenge = AuthChallenge(
@@ -80,7 +80,7 @@ async def verify_challenge(request: Request):
                 AuthChallenge.did == did,
                 AuthChallenge.challenge == challenge_hex,
                 AuthChallenge.used == False,
-                AuthChallenge.expires_at > datetime.utcnow(),
+                AuthChallenge.expires_at > datetime.now(timezone.utc),
             )
         )
         auth_challenge = result.scalar_one_or_none()
@@ -126,7 +126,7 @@ async def verify_challenge(request: Request):
 
         # Create auth session
         session_id = uuid.uuid4()
-        expires_at = datetime.utcnow() + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
             member_id=member.id,

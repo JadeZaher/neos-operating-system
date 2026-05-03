@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -26,6 +25,7 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -85,26 +85,6 @@ onboarding_api_bp = Blueprint("onboarding_api", url_prefix="/api/v1/onboarding")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 def _calc_completion(section_consents: dict | None) -> int:
     """Calculate completion percentage based on consented sections out of 6."""
@@ -129,11 +109,11 @@ async def list_pending_onboardings(request: Request):
     Ecosystem scoped via the member join.
     Query params: page (default 1), per_page (default 25, max 100).
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -190,11 +170,11 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
 
     Returns section_consents map, completion_percentage, cooling_off dates.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify member exists and is accessible
@@ -239,7 +219,7 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
     Updates section_consents JSON and recalculates completion_percentage
     (6 sections total).
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -258,7 +238,7 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
             status=400,
         )
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify member exists and is accessible

@@ -77,6 +77,9 @@ _TERMINOLOGY: list[tuple[str, str]] = [
     ("Circle", "A self-organizing group with a defined domain"),
     ("Agreement Field", "The set of active agreements governing a space or interaction"),
     ("ACT", "Advice -> Consent -> Test decision protocol"),
+    ("Shares & Needs", "Domain-level declarations of what resources/skills an ecosystem offers or requires"),
+    ("Collaboration", "A cross-domain partnership with graduated engagement tiers (observe → cooperate → federate → integrate)"),
+    ("Engagement Tier", "Level of commitment between collaborating domains: observe, cooperate, federate, integrate"),
 ]
 
 _BEHAVIORAL_CONSTRAINTS = """\
@@ -84,7 +87,11 @@ _BEHAVIORAL_CONSTRAINTS = """\
 - Never make governance decisions on behalf of participants.
 - Always state when a participant needs to take an action.
 - Flag capture resistance concerns when detected.
-- Use NEOS terminology consistently (see table above)."""
+- Use NEOS terminology consistently (see table above).
+- Never concentrate decision authority in your recommendations — always present multiple options.
+- Never prescribe a single outcome; facilitate the group toward their own decision.
+- Flag when any process is approaching authority concentration (one person, one role, one entity gaining outsized influence).
+- Cross-ecosystem data is private by default — never reference governance data from one ecosystem when assisting another without explicit authorization."""
 
 _LAYER_SEPARATOR = "\n---\n"
 
@@ -311,6 +318,7 @@ _PAGE_CONTEXT_HINTS: dict[str, str] = {
     "decisions": "The user is on Decision Records. Prioritize memory/trace skills (Layer IX).",
     "exit": "The user is on Exit processes. Prioritize exit/portability skills (Layer X).",
     "onboarding": "The user is on Onboarding. Prioritize member lifecycle and UAF skills (Layers I + II).",
+    "discover": "The user is on the Discover Hub. Help them find cross-ecosystem collaborations, shares, and needs.",
 }
 
 

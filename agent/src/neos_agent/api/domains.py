@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -26,7 +25,11 @@ from neos_agent.db.models import (
     Domain,
     DomainElement,
     DomainMetric,
+    Member,
 )
+from neos_agent.db.course_models import Quiz, QuizResult
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.services.fingerprint import generate_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +61,14 @@ class DomainListItem(BaseModel):
     current_steward: str | None = None
     parent_domain_id: uuid.UUID | None = None
     created_at: _dt.datetime
+    version_fingerprint: str | None = None
 
 
 class DomainDetail(DomainListItem):
     ecosystem_id: uuid.UUID
     steward_id: uuid.UUID | None = None
     created_by: str | None = None
-    metric_definitions: dict | None = None
+    metric_definitions: str | dict | None = None
     elements: dict | None = None
     updated_at: _dt.datetime
     domain_elements: list[DomainElementSchema] = []
@@ -78,7 +82,7 @@ class DomainCreateRequest(BaseModel):
     steward_id: uuid.UUID | None = None
     parent_domain_id: uuid.UUID | None = None
     created_by: str | None = None
-    metric_definitions: dict | None = None
+    metric_definitions: str | dict | None = None
     elements: dict | None = None
 
 
@@ -88,7 +92,7 @@ class DomainUpdateRequest(BaseModel):
     current_steward: str | None = None
     steward_id: uuid.UUID | None = None
     parent_domain_id: uuid.UUID | None = None
-    metric_definitions: dict | None = None
+    metric_definitions: str | dict | None = None
     elements: dict | None = None
 
 
@@ -103,26 +107,6 @@ domains_api_bp = Blueprint("domains_api", url_prefix="/api/v1/domains")
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 def _escape_like(value: str) -> str:
@@ -139,6 +123,7 @@ def _domain_to_list_item(d: Domain) -> dict:
         current_steward=d.current_steward,
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
+        version_fingerprint=d.version_fingerprint,
     ).model_dump(mode="json")
 
 
@@ -152,6 +137,7 @@ def _domain_to_detail(d: Domain) -> dict:
         current_steward=d.current_steward,
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
+        version_fingerprint=d.version_fingerprint,
         ecosystem_id=d.ecosystem_id,
         steward_id=d.steward_id,
         created_by=d.created_by,
@@ -190,11 +176,11 @@ async def list_domains(request: Request):
     Query params: status, q (search domain_id/purpose),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -238,11 +224,11 @@ async def list_domains(request: Request):
 @domains_api_bp.get("/<domain_id:uuid>")
 async def get_domain(request: Request, domain_id: uuid.UUID):
     """GET /api/v1/domains/:id -- Domain detail with elements and metrics."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -272,7 +258,7 @@ async def create_domain(request: Request):
     Accepts JSON: DomainCreateRequest
     Returns JSON: DomainDetail with 201 status.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -282,7 +268,7 @@ async def create_domain(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
@@ -303,6 +289,9 @@ async def create_domain(request: Request):
             created_by=create_req.created_by,
             metric_definitions=create_req.metric_definitions,
             elements=create_req.elements,
+        )
+        domain.version_fingerprint = generate_fingerprint(
+            domain.domain_id, domain.purpose or "", domain.version, domain.status
         )
         session.add(domain)
         await session.commit()
@@ -325,7 +314,7 @@ async def create_domain(request: Request):
 @domains_api_bp.put("/<domain_id:uuid>")
 async def update_domain(request: Request, domain_id: uuid.UUID):
     """PUT /api/v1/domains/:id -- Update non-None fields of a domain."""
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -335,7 +324,7 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Domain).where(Domain.id == domain_id)
@@ -350,6 +339,10 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         update_data = update_req.model_dump(exclude_none=True)
         for field, value in update_data.items():
             setattr(d, field, value)
+
+        d.version_fingerprint = generate_fingerprint(
+            d.domain_id, d.purpose or "", d.version, d.status
+        )
 
         await session.commit()
 
@@ -366,3 +359,134 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         d = result.scalar_one()
 
     return json(_domain_to_detail(d))
+
+
+# ---------------------------------------------------------------------------
+# Domain Quiz Management
+# ---------------------------------------------------------------------------
+
+
+@domains_api_bp.get("/<domain_id_q:uuid>/quizzes")
+async def list_domain_quizzes(request: Request, domain_id_q: uuid.UUID):
+    """GET /api/v1/domains/:id/quizzes -- List quizzes assigned to this domain."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        stmt = (
+            select(Quiz)
+            .where(Quiz.domain_id == domain_id_q)
+            .order_by(Quiz.is_entry_quiz.desc(), Quiz.created_at.desc())
+        )
+        result = await session.execute(stmt)
+        quizzes = result.scalars().all()
+
+    items = []
+    for q in quizzes:
+        items.append({
+            "id": str(q.id),
+            "title": q.title,
+            "description": q.description,
+            "mode": q.mode,
+            "is_published": q.is_published,
+            "is_entry_quiz": q.is_entry_quiz,
+            "time_limit": q.time_limit,
+            "passing_score": q.passing_score,
+            "created_at": q.created_at.isoformat() if q.created_at else None,
+        })
+
+    return json({"items": items, "total": len(items)})
+
+
+@domains_api_bp.post("/<domain_id_a:uuid>/quizzes/assign")
+async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
+    """POST /api/v1/domains/:id/quizzes/assign -- Assign a quiz to this domain.
+
+    Accepts JSON: {"quiz_id": "...", "is_entry_quiz": true/false}
+    """
+    auth_member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    quiz_id_str = body.get("quiz_id")
+    is_entry = body.get("is_entry_quiz", False)
+
+    if not quiz_id_str:
+        return json({"error": "quiz_id is required"}, status=400)
+
+    try:
+        quiz_id = uuid.UUID(quiz_id_str)
+    except ValueError:
+        return json({"error": "Invalid quiz_id"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        domain = await session.get(Domain, domain_id_a)
+        if domain is None:
+            return json({"error": "Domain not found"}, status=404)
+
+        quiz = await session.get(Quiz, quiz_id)
+        if quiz is None:
+            return json({"error": "Quiz not found"}, status=404)
+
+        if is_entry:
+            from sqlalchemy import update
+            await session.execute(
+                update(Quiz)
+                .where(Quiz.domain_id == domain_id_a, Quiz.is_entry_quiz == True)
+                .values(is_entry_quiz=False)
+            )
+
+        quiz.domain_id = domain_id_a
+        quiz.is_entry_quiz = is_entry
+        await session.commit()
+
+    return json({"success": True, "quiz_id": str(quiz_id), "domain_id": str(domain_id_a)})
+
+
+@domains_api_bp.get("/<domain_id_r:uuid>/quiz-results")
+async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
+    """GET /api/v1/domains/:id/quiz-results -- View quiz results for domain quizzes."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        quiz_stmt = select(Quiz.id, Quiz.title).where(Quiz.domain_id == domain_id_r)
+        quiz_rows = await session.execute(quiz_stmt)
+        quiz_map = {row.id: row.title for row in quiz_rows}
+
+        if not quiz_map:
+            return json({"items": [], "total": 0})
+
+        result_stmt = (
+            select(QuizResult)
+            .where(QuizResult.quiz_id.in_(list(quiz_map.keys())))
+            .order_by(QuizResult.created_at.desc())
+        )
+        results = (await session.execute(result_stmt)).scalars().all()
+
+        member_ids = list({r.member_id for r in results if r.member_id})
+        member_names: dict[uuid.UUID, str] = {}
+        if member_ids:
+            m_rows = await session.execute(
+                select(Member.id, Member.display_name).where(Member.id.in_(member_ids))
+            )
+            for m in m_rows:
+                member_names[m.id] = m.display_name
+
+        items = []
+        for r in results:
+            items.append({
+                "id": str(r.id),
+                "quiz_id": str(r.quiz_id),
+                "quiz_title": quiz_map.get(r.quiz_id, "Unknown"),
+                "member_id": str(r.member_id) if r.member_id else None,
+                "member_name": member_names.get(r.member_id) if r.member_id else None,
+                "score": r.score,
+                "passed": r.passed,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+
+    return json({"items": items, "total": len(items)})

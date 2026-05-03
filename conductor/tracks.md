@@ -22,6 +22,7 @@ Tracks are ordered by layer number for sequential implementation. Each track's d
 15. Member Profile Harden          <- depends on #12 (bug fix track)
 16. Chat & Messaging               <- depends on #11, #12, #13 (member-to-member messaging)
 17. Ecosystem Scope Management     <- depends on #12, #11 (unified scoping, security fixes)
+18. Multi-Ecosystem Collaboration  <- depends on #11, #17 (cross-ecosystem discovery, AI independence, PWA)
 ```
 
 ---
@@ -127,6 +128,30 @@ Centralize ecosystem selection state management across all views, templates, for
 
 **Spec:** `conductor/tracks/ecosystem_scope_20260318/spec.md`
 **Plan:** `conductor/tracks/ecosystem_scope_20260318/plan.md`
+
+---
+
+### 18. [ ] multi_ecosystem_collaboration_20260426 -- Multi-Ecosystem Collaboration
+**Priority:** P0
+**Type:** Feature
+**Status:** In Progress (Phase 0 complete)
+**Created:** 2026-04-26
+**Depends on:** agent_foundation_20260305 (complete), ecosystem_scope_20260318 (partial)
+
+Enable N=3 ecosystem operation with cross-ecosystem discovery, collaboration tracking, AI provider independence, compliance monitoring, and PWA notifications. Implements Layer V inter-unit coordination at the data and API level. Removes Jinja2/Datastar in favor of React-only frontend.
+
+**Phase 0 (Complete):** Security fixes — ecosystem scoping bypass, Member.did constraint, async AI client, agreement state machine, datetime fixes, quorum math, new data models (CircleMembership, SharesNeeds, Collaboration, ComplianceSummary), enriched 3-ecosystem seed data.
+
+**Remaining Phases:**
+- [ ] Phase 1: AI Provider Independence (LiteLLM/OpenRouter, No Sultan routing)
+- [ ] Phase 2: Remove Jinja2/Datastar (React-only frontend)
+- [ ] Phase 3: Discover Hub & Collaboration UI (shares/needs, collaborations, circle membership)
+- [ ] Phase 4: Compliance & Version Tracking (AI summaries, fingerprints)
+- [ ] Phase 5: PWA Notifications & Cron Jobs (push, deadlines, auto-regeneration)
+- [ ] Phase 6: Integration Testing & Seed Validation
+
+**Spec:** `conductor/tracks/multi_ecosystem_collaboration_20260426/spec.md`
+**Plan:** `conductor/tracks/multi_ecosystem_collaboration_20260426/plan.md`
 
 ---
 

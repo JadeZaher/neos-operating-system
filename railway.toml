@@ -1,10 +1,10 @@
 [build]
-buildCommand = ""
-watchPatterns = ["neos-operating-system/agent/**"]
+builder = "DOCKERFILE"
+dockerfilePath = "agent/Dockerfile"
+watchPatterns = ["agent/**", "neos-core/**"]
 
 [deploy]
-startCommand = "python -m neos_agent.main --port $PORT"
 healthcheckPath = "/api/v1/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

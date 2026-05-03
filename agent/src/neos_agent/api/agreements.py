@@ -8,7 +8,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -26,6 +25,8 @@ from neos_agent.db.models import (
     ReviewRecord,
 )
 
+from .helpers import require_auth, get_ecosystem_ids
+from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
     AgreementCreateRequest,
     AgreementDetail,
@@ -46,29 +47,6 @@ agreements_api_bp = Blueprint("agreements_api", url_prefix="/api/v1/agreements")
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _require_auth(request: Request):
-    """Return the authenticated member or None with a 401 response."""
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    """Parse ecosystem IDs from the neos_selected_ecosystems cookie,
-    falling back to the authenticated member's ecosystem_id."""
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 def _escape_like(value: str) -> str:
@@ -111,6 +89,7 @@ def _agreement_to_list_item(a: Agreement) -> dict:
     return AgreementListItem(
         id=a.id,
         agreement_id=a.agreement_id,
+        ecosystem_id=a.ecosystem_id,
         type=a.type,
         title=a.title,
         version=a.version,
@@ -137,7 +116,7 @@ def _agreement_to_detail(a: Agreement) -> dict:
         )
         for r in (a.ratification_records or [])
     ]
-    return AgreementDetail(
+    data = AgreementDetail(
         id=a.id,
         agreement_id=a.agreement_id,
         type=a.type,
@@ -159,13 +138,19 @@ def _agreement_to_detail(a: Agreement) -> dict:
         updated_at=a.updated_at,
         ratification_records=[r.model_dump(mode="json") for r in ratifications],
     ).model_dump(mode="json")
+    data["version_fingerprint"] = a.version_fingerprint
+    return data
 
 
-# Valid status transitions: current -> allowed targets
+# Valid status transitions: current -> allowed targets (ACT lifecycle)
 _VALID_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"ratified"},
-    "ratified": {"archived"},
-    "archived": {"draft"},
+    "draft": {"advice"},
+    "advice": {"consent"},
+    "consent": {"test", "active"},
+    "test": {"active"},
+    "active": {"under_review"},
+    "under_review": {"sunset", "active"},
+    "sunset": {"archived"},
 }
 
 
@@ -181,11 +166,11 @@ async def list_agreements(request: Request):
     Query params: type, status, domain, q, page (default 1), per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -217,11 +202,11 @@ async def get_agreement(request: Request, agreement_id: uuid.UUID):
     Verifies ecosystem ownership.
     Returns JSON: AgreementDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -248,7 +233,7 @@ async def create_agreement(request: Request):
     Accepts JSON: AgreementCreateRequest
     Returns JSON: AgreementDetail with 201 status.
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -259,7 +244,7 @@ async def create_agreement(request: Request):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     # Verify the ecosystem_id is in the member's scope
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
@@ -284,6 +269,9 @@ async def create_agreement(request: Request):
             sunset_date=create_req.sunset_date,
             created_date=_dt.date.today(),
         )
+        agreement.version_fingerprint = generate_fingerprint(
+            agreement.title, agreement.text, agreement.version, agreement.status
+        )
         db.add(agreement)
         await db.commit()
 
@@ -306,7 +294,7 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
     Accepts JSON: AgreementUpdateRequest (only non-None fields are applied).
     Returns JSON: AgreementDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -316,7 +304,7 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -336,6 +324,10 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         update_data = update_req.model_dump(exclude_none=True)
         for field, value in update_data.items():
             setattr(agreement, field, value)
+
+        agreement.version_fingerprint = generate_fingerprint(
+            agreement.title, agreement.text, agreement.version, agreement.status
+        )
 
         await db.commit()
         await db.refresh(agreement)
@@ -360,7 +352,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
     Valid transitions: draft->ratified, ratified->archived, archived->draft.
     Returns JSON: AgreementDetail
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
@@ -369,7 +361,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
     if not new_status:
         return json({"error": "\"status\" field is required"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -425,11 +417,11 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
 
     Returns JSON: AgreementHistoryResponse
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         # Verify agreement exists and is in scope

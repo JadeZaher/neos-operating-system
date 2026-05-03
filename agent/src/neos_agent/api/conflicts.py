@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -26,6 +25,7 @@ from neos_agent.db.models import (
     ConflictCase,
     RepairAgreementRecord,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -147,26 +147,6 @@ conflicts_api_bp = Blueprint("conflicts_api", url_prefix="/api/v1/conflicts")
 # ---------------------------------------------------------------------------
 
 
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
-
 
 def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
@@ -247,11 +227,11 @@ async def list_conflicts(request: Request):
     Query params: status, severity, urgency,
     q (search case_id/title), page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -303,11 +283,11 @@ async def list_conflicts(request: Request):
 @conflicts_api_bp.get("/<conflict_id:uuid>")
 async def get_conflict(request: Request, conflict_id: uuid.UUID):
     """GET /api/v1/conflicts/:id -- Conflict detail with repair agreements."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -334,7 +314,7 @@ async def create_conflict(request: Request):
     Accepts JSON: ConflictCreateRequest
     Returns JSON: ConflictDetail with 201 status.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -344,7 +324,7 @@ async def create_conflict(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
@@ -390,7 +370,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
 
     Accepts JSON: ConflictUpdateRequest (only non-None fields applied).
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -400,7 +380,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(ConflictCase).where(ConflictCase.id == conflict_id)
@@ -437,7 +417,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
     Accepts JSON: RepairCreateRequest
     Returns JSON: RepairAgreementSchema with 201 status.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -447,7 +427,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify conflict exists and is accessible
@@ -484,7 +464,7 @@ async def update_repair_agreement(
 
     Accepts JSON: RepairUpdateRequest (checkin notes, status updates).
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -494,7 +474,7 @@ async def update_repair_agreement(
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify conflict exists and is accessible

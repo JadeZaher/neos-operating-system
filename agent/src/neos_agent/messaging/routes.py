@@ -69,7 +69,7 @@ async def messaging_ws(request: Request, ws):
             result = await db.execute(
                 select(AuthSession).where(
                     AuthSession.id == uuid.UUID(session_id),
-                    AuthSession.expires_at > datetime.utcnow(),
+                    AuthSession.expires_at > datetime.now(timezone.utc),
                 )
             )
             auth_session = result.scalar_one_or_none()

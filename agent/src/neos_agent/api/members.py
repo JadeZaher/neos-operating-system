@@ -9,7 +9,6 @@ Returns JSON responses only.
 
 from __future__ import annotations
 
-import json as json_module
 import logging
 import re
 import uuid
@@ -27,6 +26,7 @@ from neos_agent.db.models import (
     MemberOnboarding,
     MemberStatusTransition,
 )
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,9 @@ class MemberListItem(BaseModel):
 class MemberDetail(MemberListItem):
     ecosystem_id: uuid.UUID
     did: str | None = None
-    skills_offered: dict | None = None
-    skills_needed: dict | None = None
-    interests: dict | None = None
+    skills_offered: list | dict | None = None
+    skills_needed: list | dict | None = None
+    interests: list | dict | None = None
     kyc_status: str | None = None
     last_governance_activity_date: _dt.date | None = None
     notes: str | None = None
@@ -80,9 +80,9 @@ class MemberCreateRequest(BaseModel):
     profile: str | None = None
     phone: str | None = None
     profile_picture: str | None = None
-    skills_offered: dict | None = None
-    skills_needed: dict | None = None
-    interests: dict | None = None
+    skills_offered: list | dict | None = None
+    skills_needed: list | dict | None = None
+    interests: list | dict | None = None
     notes: str | None = None
 
 
@@ -91,9 +91,9 @@ class MemberUpdateRequest(BaseModel):
     profile: str | None = None
     phone: str | None = None
     profile_picture: str | None = None
-    skills_offered: dict | None = None
-    skills_needed: dict | None = None
-    interests: dict | None = None
+    skills_offered: list | dict | None = None
+    skills_needed: list | dict | None = None
+    interests: list | dict | None = None
     notes: str | None = None
 
 
@@ -127,26 +127,6 @@ members_api_bp = Blueprint("members_api", url_prefix="/api/v1/members")
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def _require_auth(request: Request):
-    member = getattr(request.ctx, "member", None)
-    if member is None:
-        return None, json({"error": "Authentication required"}, status=401)
-    return member, None
-
-
-def _get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
-    cookie = request.cookies.get("neos_selected_ecosystems")
-    if cookie:
-        try:
-            ids = json_module.loads(cookie)
-            return [uuid.UUID(i) for i in ids if i]
-        except (json_module.JSONDecodeError, ValueError):
-            pass
-    member = getattr(request.ctx, "member", None)
-    if member:
-        return [member.ecosystem_id]
-    return []
 
 
 def _escape_like(value: str) -> str:
@@ -216,11 +196,11 @@ async def list_members(request: Request):
     Query params: status, profile, q (search display_name/member_id),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
@@ -268,11 +248,11 @@ async def list_members(request: Request):
 @members_api_bp.get("/<member_id:uuid>")
 async def get_member(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id -- Member detail with onboarding status."""
-    member, err = _require_auth(request)
+    member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -299,7 +279,7 @@ async def create_member(request: Request):
     Accepts JSON: MemberCreateRequest
     Returns JSON: MemberDetail with 201 status.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -309,7 +289,7 @@ async def create_member(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
@@ -341,7 +321,7 @@ async def create_member(request: Request):
 @members_api_bp.put("/<member_id:uuid>")
 async def update_member(request: Request, member_id: uuid.UUID):
     """PUT /api/v1/members/:id -- Update non-None fields of a member."""
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -351,7 +331,7 @@ async def update_member(request: Request, member_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).where(Member.id == member_id)
@@ -380,7 +360,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
     Accepts JSON: StatusTransitionRequest
     Records a MemberStatusTransition and updates current_status.
     """
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -390,7 +370,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).where(Member.id == member_id)
@@ -426,11 +406,11 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
 @members_api_bp.get("/<member_id:uuid>/onboarding")
 async def get_member_onboarding(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id/onboarding -- Onboarding checklist state."""
-    auth_member, err = _require_auth(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = _get_ecosystem_ids(request)
+    eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify member exists and is accessible

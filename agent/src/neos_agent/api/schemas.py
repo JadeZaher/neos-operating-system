@@ -53,6 +53,21 @@ class AuthVerifyResponse(BaseModel):
     member: MemberSummary
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SetCredentialsRequest(BaseModel):
+    username: str
+    password: str
+
+
+class SetCredentialsResponse(BaseModel):
+    success: bool
+    username: str
+
+
 # --- Ecosystem schemas ---
 
 
@@ -139,6 +154,7 @@ class DashboardSummary(BaseModel):
 class AgreementListItem(BaseModel):
     id: UUID
     agreement_id: str
+    ecosystem_id: UUID
     type: str
     title: str
     version: str
@@ -160,9 +176,8 @@ class RatificationRecordSchema(BaseModel):
 
 
 class AgreementDetail(AgreementListItem):
-    ecosystem_id: UUID
     text: str | None = None
-    affected_parties: list[str] | None = None
+    affected_parties: list | dict | None = None
     parent_agreement_id: UUID | None = None
     ratification_date: _dt.date | None = None
     created_date: _dt.date | None = None
@@ -178,7 +193,7 @@ class AgreementCreateRequest(BaseModel):
     proposer: str | None = None
     domain: str | None = None
     hierarchy_level: str = "domain"
-    affected_parties: list[str] | None = None
+    affected_parties: list | dict | None = None
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
 
@@ -189,7 +204,7 @@ class AgreementUpdateRequest(BaseModel):
     proposer: str | None = None
     domain: str | None = None
     hierarchy_level: str | None = None
-    affected_parties: list[str] | None = None
+    affected_parties: list | dict | None = None
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
     status: str | None = None
