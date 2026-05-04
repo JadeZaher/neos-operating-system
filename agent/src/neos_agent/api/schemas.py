@@ -37,10 +37,13 @@ class ApiError(BaseModel):
 class MemberSummary(BaseModel):
     id: UUID
     display_name: str
-    did: str
+    did: str | None = None
     profile: str | None = None
     ecosystem_id: UUID
     current_status: str
+    has_password: bool = False
+    has_did: bool = False
+    oauth_provider: str | None = None
 
 
 class AuthChallengeResponse(BaseModel):

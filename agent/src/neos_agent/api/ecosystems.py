@@ -34,11 +34,25 @@ ecosystems_api_bp = Blueprint("ecosystems_api", url_prefix="/api/v1/ecosystems")
 # --- Helpers ---
 
 
-async def _get_member_ecosystem_ids(db, did: str) -> list[uuid.UUID]:
-    """Return all ecosystem_ids for a given DID."""
-    result = await db.execute(
-        select(Member.ecosystem_id).where(Member.did == did)
-    )
+async def _get_member_ecosystem_ids(db, member_or_did) -> list[uuid.UUID]:
+    """Return all ecosystem_ids for a member (by DID string or member object)."""
+    if isinstance(member_or_did, str):
+        # Legacy: called with a DID string
+        if not member_or_did:
+            return []
+        result = await db.execute(
+            select(Member.ecosystem_id).where(Member.did == member_or_did)
+        )
+    elif hasattr(member_or_did, "did") and member_or_did.did:
+        result = await db.execute(
+            select(Member.ecosystem_id).where(Member.did == member_or_did.did)
+        )
+    elif hasattr(member_or_did, "id"):
+        result = await db.execute(
+            select(Member.ecosystem_id).where(Member.id == member_or_did.id)
+        )
+    else:
+        return []
     return list(result.scalars().all())
 
 
@@ -105,7 +119,7 @@ async def list_ecosystems(request: Request):
     offset = (page - 1) * per_page
 
     async with request.app.ctx.db() as db:
-        eco_ids = await _get_member_ecosystem_ids(db, member.did)
+        eco_ids = await _get_member_ecosystem_ids(db, member)
         if not eco_ids:
             return json({"ecosystems": [], "total": 0, "page": page, "per_page": per_page})
 
@@ -160,7 +174,7 @@ async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Check access: member belongs to ecosystem or it's public
-        eco_ids = await _get_member_ecosystem_ids(db, member.did)
+        eco_ids = await _get_member_ecosystem_ids(db, member)
         if ecosystem_id not in eco_ids and eco.visibility != "public":
             return json({"error": "Access denied"}, status=403)
 
@@ -214,9 +228,10 @@ async def create_ecosystem(request: Request):
         await db.flush()
 
         # Add the creating member to this ecosystem
+        mid = f"did-{member.did[-12:]}" if member.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
             ecosystem_id=eco.id,
-            member_id=f"did-{member.did[-12:]}",
+            member_id=mid,
             did=member.did,
             display_name=member.display_name,
             current_status="active",
@@ -253,7 +268,7 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member.did)
+        eco_ids = await _get_member_ecosystem_ids(db, member)
         if ecosystem_id not in eco_ids:
             return json({"error": "Access denied"}, status=403)
 
@@ -324,19 +339,28 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Check if already a member
-        existing = await db.execute(
-            select(Member.id).where(
-                Member.ecosystem_id == ecosystem_id,
-                Member.did == member.did,
-            ).limit(1)
-        )
+        if member.did:
+            existing = await db.execute(
+                select(Member.id).where(
+                    Member.ecosystem_id == ecosystem_id,
+                    Member.did == member.did,
+                ).limit(1)
+            )
+        else:
+            existing = await db.execute(
+                select(Member.id).where(
+                    Member.ecosystem_id == ecosystem_id,
+                    Member.id == member.id,
+                ).limit(1)
+            )
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Already a member of this ecosystem"}, status=409)
 
         # Create a prospective member record
+        mid = f"did-{member.did[-12:]}" if member.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
             ecosystem_id=ecosystem_id,
-            member_id=f"did-{member.did[-12:]}",
+            member_id=mid,
             did=member.did,
             display_name=member.display_name,
             current_status="prospective",
@@ -424,7 +448,7 @@ async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member.did)
+        eco_ids = await _get_member_ecosystem_ids(db, member)
         if ecosystem_id not in eco_ids:
             return json({"error": "Access denied"}, status=403)
 
@@ -471,7 +495,7 @@ async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member.did)
+        eco_ids = await _get_member_ecosystem_ids(db, member)
         if ecosystem_id not in eco_ids:
             return json({"error": "Access denied"}, status=403)
 

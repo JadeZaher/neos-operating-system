@@ -95,9 +95,19 @@ messaging_api_bp = Blueprint("messaging_api", url_prefix="/api/v1/messaging")
 
 
 
-async def _get_current_member_id(session, did: str, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
-    """Resolve the authenticated DID to a member id within the active ecosystems."""
-    stmt = select(Member.id).where(Member.did == did)
+async def _get_current_member_id(session, member_or_did, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
+    """Resolve the authenticated member to a member id within the active ecosystems."""
+    if isinstance(member_or_did, str):
+        if not member_or_did:
+            return None
+        stmt = select(Member.id).where(Member.did == member_or_did)
+    elif hasattr(member_or_did, "did") and member_or_did.did:
+        stmt = select(Member.id).where(Member.did == member_or_did.did)
+    elif hasattr(member_or_did, "id"):
+        # No DID — look up by member ID directly
+        return member_or_did.id
+    else:
+        return None
     if eco_ids:
         stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
     result = await session.execute(stmt.limit(1))
@@ -136,7 +146,7 @@ async def list_conversations(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
         if member_id is None:
             return json({"conversations": []})
 
@@ -226,7 +236,7 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
         if member_id is None:
             return json({"error": "Member not found"}, status=404)
 
@@ -316,7 +326,7 @@ async def create_conversation(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
         if member_id is None:
             return json({"error": "Member not found"}, status=404)
 
@@ -385,7 +395,7 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
         if member_id is None:
             return json({"error": "Member not found"}, status=404)
 
@@ -455,7 +465,7 @@ async def search_messages(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
         if member_id is None:
             return json({"messages": []})
 
@@ -514,7 +524,7 @@ async def list_members_for_picker(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member.did, eco_ids)
+        member_id = await _get_current_member_id(session, member, eco_ids)
 
         stmt = select(Member.id, Member.display_name, Member.profile)
         if eco_ids:

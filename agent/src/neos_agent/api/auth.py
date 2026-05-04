@@ -66,6 +66,9 @@ def _member_to_summary(member: Member) -> MemberSummary:
         profile=member.profile,
         ecosystem_id=member.ecosystem_id,
         current_status=member.current_status,
+        has_password=bool(member.password_hash),
+        has_did=bool(member.did),
+        oauth_provider=member.oauth_provider,
     )
 
 
@@ -235,10 +238,15 @@ async def api_me(request: Request):
 
         member_summary = _member_to_summary(member)
 
-        # Find all ecosystems this DID belongs to
-        member_records = await db.execute(
-            select(Member.ecosystem_id).where(Member.did == member.did)
-        )
+        # Find all ecosystems this member belongs to
+        if member.did:
+            member_records = await db.execute(
+                select(Member.ecosystem_id).where(Member.did == member.did)
+            )
+        else:
+            member_records = await db.execute(
+                select(Member.ecosystem_id).where(Member.id == member.id)
+            )
         eco_ids = list(member_records.scalars().all())
 
         ecosystems = []
@@ -342,7 +350,7 @@ async def api_login(request: Request):
         auth_session = AuthSession(
             id=session_id,
             member_id=member.id,
-            did=member.did,
+            did=member.did or "",
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,
@@ -369,6 +377,177 @@ async def api_login(request: Request):
         path="/",
     )
     return response
+
+
+@auth_api_bp.post("/register")
+async def api_register(request: Request):
+    """Register a new member with username and password (no DID required).
+
+    Accepts JSON: {"username": "...", "password": "...", "display_name": "..."}
+    Returns JSON: AuthVerifyResponse with member info + sets neos_session cookie.
+    """
+    body = request.json or {}
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    display_name = (body.get("display_name") or "").strip()
+
+    if not username or not password:
+        return json({"error": "Username and password are required"}, status=400)
+
+    if not _USERNAME_RE.match(username):
+        return json(
+            {"error": "Username must be 3-50 characters, alphanumeric or underscore only"},
+            status=400,
+        )
+
+    if len(password) < 8:
+        return json({"error": "Password must be at least 8 characters"}, status=400)
+
+    if not display_name:
+        display_name = username
+
+    settings = request.app.ctx.settings
+
+    async with request.app.ctx.db() as session:
+        # Check username uniqueness
+        existing = await session.execute(
+            select(Member.id).where(Member.username == username)
+        )
+        if existing.scalar_one_or_none() is not None:
+            return json({"error": "Username already taken"}, status=409)
+
+        # Find default ecosystem
+        eco_result = await session.execute(select(Ecosystem).limit(1))
+        ecosystem = eco_result.scalar_one_or_none()
+        if ecosystem is None:
+            return json({"error": "No ecosystem configured"}, status=500)
+
+        # Create member
+        member = Member(
+            ecosystem_id=ecosystem.id,
+            member_id=f"usr-{username[:12]}",
+            username=username,
+            password_hash=_hash_password(password),
+            display_name=display_name,
+            current_status="active",
+        )
+        session.add(member)
+        await session.flush()
+
+        # Create auth session
+        session_id = uuid.uuid4()
+        expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+        auth_session = AuthSession(
+            id=session_id,
+            member_id=member.id,
+            did=member.did or "",
+            expires_at=expires_at,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.remote_addr,
+        )
+        session.add(auth_session)
+        await session.commit()
+
+        member_summary = _member_to_summary(member)
+
+    cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
+    response_data = AuthVerifyResponse(
+        success=True,
+        display_name=member.display_name,
+        member=member_summary,
+    )
+    response = json(response_data.model_dump(mode="json"), status=200)
+    response.add_cookie(
+        "neos_session",
+        cookie_value,
+        httponly=True,
+        secure=True,
+        samesite="None",
+        max_age=settings.SESSION_MAX_AGE_HOURS * 3600,
+        path="/",
+    )
+    return response
+
+
+@auth_api_bp.post("/did/reset")
+async def api_did_reset(request: Request):
+    """Reset / regenerate a member's DID.
+
+    Requires an active session. Clears the existing DID so the frontend
+    can generate a new keypair and re-link it via /did/link.
+    Returns JSON: {"success": true, "message": "..."}
+    """
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json({"error": "Authentication required"}, status=401)
+
+    async with request.app.ctx.db() as db:
+        m = await db.get(Member, member.id)
+        if not m:
+            return json({"error": "Member not found"}, status=401)
+        m.did = None
+        m.member_id = f"usr-{m.username or str(m.id)[:12]}"
+        await db.commit()
+
+    return json({"success": True, "message": "DID cleared. Generate a new identity to re-link."})
+
+
+@auth_api_bp.post("/did/link")
+async def api_did_link(request: Request):
+    """Link a new DID to the current authenticated member.
+
+    Requires an active session + a valid DID challenge-response.
+    Accepts JSON: {"did": "...", "challenge": "...", "signature": "..."}
+    Returns JSON: {"success": true, "did": "..."}
+    """
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json({"error": "Authentication required"}, status=401)
+
+    body = request.json or {}
+    did = (body.get("did") or "").strip()
+    challenge_hex = (body.get("challenge") or "").strip()
+    signature_hex = (body.get("signature") or "").strip()
+
+    if not all([did, challenge_hex, signature_hex]):
+        return json({"error": "Missing required fields"}, status=400)
+
+    if not did.startswith("did:key:z"):
+        return json({"error": "Invalid DID format"}, status=400)
+
+    # Verify signature
+    if not verify_did_signature(did, challenge_hex, signature_hex):
+        return json({"error": "Invalid signature"}, status=401)
+
+    async with request.app.ctx.db() as db:
+        # Check DID not already used by another member
+        existing = await db.execute(
+            select(Member.id).where(Member.did == did, Member.id != member.id)
+        )
+        if existing.scalar_one_or_none() is not None:
+            return json({"error": "DID already linked to another account"}, status=409)
+
+        # Verify the challenge was valid
+        result = await db.execute(
+            select(AuthChallenge).where(
+                AuthChallenge.did == did,
+                AuthChallenge.challenge == challenge_hex,
+                AuthChallenge.used == False,
+                AuthChallenge.expires_at > _dt.datetime.now(timezone.utc),
+            )
+        )
+        auth_challenge = result.scalar_one_or_none()
+        if auth_challenge is None:
+            return json({"error": "Invalid or expired challenge"}, status=401)
+
+        auth_challenge.used = True
+
+        m = await db.get(Member, member.id)
+        m.did = did
+        m.member_id = f"did-{did[-12:]}"
+        await db.commit()
+
+    return json({"success": True, "did": did})
 
 
 @auth_api_bp.post("/set-credentials")

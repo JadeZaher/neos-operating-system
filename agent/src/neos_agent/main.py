@@ -139,6 +139,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.ai_assist import ai_assist_bp
     from neos_agent.api.compliance import compliance_api_bp
     from neos_agent.api.notifications import notifications_api_bp
+    from neos_agent.api.oauth import oauth_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -163,6 +164,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(ai_assist_bp)
     app.blueprint(compliance_api_bp)
     app.blueprint(notifications_api_bp)
+    app.blueprint(oauth_bp)
 
     # Register messaging blueprint (WebSocket + REST)
     from neos_agent.messaging.routes import messaging_bp
@@ -255,6 +257,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     return None
             except Exception:
                 logger.debug("Session resolve failed on public route")
+            return None
+
+        # CORS preflight requests (OPTIONS) never carry cookies — let them through
+        if request.method == "OPTIONS":
             return None
 
         if is_public_route(request.path):

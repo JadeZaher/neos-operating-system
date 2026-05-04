@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     SESSION_SECRET: str = ""
     SESSION_MAX_AGE_HOURS: int = 24
 
+    # OAuth settings (empty = disabled)
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    LINKEDIN_CLIENT_ID: str = ""
+    LINKEDIN_CLIENT_SECRET: str = ""
+    OAUTH_REDIRECT_BASE: str = ""  # e.g. "http://localhost:5173" or production URL
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

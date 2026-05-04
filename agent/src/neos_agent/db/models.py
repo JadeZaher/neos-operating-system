@@ -144,6 +144,8 @@ class Member(TimestampMixin, Base):
     did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # google, linkedin
+    oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), nullable=False, default="prospective")
     profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, townhall
