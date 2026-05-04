@@ -48,6 +48,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.config.CORS_ORIGINS = settings.CORS_ORIGINS
     # Credentials cannot be used with wildcard origins per the CORS spec.
     app.config.CORS_SUPPORTS_CREDENTIALS = settings.CORS_ORIGINS != "*"
+    app.config.CORS_ALLOW_HEADERS = "content-type,authorization"
 
     # Configure logging
     logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))

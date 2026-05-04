@@ -145,7 +145,8 @@ async def verify_challenge(request: Request):
         "neos_session",
         cookie_value,
         httponly=True,
-        samesite="Lax",
+        secure=True,
+        samesite="None",
         max_age=settings.SESSION_MAX_AGE_HOURS * 3600,
         path="/",
     )
