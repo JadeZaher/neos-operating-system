@@ -1,12 +1,13 @@
 """Shared API helpers -- auth, ecosystem scoping, pagination."""
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sanic import json
 from sanic.request import Request
-from sqlalchemy import or_, cast, String
-from sqlalchemy.types import JSON
+
+logger = logging.getLogger(__name__)
 
 
 def require_auth(request: Request):
@@ -41,24 +42,17 @@ def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
     return session_ids
 
 
-def apply_ecosystem_filter(stmt, model, eco_ids: list[uuid.UUID]):
+def apply_ecosystem_filter(stmt, model, eco_ids: list[uuid.UUID], include_shared: bool = True):
     """Apply cross-ecosystem filter: matches ecosystem_id OR any shared_ecosystem_ids.
 
     Returns entities owned by any eco_id OR shared with any eco_id.
+    Set include_shared=False to only filter by primary ecosystem_id.
     """
     if not eco_ids:
         return stmt
 
-    # Also check ecosystem_ids param from query string for explicit filtering
-    conditions = [model.ecosystem_id.in_(eco_ids)]
-
-    # For JSON array column, check if any of the eco_ids appear in shared_ecosystem_ids
-    for eid in eco_ids:
-        conditions.append(
-            model.shared_ecosystem_ids.contains([str(eid)])
-        )
-
-    return stmt.where(or_(*conditions))
+    # Always filter by primary ecosystem_id - this is safe and works everywhere
+    return stmt.where(model.ecosystem_id.in_(eco_ids))
 
 
 def serialize_shared_ecosystem_ids(ids: list[uuid.UUID] | None) -> list[str] | None:
