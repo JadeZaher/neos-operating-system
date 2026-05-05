@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 async ORM models for the NEOS governance database.
 
-42 tables organized by section:
+45 tables organized by section:
 - Core (7): ecosystems, members, member_onboarding, member_status_transitions,
   domains, domain_elements, domain_metrics
 - Agreements (4): agreements, agreement_ratification_records, amendment_records,
@@ -21,6 +21,7 @@
 - Collaboration (4): circle_memberships, shares_needs, collaborations,
   compliance_summaries
 - Push Notifications (1): push_subscriptions
+- Orientation & Journey Map (3): journey_maps, ethos_user_access, user_journey_progress
 """
 
 from __future__ import annotations
@@ -985,3 +986,68 @@ class PushSubscription(TimestampMixin, Base):
     auth_key: Mapped[str] = mapped_column(String(255), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notification_types: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # which types user wants
+
+
+# ========================
+# ORIENTATION & JOURNEY MAP (3 models)
+# ========================
+
+class JourneyMap(TimestampMixin, Base):
+    """A configurable orientation journey for new or existing members."""
+    __tablename__ = "journey_maps"
+    __table_args__ = (
+        Index("ix_journey_maps_slug", "slug"),
+        Index("ix_journey_maps_ecosystem_id", "ecosystem_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ecosystem_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=True)
+    sector_alignment: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # list of sector strings
+    role_types: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # list of role type strings
+    min_alignment_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content_sequence: Mapped[dict] = mapped_column(JSON, nullable=False, default=list)  # list of JourneyStep objects
+    exit_package: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # docs, tools, next_steps
+    step_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class EthosUserAccess(TimestampMixin, Base):
+    """Access record for a member within an ecosystem's Ethos layer."""
+    __tablename__ = "ethos_user_access"
+    __table_args__ = (
+        Index("ix_ethos_user_access_member_ecosystem", "member_id", "ecosystem_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    role_in_ethos: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # steward, member, observer
+    access_level: Mapped[str] = mapped_column(String(50), nullable=False, default="member")
+    granted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    granted_by: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), nullable=True)
+
+
+class UserJourneyProgress(TimestampMixin, Base):
+    """Tracks a member's progress through a journey map."""
+    __tablename__ = "user_journey_progress"
+    __table_args__ = (
+        Index("ix_user_journey_progress_member_ecosystem", "member_id", "ecosystem_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    journey_map_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("journey_maps.id"), nullable=False)
+    orientation_path: Mapped[str] = mapped_column(String(20), nullable=False, default="explorer")  # ready | explorer
+    current_step: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_steps: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=list)  # list of step indices
+    step_responses: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)  # step_key -> response data
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_started")  # not_started | in_progress | complete | opted_out
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    was_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    misalignment_flags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=list)

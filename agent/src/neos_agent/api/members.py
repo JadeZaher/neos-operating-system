@@ -302,7 +302,7 @@ async def create_member(request: Request):
             ecosystem_id=create_req.ecosystem_id,
             member_id=member_id_str,
             display_name=create_req.display_name,
-            current_status="prospective",
+            current_status="active",
             profile=create_req.profile,
             phone=create_req.phone,
             profile_picture=create_req.profile_picture,

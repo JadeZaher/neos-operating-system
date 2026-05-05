@@ -323,11 +323,10 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/join")
 async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
-    """Request to join an ecosystem.
+    """Join an ecosystem.
 
-    Creates a prospective member record for the authenticated user.
-    The member must be approved by an existing ecosystem member to gain full access.
-    Returns JSON: {"status": "requested", "message": "..."}
+    Creates an active member record for the authenticated user (auto-approved).
+    Returns JSON: {"status": "joined", "message": "..."}
     """
     member, err = require_auth(request)
     if err:
@@ -356,23 +355,22 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Already a member of this ecosystem"}, status=409)
 
-        # Create a prospective member record
+        # Auto-approve: create an active member record immediately
         mid = f"did-{member.did[-12:]}" if member.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
             ecosystem_id=ecosystem_id,
             member_id=mid,
             did=member.did,
             display_name=member.display_name,
-            current_status="prospective",
-            onboarding_status="pending",
+            current_status="active",
+            onboarding_status="complete",
         )
         db.add(new_member)
         await db.commit()
 
     return json({
-        "status": "requested",
-        "message": f"Your request to join {eco.name} has been submitted. "
-                   "An existing member must approve your membership.",
+        "status": "joined",
+        "message": f"Welcome to {eco.name}! You are now an active member.",
     }, status=201)
 
 

@@ -9,13 +9,15 @@ Execution order:
                       conflicts, decisions, emergency, exit, audits, collaborations
   2. seed_act_lifecycle — proposals in consent, test, ratified, withdrawn stages
   3. seed_quizzes   — courses, quizzes, results, progress, tags, badges, tiles
-  4. seed_messaging — conversations, messages, links, push subscriptions
-  5. seed_conflicts_emergency — additional conflicts, emergencies, exit records
+  4. seed_orientation — journey maps, ethos user access records
+  5. seed_messaging — conversations, messages, links, push subscriptions
+  6. seed_conflicts_emergency — additional conflicts, emergencies, exit records
 
 Total seed data:
   4 ecosystems | 12 domains | 11+ members
   20+ agreements | 20 proposals (all ACT stages) | 12+ conflicts
   8 courses | 16 quizzes | 16 quiz results
+  8 journey maps | 11 ethos access records
   8 conversations | 56+ messages | 8 push subscriptions
   4+ emergency states | 4+ exit records | 4 compliance summaries
 """
@@ -41,17 +43,19 @@ async def run_all(purge: bool = False) -> None:
         # Purge in reverse order: supplemental scripts first, then core
         from scripts.seed_conflicts_emergency import purge as purge_ce
         from scripts.seed_messaging import purge as purge_msg
+        from scripts.seed_orientation import purge as purge_orientation
         from scripts.seed_quizzes import purge as purge_quiz
         from scripts.seed_act_lifecycle import purge as purge_act
 
         await purge_ce(database_url)
         await purge_msg(database_url)
+        await purge_orientation(database_url)
         await purge_quiz(database_url)
         await purge_act(database_url)
         await purge_omnione(database_url)
 
     print("\n" + "=" * 60)
-    print("STEP 1/5: Core data (ecosystems, members, domains, agreements)")
+    print("STEP 1/6: Core data (ecosystems, members, domains, agreements)")
     print("=" * 60)
     await seed_omnione(database_url)
 
@@ -59,7 +63,7 @@ async def run_all(purge: bool = False) -> None:
     from scripts.seed_act_lifecycle import seed as seed_act
 
     print("\n" + "=" * 60)
-    print("STEP 2/5: ACT lifecycle proposals (consent, test, ratified, withdrawn)")
+    print("STEP 2/6: ACT lifecycle proposals (consent, test, ratified, withdrawn)")
     print("=" * 60)
     await seed_act(database_url)
 
@@ -67,23 +71,31 @@ async def run_all(purge: bool = False) -> None:
     from scripts.seed_quizzes import seed as seed_quizzes
 
     print("\n" + "=" * 60)
-    print("STEP 3/5: Courses, quizzes, results, badges, tiles")
+    print("STEP 3/6: Courses, quizzes, results, badges, tiles")
     print("=" * 60)
     await seed_quizzes(database_url)
 
-    # --- 4. Messaging ---
+    # --- 4. Orientation (journey maps, ethos access) ---
+    from scripts.seed_orientation import seed as seed_orientation
+
+    print("\n" + "=" * 60)
+    print("STEP 4/6: Orientation (journey maps, ethos user access)")
+    print("=" * 60)
+    await seed_orientation(database_url)
+
+    # --- 5. Messaging ---
     from scripts.seed_messaging import seed as seed_messaging
 
     print("\n" + "=" * 60)
-    print("STEP 4/5: Messaging (conversations, messages, push subscriptions)")
+    print("STEP 5/6: Messaging (conversations, messages, push subscriptions)")
     print("=" * 60)
     await seed_messaging(database_url)
 
-    # --- 5. Additional conflicts, emergencies, exits ---
+    # --- 6. Additional conflicts, emergencies, exits ---
     from scripts.seed_conflicts_emergency import seed as seed_ce
 
     print("\n" + "=" * 60)
-    print("STEP 5/5: Additional conflicts, emergencies, exit records")
+    print("STEP 6/6: Additional conflicts, emergencies, exit records")
     print("=" * 60)
     await seed_ce(database_url)
 

@@ -34,6 +34,7 @@ src/neos_agent/api/helpers.py
 src/neos_agent/api/members.py
 src/neos_agent/api/messaging.py
 src/neos_agent/api/notifications.py
+src/neos_agent/api/oauth.py
 src/neos_agent/api/onboarding.py
 src/neos_agent/api/proposals.py
 src/neos_agent/api/quizzes.py
