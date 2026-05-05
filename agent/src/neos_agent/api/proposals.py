@@ -28,7 +28,7 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,7 @@ class ProposalDetail(ProposalListItem):
 
 class ProposalCreateRequest(BaseModel):
     ecosystem_id: uuid.UUID
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     type: str
     title: str
     decision_type: str | None = None
@@ -154,6 +155,7 @@ class ProposalUpdateRequest(BaseModel):
     rationale: str | None = None
     affected_domain: str | None = None
     urgency: str | None = None
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     advice_deadline: _dt.date | None = None
     consent_deadline: _dt.date | None = None
 
@@ -203,7 +205,7 @@ def _escape_like(value: str) -> str:
 def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = None):
     """Apply query-param filters to a Proposal select statement."""
     if eco_ids:
-        stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+        stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
 
     phase = request.args.get("phase")
     if phase:
@@ -439,7 +441,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
         # Scope to selected ecosystems
         eco_ids = get_ecosystem_ids(request)
         if eco_ids:
-            stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
 
         result = await session.execute(stmt)
         proposal = result.scalar_one_or_none()
@@ -480,6 +482,7 @@ async def create_proposal(request: Request):
         proposal = Proposal(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             proposal_id=proposal_id_str,
             type=create_req.type,
             decision_type=create_req.decision_type,
@@ -541,7 +544,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
-            stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
 
         result = await session.execute(stmt)
         proposal = result.scalar_one_or_none()
@@ -550,6 +553,10 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
 
         # Update non-None fields
         update_data = update_req.model_dump(exclude_none=True)
+        if "shared_ecosystem_ids" in update_data:
+            update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
+                update_req.shared_ecosystem_ids
+            )
         for field, value in update_data.items():
             setattr(proposal, field, value)
 
@@ -598,7 +605,7 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
-            stmt = stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
 
         result = await session.execute(stmt)
         proposal = result.scalar_one_or_none()
@@ -666,7 +673,7 @@ async def get_advice(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
-            p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
         if await session.scalar(p_stmt) is None:
             return json({"error": "Proposal not found"}, status=404)
 
@@ -706,7 +713,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
-            p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
         result = await session.execute(p_stmt)
         proposal = result.scalar_one_or_none()
         if proposal is None:
@@ -775,7 +782,7 @@ async def get_consent(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
-            p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
         if await session.scalar(p_stmt) is None:
             return json({"error": "Proposal not found"}, status=404)
 
@@ -817,7 +824,7 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
-            p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
         result = await session.execute(p_stmt)
         proposal = result.scalar_one_or_none()
         if proposal is None:
@@ -884,7 +891,7 @@ async def get_test_reports(request: Request, proposal_id: uuid.UUID):
         eco_ids = get_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
-            p_stmt = p_stmt.where(Proposal.ecosystem_id.in_(eco_ids))
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
         if await session.scalar(p_stmt) is None:
             return json({"error": "Proposal not found"}, status=404)
 

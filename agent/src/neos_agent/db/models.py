@@ -141,6 +141,7 @@ class Member(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     member_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
     did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
@@ -206,6 +207,7 @@ class Domain(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     domain_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
     version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.0")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
@@ -258,6 +260,7 @@ class Agreement(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     agreement_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -353,6 +356,7 @@ class Proposal(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     proposal_id: Mapped[str] = mapped_column(String(100), nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     decision_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -537,6 +541,7 @@ class DecisionRecord(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     record_id: Mapped[str] = mapped_column(String(100), nullable=False)
     date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     holding: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -617,6 +622,7 @@ class ConflictCase(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     case_id: Mapped[str] = mapped_column(String(100), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -713,6 +719,7 @@ class ExitRecord(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
     exit_type: Mapped[str] = mapped_column(String(50), nullable=False, default="standard")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="declared")

@@ -418,6 +418,14 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
         ]
         # fmt: on
 
+        default_privacy = {
+            "is_profile_public": True,
+            "show_badges": True,
+            "show_tags": True,
+            "show_quiz_results": True,
+            "allow_discovery": True,
+        }
+
         for (mid, eco_id, member_id_str, did, name, status, profile,
              skills_o, skills_n, notes, gov_days) in members_spec:
             session.add(Member(
@@ -434,6 +442,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
                 skills_needed=skills_n,
                 notes=notes,
                 last_governance_activity_date=days_ago(gov_days),
+                privacy=default_privacy,
             ))
 
         # Exited member Rua (OmniOne)
@@ -450,6 +459,8 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             notes="Former TH member. Left OmniOne voluntarily to start a new community project.",
             last_governance_activity_date=days_ago(45),
             skills_offered=["community-organizing", "event-planning"],
+            privacy={"is_profile_public": False, "show_badges": False, "show_tags": False,
+                     "show_quiz_results": False, "allow_discovery": False},
         )
         session.add(rua)
         await session.flush()

@@ -22,7 +22,7 @@ from sanic.request import Request
 from sqlalchemy import func, or_, select
 
 from neos_agent.db.models import ExitRecord
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ class ExitDetail(ExitListItem):
 
 class ExitCreateRequest(BaseModel):
     ecosystem_id: uuid.UUID
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     member_id: uuid.UUID
     exit_type: str = "standard"
     reason: str | None = None
@@ -146,7 +147,7 @@ async def list_exits(request: Request):
         stmt = select(ExitRecord).order_by(ExitRecord.created_at.desc())
 
         if eco_ids:
-            stmt = stmt.where(ExitRecord.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
 
         status = request.args.get("status")
         if status:
@@ -188,7 +189,7 @@ async def get_exit(request: Request, exit_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
         if eco_ids:
-            stmt = stmt.where(ExitRecord.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
 
         result = await session.execute(stmt)
         record = result.scalar_one_or_none()
@@ -227,6 +228,7 @@ async def create_exit(request: Request):
         record = ExitRecord(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             member_id=create_req.member_id,
             exit_type=create_req.exit_type,
             status="declared",
@@ -269,7 +271,7 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
         if eco_ids:
-            stmt = stmt.where(ExitRecord.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
 
         result = await session.execute(stmt)
         record = result.scalar_one_or_none()

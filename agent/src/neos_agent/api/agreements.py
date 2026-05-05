@@ -25,7 +25,7 @@ from neos_agent.db.models import (
     ReviewRecord,
 )
 
-from .helpers import require_auth, get_ecosystem_ids
+from .helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
     AgreementCreateRequest,
@@ -57,7 +57,7 @@ def _escape_like(value: str) -> str:
 def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = None):
     """Apply optional query-param filters to an Agreement select statement."""
     if eco_ids:
-        stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
+        stmt = apply_ecosystem_filter(stmt, Agreement, eco_ids)
 
     agreement_type = request.args.get("type")
     if agreement_type:
@@ -255,6 +255,7 @@ async def create_agreement(request: Request):
         agreement = Agreement(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             agreement_id=agreement_id_str,
             type=create_req.type,
             title=create_req.title,
@@ -322,6 +323,10 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
             return json({"error": "Agreement not found"}, status=404)
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "shared_ecosystem_ids" in update_data:
+            update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
+                update_req.shared_ecosystem_ids
+            )
         for field, value in update_data.items():
             setattr(agreement, field, value)
 

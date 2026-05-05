@@ -26,7 +26,7 @@ from neos_agent.db.models import (
     MemberOnboarding,
     MemberStatusTransition,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,7 @@ MemberDetail.model_rebuild()
 
 class MemberCreateRequest(BaseModel):
     ecosystem_id: uuid.UUID
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     display_name: str
     profile: str | None = None
     phone: str | None = None
@@ -95,6 +96,7 @@ class MemberUpdateRequest(BaseModel):
     skills_offered: list | dict | None = None
     skills_needed: list | dict | None = None
     interests: list | dict | None = None
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     notes: str | None = None
     privacy: dict | None = None
 
@@ -213,7 +215,7 @@ async def list_members(request: Request):
         stmt = select(Member).order_by(Member.created_at.desc())
 
         if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
         status = request.args.get("status")
         if status:
@@ -264,7 +266,7 @@ async def get_member(request: Request, member_id: uuid.UUID):
             .where(Member.id == member_id)
         )
         if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
         result = await session.execute(stmt)
         m = result.scalar_one_or_none()
@@ -303,6 +305,7 @@ async def create_member(request: Request):
         new_member = Member(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             member_id=member_id_str,
             display_name=create_req.display_name,
             current_status="active",
@@ -339,7 +342,7 @@ async def update_member(request: Request, member_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(Member).where(Member.id == member_id)
         if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
         result = await session.execute(stmt)
         m = result.scalar_one_or_none()
@@ -347,6 +350,10 @@ async def update_member(request: Request, member_id: uuid.UUID):
             return json({"error": "Member not found"}, status=404)
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "shared_ecosystem_ids" in update_data:
+            update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
+                update_req.shared_ecosystem_ids
+            )
         for field, value in update_data.items():
             setattr(m, field, value)
 
@@ -378,7 +385,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(Member).where(Member.id == member_id)
         if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
         result = await session.execute(stmt)
         m = result.scalar_one_or_none()
@@ -419,7 +426,7 @@ async def get_member_onboarding(request: Request, member_id: uuid.UUID):
         # Verify member exists and is accessible
         m_stmt = select(Member.id).where(Member.id == member_id)
         if eco_ids:
-            m_stmt = m_stmt.where(Member.ecosystem_id.in_(eco_ids))
+            m_stmt = apply_ecosystem_filter(m_stmt, Member, eco_ids)
         if await session.scalar(m_stmt) is None:
             return json({"error": "Member not found"}, status=404)
 

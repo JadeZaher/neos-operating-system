@@ -28,7 +28,7 @@ from neos_agent.db.models import (
     Member,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 from neos_agent.services.fingerprint import generate_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ class DomainDetail(DomainListItem):
 
 class DomainCreateRequest(BaseModel):
     ecosystem_id: uuid.UUID
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     purpose: str | None = None
     current_steward: str | None = None
     steward_id: uuid.UUID | None = None
@@ -92,6 +93,7 @@ class DomainUpdateRequest(BaseModel):
     current_steward: str | None = None
     steward_id: uuid.UUID | None = None
     parent_domain_id: uuid.UUID | None = None
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     metric_definitions: str | dict | None = None
     elements: dict | None = None
 
@@ -190,7 +192,7 @@ async def list_domains(request: Request):
         stmt = select(Domain).order_by(Domain.created_at.desc())
 
         if eco_ids:
-            stmt = stmt.where(Domain.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
 
         status = request.args.get("status")
         if status:
@@ -240,7 +242,7 @@ async def get_domain(request: Request, domain_id: uuid.UUID):
             .where(Domain.id == domain_id)
         )
         if eco_ids:
-            stmt = stmt.where(Domain.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
 
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()
@@ -279,6 +281,7 @@ async def create_domain(request: Request):
         domain = Domain(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             domain_id=domain_id_str,
             version="1.0",
             status="active",
@@ -329,7 +332,7 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(Domain).where(Domain.id == domain_id)
         if eco_ids:
-            stmt = stmt.where(Domain.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
 
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()
@@ -337,6 +340,10 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
             return json({"error": "Domain not found"}, status=404)
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "shared_ecosystem_ids" in update_data:
+            update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
+                update_req.shared_ecosystem_ids
+            )
         for field, value in update_data.items():
             setattr(d, field, value)
 

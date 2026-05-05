@@ -25,7 +25,7 @@ from neos_agent.db.models import (
     ConflictCase,
     RepairAgreementRecord,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,7 @@ class ConflictDetail(ConflictListItem):
 
 class ConflictCreateRequest(BaseModel):
     ecosystem_id: uuid.UUID
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     title: str
     description: str | None = None
     reporter_id: uuid.UUID | None = None
@@ -103,6 +104,7 @@ class ConflictUpdateRequest(BaseModel):
     tier: int | None = None
     root_cause_category: str | None = None
     urgency: str | None = None
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     safety_flag: bool | None = None
     parties: dict | None = None
     facilitator_id: uuid.UUID | None = None
@@ -241,7 +243,7 @@ async def list_conflicts(request: Request):
         stmt = select(ConflictCase).order_by(ConflictCase.created_at.desc())
 
         if eco_ids:
-            stmt = stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ConflictCase, eco_ids)
 
         status = request.args.get("status")
         if status:
@@ -296,7 +298,7 @@ async def get_conflict(request: Request, conflict_id: uuid.UUID):
             .where(ConflictCase.id == conflict_id)
         )
         if eco_ids:
-            stmt = stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ConflictCase, eco_ids)
 
         result = await session.execute(stmt)
         c = result.scalar_one_or_none()
@@ -335,6 +337,7 @@ async def create_conflict(request: Request):
         conflict = ConflictCase(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             case_id=case_id_str,
             title=create_req.title,
             description=create_req.description,
@@ -385,7 +388,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = select(ConflictCase).where(ConflictCase.id == conflict_id)
         if eco_ids:
-            stmt = stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, ConflictCase, eco_ids)
 
         result = await session.execute(stmt)
         c = result.scalar_one_or_none()
@@ -393,6 +396,10 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
             return json({"error": "Conflict case not found"}, status=404)
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "shared_ecosystem_ids" in update_data:
+            update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
+                update_req.shared_ecosystem_ids
+            )
         for field, value in update_data.items():
             setattr(c, field, value)
 
@@ -433,7 +440,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
         # Verify conflict exists and is accessible
         c_stmt = select(ConflictCase.id).where(ConflictCase.id == conflict_id)
         if eco_ids:
-            c_stmt = c_stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+            c_stmt = apply_ecosystem_filter(c_stmt, ConflictCase, eco_ids)
         if await session.scalar(c_stmt) is None:
             return json({"error": "Conflict case not found"}, status=404)
 
@@ -480,7 +487,7 @@ async def update_repair_agreement(
         # Verify conflict exists and is accessible
         c_stmt = select(ConflictCase.id).where(ConflictCase.id == conflict_id)
         if eco_ids:
-            c_stmt = c_stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+            c_stmt = apply_ecosystem_filter(c_stmt, ConflictCase, eco_ids)
         if await session.scalar(c_stmt) is None:
             return json({"error": "Conflict case not found"}, status=404)
 

@@ -190,6 +190,7 @@ class AgreementDetail(AgreementListItem):
 
 class AgreementCreateRequest(BaseModel):
     ecosystem_id: UUID
+    shared_ecosystem_ids: list[UUID] | None = None
     type: str
     title: str
     text: str | None = None
@@ -208,6 +209,7 @@ class AgreementUpdateRequest(BaseModel):
     domain: str | None = None
     hierarchy_level: str | None = None
     affected_parties: list | dict | None = None
+    shared_ecosystem_ids: list[UUID] | None = None
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
     status: str | None = None

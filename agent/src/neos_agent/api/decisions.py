@@ -27,7 +27,7 @@ from neos_agent.db.models import (
     DecisionRecord,
     DecisionSemanticTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ async def list_decisions(request: Request):
         stmt = select(DecisionRecord).order_by(DecisionRecord.created_at.desc())
 
         if eco_ids:
-            stmt = stmt.where(DecisionRecord.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, DecisionRecord, eco_ids)
 
         status = request.args.get("status")
         if status:
@@ -280,7 +280,7 @@ async def get_decision(request: Request, decision_id: uuid.UUID):
             .where(DecisionRecord.id == decision_id)
         )
         if eco_ids:
-            stmt = stmt.where(DecisionRecord.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, DecisionRecord, eco_ids)
 
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()

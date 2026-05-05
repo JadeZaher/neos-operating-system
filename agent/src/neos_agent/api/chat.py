@@ -37,6 +37,13 @@ class ChatSessionSchema(BaseModel):
     created_at: str
 
 
+def _sse_event(event: str, data: str) -> str:
+    """Format an SSE event with proper multi-line data handling."""
+    lines = data.split("\n")
+    data_lines = "\n".join(f"data: {line}" for line in lines)
+    return f"event: {event}\n{data_lines}\n\n"
+
+
 @chat_api_bp.get("/sessions")
 async def list_sessions(request: Request):
     """GET /api/v1/chat/sessions — List chat sessions for current member."""
@@ -94,8 +101,8 @@ async def send_message(request: Request):
     if not is_ai_enabled():
         async def disabled_stream(response):
             msg = "AI chat is not configured. Set AI_API_KEY in the server environment to enable chat features."
-            await response.write(f"event: append\ndata: {msg}\n\n")
-            await response.write("event: done\ndata: \n\n")
+            await response.write(_sse_event("append", msg))
+            await response.write(_sse_event("done", ""))
 
         return ResponseStream(
             disabled_stream,
@@ -114,21 +121,22 @@ async def send_message(request: Request):
             )
 
             if result is None:
-                await response.write("event: append\ndata: AI is currently unavailable. Please try again later.\n\n")
-                await response.write("event: done\ndata: \n\n")
+                await response.write(_sse_event("append", "AI is currently unavailable. Please try again later."))
+                await response.write(_sse_event("done", ""))
                 return
 
             async for chunk in result:
                 if hasattr(chunk, "choices") and chunk.choices:
                     delta = chunk.choices[0].delta
                     if hasattr(delta, "content") and delta.content:
-                        await response.write(f"event: append\ndata: {delta.content}\n\n")
+                        await response.write(_sse_event("append", delta.content))
 
-            await response.write("event: done\ndata: \n\n")
+            await response.write(_sse_event("done", ""))
         except Exception as exc:
-            logger.error("Chat streaming failed: %s", exc)
-            await response.write(f"event: append\ndata: Chat error: {exc}\n\n")
-            await response.write("event: done\ndata: \n\n")
+            logger.exception("Chat streaming failed")
+            err_msg = str(exc).replace("\n", " ")
+            await response.write(_sse_event("append", f"Chat error: {err_msg}"))
+            await response.write(_sse_event("done", ""))
 
     return ResponseStream(
         chat_stream,
