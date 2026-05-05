@@ -57,6 +57,7 @@ class MemberDetail(MemberListItem):
     kyc_status: str | None = None
     last_governance_activity_date: _dt.date | None = None
     notes: str | None = None
+    privacy: dict | None = None
     updated_at: _dt.datetime
     onboarding: OnboardingSnapshot | None = None
 
@@ -95,6 +96,7 @@ class MemberUpdateRequest(BaseModel):
     skills_needed: list | dict | None = None
     interests: list | dict | None = None
     notes: str | None = None
+    privacy: dict | None = None
 
 
 class StatusTransitionRequest(BaseModel):
@@ -179,6 +181,7 @@ def _member_to_detail(m: Member, ob: MemberOnboarding | None = None) -> dict:
         kyc_status=m.kyc_status,
         last_governance_activity_date=m.last_governance_activity_date,
         notes=m.notes,
+        privacy=m.privacy,
         updated_at=m.updated_at,
         onboarding=_onboarding_snapshot(ob),
     ).model_dump(mode="json")

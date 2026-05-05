@@ -159,6 +159,7 @@ class Member(TimestampMixin, Base):
     kyc_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     last_governance_activity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    privacy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="members")
     onboarding: Mapped[Optional[MemberOnboarding]] = relationship(back_populates="member", foreign_keys="MemberOnboarding.member_id")
