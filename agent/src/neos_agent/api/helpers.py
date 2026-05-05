@@ -22,10 +22,11 @@ def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
     """Return ecosystem IDs to filter by.
 
     If the request contains an explicit `ecosystem_ids` query param (comma-separated),
-    intersect with the session-authorized IDs for security. Otherwise return all
-    session-authorized IDs.
+    intersect with ALL authorized IDs (not just cookie-selected) for security.
+    Otherwise return the cookie-selected IDs as the default scope.
     """
     session_ids: list[uuid.UUID] = getattr(request.ctx, "selected_ecosystem_ids", [])
+    authorized_ids: list[uuid.UUID] = getattr(request.ctx, "authorized_ecosystem_ids", [])
 
     explicit = request.args.get("ecosystem_ids")
     if explicit:
@@ -33,10 +34,10 @@ def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
             requested = [uuid.UUID(eid.strip()) for eid in explicit.split(",") if eid.strip()]
         except ValueError:
             return session_ids
-        if session_ids:
-            # Intersect: only allow IDs the user is authorized for
-            session_set = set(session_ids)
-            return [eid for eid in requested if eid in session_set]
+        # Intersect with ALL authorized ecosystems (not just cookie-selected)
+        if authorized_ids:
+            auth_set = set(authorized_ids)
+            return [eid for eid in requested if eid in auth_set]
         return requested
 
     return session_ids

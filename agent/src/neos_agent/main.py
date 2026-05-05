@@ -211,31 +211,36 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 return []
 
         # Helper: load ecosystem objects for given IDs (or member default)
+        # Returns (selected_ecosystems, selected_ids, all_authorized_ids)
         async def _load_ecosystems(db, member, selected_ids):
-            if selected_ids:
-                if member:
-                    member_result = await db.execute(
-                        select(MemberModel.ecosystem_id).where(
-                            MemberModel.did == member.did,
-                            MemberModel.ecosystem_id.in_(selected_ids),
-                            MemberModel.current_status == "active",
-                        )
+            # First, determine ALL ecosystems the member is authorized for
+            all_authorized_ids = set()
+            if member:
+                member_result = await db.execute(
+                    select(MemberModel.ecosystem_id).where(
+                        MemberModel.did == member.did,
+                        MemberModel.current_status == "active",
                     )
-                    authorized_eco_ids = set(member_result.scalars().all())
-                    authorized_eco_ids.add(member.ecosystem_id)
-                    selected_ids = [eid for eid in selected_ids if eid in authorized_eco_ids]
+                )
+                all_authorized_ids = set(member_result.scalars().all())
+                all_authorized_ids.add(member.ecosystem_id)
+
+            if selected_ids:
+                # Filter selected_ids to only authorized ones
+                if member:
+                    selected_ids = [eid for eid in selected_ids if eid in all_authorized_ids]
 
                 result = await db.execute(
                     select(Ecosystem).where(Ecosystem.id.in_(selected_ids))
                 )
                 ecosystems = list(result.scalars().all())
                 eco_ids = [e.id for e in ecosystems]
-                return ecosystems, eco_ids
+                return ecosystems, eco_ids, list(all_authorized_ids)
             if member:
                 eco = await db.get(Ecosystem, member.ecosystem_id)
                 if eco:
-                    return [eco], [eco.id]
-            return [], []
+                    return [eco], [eco.id], list(all_authorized_ids)
+            return [], [], list(all_authorized_ids)
 
         # Helper: resolve member from session cookie
         async def _try_resolve_member():
@@ -272,12 +277,13 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             selected_ids = _parse_selected_cookie()
             try:
                 async with app.ctx.db() as db:
-                    ecosystems, eco_ids = await _load_ecosystems(db, member, selected_ids)
+                    ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, member, selected_ids)
             except Exception:
-                ecosystems, eco_ids = [], []
+                ecosystems, eco_ids, all_auth_ids = [], [], []
                 request.ctx.ecosystem_scope = EcosystemScope.empty()
             request.ctx.ecosystems = ecosystems
             request.ctx.selected_ecosystem_ids = eco_ids
+            request.ctx.authorized_ecosystem_ids = all_auth_ids
             request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
             return None
 
@@ -308,9 +314,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 request.ctx.member = member
 
                 selected_ids = _parse_selected_cookie()
-                ecosystems, eco_ids = await _load_ecosystems(db, member, selected_ids)
+                ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, member, selected_ids)
                 request.ctx.ecosystems = ecosystems
                 request.ctx.selected_ecosystem_ids = eco_ids
+                request.ctx.authorized_ecosystem_ids = all_auth_ids
                 request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
         except Exception:
             logger.exception("Auth middleware error")
