@@ -21,6 +21,7 @@ from sqlalchemy.orm import selectinload
 from neos_agent.db.models import (
     Agreement,
     AgreementRatificationRecord,
+    AgreementVersion,
     AmendmentRecord,
     ReviewRecord,
 )
@@ -33,6 +34,7 @@ from .schemas import (
     AgreementHistoryResponse,
     AgreementListItem,
     AgreementUpdateRequest,
+    AgreementVersionSchema,
     AmendmentRecordSchema,
     RatificationRecordSchema,
     ReviewRecordSchema,
@@ -140,6 +142,39 @@ def _agreement_to_detail(a: Agreement) -> dict:
     ).model_dump(mode="json")
     data["version_fingerprint"] = a.version_fingerprint
     return data
+
+
+def _bump_version(agreement: Agreement) -> None:
+    """Increment the minor version number (e.g. 1.0 -> 1.1)."""
+    parts = agreement.version.split(".")
+    if len(parts) == 2:
+        major, minor = parts
+        agreement.version = f"{major}.{int(minor) + 1}"
+    else:
+        agreement.version = agreement.version + ".1"
+
+
+def _snapshot_agreement(agreement: Agreement, change_reason: str | None = None, changed_by: str | None = None) -> AgreementVersion:
+    """Create an immutable snapshot of the current agreement state."""
+    return AgreementVersion(
+        id=uuid.uuid4(),
+        agreement_id=agreement.id,
+        version=agreement.version,
+        status=agreement.status,
+        title=agreement.title,
+        text=agreement.text,
+        type=agreement.type,
+        proposer=agreement.proposer,
+        domain=agreement.domain,
+        hierarchy_level=agreement.hierarchy_level,
+        affected_parties=agreement.affected_parties,
+        review_date=agreement.review_date,
+        sunset_date=agreement.sunset_date,
+        ratification_date=agreement.ratification_date,
+        version_fingerprint=agreement.version_fingerprint,
+        change_reason=change_reason,
+        changed_by=changed_by,
+    )
 
 
 # Valid status transitions: current -> allowed targets (ACT lifecycle)
@@ -322,6 +357,11 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         if agreement is None:
             return json({"error": "Agreement not found"}, status=404)
 
+        # Save snapshot of current state before applying changes
+        change_reason = body.get("change_reason", "Manual edit")
+        snapshot = _snapshot_agreement(agreement, change_reason=change_reason, changed_by=body.get("changed_by"))
+        db.add(snapshot)
+
         update_data = update_req.model_dump(exclude_none=True)
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
@@ -329,6 +369,9 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
             )
         for field, value in update_data.items():
             setattr(agreement, field, value)
+
+        # Bump version
+        _bump_version(agreement)
 
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
@@ -389,6 +432,14 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
                 {"error": f"Invalid transition: {agreement.status} -> {new_status}"},
                 status=400,
             )
+
+        # Snapshot before status change
+        snapshot = _snapshot_agreement(
+            agreement,
+            change_reason=f"Status transition: {agreement.status} -> {new_status}",
+            changed_by=body.get("changed_by"),
+        )
+        db.add(snapshot)
 
         old_status = agreement.status
         agreement.status = new_status
@@ -453,6 +504,14 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         )
         reviews = review_result.scalars().all()
 
+        # Load versions
+        version_result = await db.execute(
+            select(AgreementVersion)
+            .where(AgreementVersion.agreement_id == agreement_id)
+            .order_by(AgreementVersion.created_at.desc())
+        )
+        versions = version_result.scalars().all()
+
     response = AgreementHistoryResponse(
         amendments=[
             AmendmentRecordSchema(
@@ -482,6 +541,110 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
             )
             for r in reviews
         ],
+        versions=[
+            AgreementVersionSchema(
+                id=v.id,
+                agreement_id=v.agreement_id,
+                version=v.version,
+                status=v.status,
+                title=v.title,
+                text=v.text,
+                type=v.type,
+                proposer=v.proposer,
+                domain=v.domain,
+                hierarchy_level=v.hierarchy_level,
+                affected_parties=v.affected_parties,
+                review_date=v.review_date,
+                sunset_date=v.sunset_date,
+                ratification_date=v.ratification_date,
+                version_fingerprint=v.version_fingerprint,
+                change_reason=v.change_reason,
+                changed_by=v.changed_by,
+                created_at=v.created_at,
+            )
+            for v in versions
+        ],
     )
 
     return json(response.model_dump(mode="json"))
+
+
+@agreements_api_bp.post("/<agreement_id:uuid>/rollback/<version_id:uuid>")
+async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_id: uuid.UUID):
+    """POST /api/v1/agreements/:id/rollback/:version_id -- restore agreement to a previous version.
+
+    Creates a snapshot of the current state, then restores from the specified version.
+    Returns JSON: AgreementDetail
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    eco_ids = get_ecosystem_ids(request)
+
+    async with request.app.ctx.db() as db:
+        # Load current agreement
+        stmt = (
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records))
+            .where(Agreement.id == agreement_id)
+        )
+        if eco_ids:
+            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
+
+        result = await db.execute(stmt)
+        agreement = result.scalar_one_or_none()
+
+        if agreement is None:
+            return json({"error": "Agreement not found"}, status=404)
+
+        # Load the target version
+        ver_result = await db.execute(
+            select(AgreementVersion).where(
+                AgreementVersion.id == version_id,
+                AgreementVersion.agreement_id == agreement_id,
+            )
+        )
+        target_version = ver_result.scalar_one_or_none()
+
+        if target_version is None:
+            return json({"error": "Version not found"}, status=404)
+
+        # Snapshot current state before rollback
+        snapshot = _snapshot_agreement(
+            agreement,
+            change_reason=f"Rollback to version {target_version.version}",
+            changed_by=(request.json or {}).get("changed_by"),
+        )
+        db.add(snapshot)
+
+        # Restore fields from target version
+        agreement.version = target_version.version
+        agreement.status = target_version.status
+        agreement.title = target_version.title
+        agreement.text = target_version.text
+        agreement.type = target_version.type
+        agreement.proposer = target_version.proposer
+        agreement.domain = target_version.domain
+        agreement.hierarchy_level = target_version.hierarchy_level
+        agreement.affected_parties = target_version.affected_parties
+        agreement.review_date = target_version.review_date
+        agreement.sunset_date = target_version.sunset_date
+        agreement.ratification_date = target_version.ratification_date
+        agreement.version_fingerprint = target_version.version_fingerprint
+
+        await db.commit()
+        await db.refresh(agreement)
+
+        logger.info("Agreement %s rolled back to version %s", agreement_id, target_version.version)
+
+        # Re-load with ratification records
+        stmt = (
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records))
+            .where(Agreement.id == agreement.id)
+        )
+        result = await db.execute(stmt)
+        agreement = result.scalar_one()
+
+    return json(_agreement_to_detail(agreement))

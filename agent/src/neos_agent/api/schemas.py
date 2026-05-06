@@ -251,6 +251,28 @@ class ReviewRecordSchema(BaseModel):
     created_at: _dt.datetime
 
 
+class AgreementVersionSchema(BaseModel):
+    id: UUID
+    agreement_id: UUID
+    version: str
+    status: str
+    title: str
+    text: str | None = None
+    type: str
+    proposer: str | None = None
+    domain: str | None = None
+    hierarchy_level: str = "domain"
+    affected_parties: list | dict | None = None
+    review_date: _dt.date | None = None
+    sunset_date: _dt.date | None = None
+    ratification_date: _dt.date | None = None
+    version_fingerprint: str | None = None
+    change_reason: str | None = None
+    changed_by: str | None = None
+    created_at: _dt.datetime | None = None
+
+
 class AgreementHistoryResponse(BaseModel):
     amendments: list[AmendmentRecordSchema]
     reviews: list[ReviewRecordSchema]
+    versions: list[AgreementVersionSchema] = []

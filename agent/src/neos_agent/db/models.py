@@ -299,6 +299,33 @@ class Agreement(TimestampMixin, Base):
         back_populates="agreement", foreign_keys="AmendmentRecord.parent_agreement_id"
     )
     review_records: Mapped[list[ReviewRecord]] = relationship(back_populates="agreement")
+    versions: Mapped[list["AgreementVersion"]] = relationship(back_populates="agreement", order_by="AgreementVersion.created_at.desc()")
+
+
+class AgreementVersion(TimestampMixin, Base):
+    """Immutable snapshot of an agreement before each edit, enabling rollback."""
+    __tablename__ = "agreement_versions"
+    __table_args__ = (Index("ix_agreement_versions_agreement_id", "agreement_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    agreement_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("agreements.id"), nullable=False)
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
+    proposer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    hierarchy_level: Mapped[str] = mapped_column(String(50), nullable=False, default="domain")
+    affected_parties: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    review_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sunset_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ratification_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    change_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    changed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    agreement: Mapped[Agreement] = relationship(back_populates="versions")
 
 
 class AgreementRatificationRecord(TimestampMixin, Base):
