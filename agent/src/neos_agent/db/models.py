@@ -1,7 +1,7 @@
 """SQLAlchemy 2.0 async ORM models for the NEOS governance database.
 
-45 tables organized by section:
-- Core (7): ecosystems, members, member_onboarding, member_status_transitions,
+46 tables organized by section:
+- Core (8): ecosystems, users, members, member_onboarding, member_status_transitions,
   domains, domain_elements, domain_metrics
 - Agreements (4): agreements, agreement_ratification_records, amendment_records,
   review_records
@@ -15,7 +15,7 @@
   governance_health_audits
 - Emergency (1): emergency_states
 - Exit & Portability (1): exit_records
-- Auth (2): auth_sessions, auth_challenges
+- Auth (2): auth_sessions (references users), auth_challenges
 - Messaging (4): conversations, conversation_participants, messages,
   conversation_links
 - Collaboration (4): circle_memberships, shares_needs, collaborations,
@@ -104,7 +104,7 @@ class TimestampMixin:
 
 
 # ========================
-# CORE (7 models)
+# CORE (8 models)
 # ========================
 
 class Ecosystem(TimestampMixin, Base):
@@ -132,27 +132,38 @@ class Ecosystem(TimestampMixin, Base):
     agreements: Mapped[list[Agreement]] = relationship(back_populates="ecosystem")
 
 
+class User(TimestampMixin, Base):
+    """Platform-wide identity — one per real person."""
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, unique=True, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    members: Mapped[list[Member]] = relationship(back_populates="user")
+
+
 class Member(TimestampMixin, Base):
     __tablename__ = "members"
     __table_args__ = (
         Index("ix_members_ecosystem_id", "ecosystem_id"),
-        UniqueConstraint("ecosystem_id", "did", name="uq_member_ecosystem_did"),
+        UniqueConstraint("ecosystem_id", "user_id", name="uq_member_ecosystem_user"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), nullable=False)
     shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     member_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
-    did: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, index=True)
-    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
-    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # google, linkedin
-    oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), nullable=False, default="prospective")
     profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, townhall
-    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     skills_offered: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     skills_needed: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     interests: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -163,6 +174,7 @@ class Member(TimestampMixin, Base):
     privacy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="members")
     onboarding: Mapped[Optional[MemberOnboarding]] = relationship(back_populates="member", foreign_keys="MemberOnboarding.member_id")
     status_transitions: Mapped[list[MemberStatusTransition]] = relationship(back_populates="member")
 
@@ -765,16 +777,15 @@ class AgentSession(TimestampMixin, Base):
 # ========================
 
 class AuthSession(TimestampMixin, Base):
-    """Server-side authentication sessions tied to a DID identity."""
+    """Server-side authentication sessions tied to a user identity."""
     __tablename__ = "auth_sessions"
     __table_args__ = (
-        Index("ix_auth_sessions_member_id", "member_id"),
+        Index("ix_auth_sessions_user_id", "user_id"),
         Index("ix_auth_sessions_expires_at", "expires_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
-    member_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
-    did: Mapped[str] = mapped_column(String(500), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)

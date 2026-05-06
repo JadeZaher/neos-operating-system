@@ -25,6 +25,7 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
     MemberStatusTransition,
+    User,
 )
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
@@ -137,15 +138,15 @@ def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
 
 
-def _member_to_list_item(m: Member) -> dict:
+def _member_to_list_item(m: Member, user: User | None = None) -> dict:
     return MemberListItem(
         id=m.id,
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
         profile=m.profile,
-        phone=m.phone,
-        profile_picture=m.profile_picture,
+        phone=user.phone if user else None,
+        profile_picture=user.profile_picture if user else None,
         onboarding_status=m.onboarding_status,
         created_at=m.created_at,
     ).model_dump(mode="json")
@@ -164,19 +165,19 @@ def _onboarding_snapshot(ob: MemberOnboarding | None) -> OnboardingSnapshot | No
     )
 
 
-def _member_to_detail(m: Member, ob: MemberOnboarding | None = None) -> dict:
+def _member_to_detail(m: Member, ob: MemberOnboarding | None = None, user: User | None = None) -> dict:
     return MemberDetail(
         id=m.id,
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
         profile=m.profile,
-        phone=m.phone,
-        profile_picture=m.profile_picture,
+        phone=user.phone if user else None,
+        profile_picture=user.profile_picture if user else None,
         onboarding_status=m.onboarding_status,
         created_at=m.created_at,
         ecosystem_id=m.ecosystem_id,
-        did=m.did,
+        did=user.did if user else None,
         skills_offered=m.skills_offered,
         skills_needed=m.skills_needed,
         interests=m.interests,
@@ -301,17 +302,18 @@ async def create_member(request: Request):
     short_id = uuid.uuid4().hex[:8].upper()
     member_id_str = f"MEM-{short_id}"
 
+    user = getattr(request.ctx, "user", None)
+
     async with request.app.ctx.db() as session:
         new_member = Member(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
+            user_id=user.id if user else auth_member.user_id,
             shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             member_id=member_id_str,
             display_name=create_req.display_name,
             current_status="active",
             profile=create_req.profile,
-            phone=create_req.phone,
-            profile_picture=create_req.profile_picture,
             skills_offered=create_req.skills_offered,
             skills_needed=create_req.skills_needed,
             interests=create_req.interests,
@@ -321,7 +323,7 @@ async def create_member(request: Request):
         await session.commit()
         await session.refresh(new_member)
 
-    return json(_member_to_detail(new_member), status=201)
+    return json(_member_to_detail(new_member, user=user), status=201)
 
 
 @members_api_bp.put("/<member_id:uuid>")

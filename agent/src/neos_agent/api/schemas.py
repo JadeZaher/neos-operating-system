@@ -46,6 +46,17 @@ class MemberSummary(BaseModel):
     oauth_provider: str | None = None
 
 
+class UserSummary(BaseModel):
+    id: UUID
+    display_name: str
+    did: str | None = None
+    username: str | None = None
+    has_password: bool = False
+    has_did: bool = False
+    oauth_provider: str | None = None
+    profile_picture: str | None = None
+
+
 class AuthChallengeResponse(BaseModel):
     challenge: str
 
@@ -85,7 +96,8 @@ class EcosystemSummary(BaseModel):
 
 
 class AuthMeResponse(BaseModel):
-    member: MemberSummary
+    user: UserSummary
+    member: MemberSummary | None = None
     ecosystems: list[EcosystemSummary]
 
 

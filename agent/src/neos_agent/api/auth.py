@@ -23,7 +23,7 @@ from sqlalchemy import select
 
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie, verify_session_cookie
-from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member
+from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
 
 from .schemas import (
     AuthMeResponse,
@@ -57,18 +57,18 @@ def _verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(key.hex(), key_hex)
 
 
-def _member_to_summary(member: Member) -> MemberSummary:
-    """Convert a Member ORM instance to a MemberSummary schema."""
+def _member_to_summary(member: Member, user: User) -> MemberSummary:
+    """Convert a Member + User ORM pair to a MemberSummary schema."""
     return MemberSummary(
         id=member.id,
         display_name=member.display_name,
-        did=member.did,
+        did=user.did,
         profile=member.profile,
         ecosystem_id=member.ecosystem_id,
         current_status=member.current_status,
-        has_password=bool(member.password_hash),
-        has_did=bool(member.did),
-        oauth_provider=member.oauth_provider,
+        has_password=bool(user.password_hash),
+        has_did=bool(user.did),
+        oauth_provider=user.oauth_provider,
     )
 
 
@@ -141,25 +141,43 @@ async def api_verify(request: Request):
             await session.commit()
             return json({"error": "Invalid signature"}, status=401)
 
-        # Find or create member
+        # Find or create User by DID
+        user_result = await session.execute(
+            select(User).where(User.did == did)
+        )
+        user = user_result.scalar_one_or_none()
+
+        if not display_name:
+            display_name = f"Member-{did[-8:]}"
+
+        if user is None:
+            user = User(
+                did=did,
+                display_name=display_name,
+            )
+            session.add(user)
+            await session.flush()
+
+        # Find default ecosystem
+        eco_result = await session.execute(select(Ecosystem).limit(1))
+        ecosystem = eco_result.scalar_one_or_none()
+        if ecosystem is None:
+            return json({"error": "No ecosystem configured"}, status=500)
+
+        # Find or create Member for this user + ecosystem
         member_result = await session.execute(
-            select(Member).where(Member.did == did)
+            select(Member).where(
+                Member.user_id == user.id,
+                Member.ecosystem_id == ecosystem.id,
+            )
         )
         member = member_result.scalar_one_or_none()
 
         if member is None:
-            if not display_name:
-                display_name = f"Member-{did[-8:]}"
-
-            eco_result = await session.execute(select(Ecosystem).limit(1))
-            ecosystem = eco_result.scalar_one_or_none()
-            if ecosystem is None:
-                return json({"error": "No ecosystem configured"}, status=500)
-
             member = Member(
+                user_id=user.id,
                 ecosystem_id=ecosystem.id,
                 member_id=f"did-{did[-12:]}",
-                did=did,
                 display_name=display_name,
                 current_status="active",
             )
@@ -171,8 +189,7 @@ async def api_verify(request: Request):
         expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
-            member_id=member.id,
-            did=did,
+            user_id=user.id,
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,
@@ -180,7 +197,7 @@ async def api_verify(request: Request):
         session.add(auth_session)
         await session.commit()
 
-        member_summary = _member_to_summary(member)
+        member_summary = _member_to_summary(member, user)
 
     # Set signed session cookie
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
@@ -231,23 +248,26 @@ async def api_me(request: Request):
         if not auth_session:
             return json({"error": "Session expired"}, status=401)
 
-        # Load the member
-        member = await db.get(Member, auth_session.member_id)
+        # Load the user
+        user = await db.get(User, auth_session.user_id)
+        if not user:
+            return json({"error": "User not found"}, status=401)
+
+        # Find ecosystems via Member.user_id
+        member_records = await db.execute(
+            select(Member.ecosystem_id).where(Member.user_id == user.id)
+        )
+        eco_ids = list(member_records.scalars().all())
+
+        # Load a primary member for the summary
+        primary_member_result = await db.execute(
+            select(Member).where(Member.user_id == user.id).limit(1)
+        )
+        member = primary_member_result.scalar_one_or_none()
         if not member:
             return json({"error": "Member not found"}, status=401)
 
-        member_summary = _member_to_summary(member)
-
-        # Find all ecosystems this member belongs to
-        if member.did:
-            member_records = await db.execute(
-                select(Member.ecosystem_id).where(Member.did == member.did)
-            )
-        else:
-            member_records = await db.execute(
-                select(Member.ecosystem_id).where(Member.id == member.id)
-            )
-        eco_ids = list(member_records.scalars().all())
+        member_summary = _member_to_summary(member, user)
 
         ecosystems = []
         if eco_ids:
@@ -272,7 +292,19 @@ async def api_me(request: Request):
                     )
                 )
 
+    from .schemas import UserSummary
+    user_summary = UserSummary(
+        id=user.id,
+        display_name=user.display_name,
+        did=user.did,
+        username=user.username,
+        has_password=bool(user.password_hash),
+        has_did=bool(user.did),
+        oauth_provider=user.oauth_provider,
+        profile_picture=user.profile_picture,
+    )
     response_data = AuthMeResponse(
+        user=user_summary,
         member=member_summary,
         ecosystems=ecosystems,
     )
@@ -334,23 +366,30 @@ async def api_login(request: Request):
 
     async with request.app.ctx.db() as session:
         result = await session.execute(
-            select(Member).where(Member.username == username)
+            select(User).where(User.username == username)
         )
-        member = result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-        if member is None or not member.password_hash:
+        if user is None or not user.password_hash:
             return json({"error": "Invalid username or password"}, status=401)
 
-        if not _verify_password(password, member.password_hash):
+        if not _verify_password(password, user.password_hash):
             return json({"error": "Invalid username or password"}, status=401)
+
+        # Load a member for the response
+        member_result = await session.execute(
+            select(Member).where(Member.user_id == user.id).limit(1)
+        )
+        member = member_result.scalar_one_or_none()
+        if member is None:
+            return json({"error": "No membership found"}, status=401)
 
         # Create auth session (same flow as DID verify)
         session_id = uuid.uuid4()
         expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
-            member_id=member.id,
-            did=member.did or "",
+            user_id=user.id,
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,
@@ -358,7 +397,7 @@ async def api_login(request: Request):
         session.add(auth_session)
         await session.commit()
 
-        member_summary = _member_to_summary(member)
+        member_summary = _member_to_summary(member, user)
 
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
     response_data = AuthVerifyResponse(
@@ -409,9 +448,9 @@ async def api_register(request: Request):
     settings = request.app.ctx.settings
 
     async with request.app.ctx.db() as session:
-        # Check username uniqueness
+        # Check username uniqueness on User
         existing = await session.execute(
-            select(Member.id).where(Member.username == username)
+            select(User.id).where(User.username == username)
         )
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Username already taken"}, status=409)
@@ -422,12 +461,20 @@ async def api_register(request: Request):
         if ecosystem is None:
             return json({"error": "No ecosystem configured"}, status=500)
 
-        # Create member
-        member = Member(
-            ecosystem_id=ecosystem.id,
-            member_id=f"usr-{username[:12]}",
+        # Create User first
+        user = User(
             username=username,
             password_hash=_hash_password(password),
+            display_name=display_name,
+        )
+        session.add(user)
+        await session.flush()
+
+        # Create Member with user_id
+        member = Member(
+            user_id=user.id,
+            ecosystem_id=ecosystem.id,
+            member_id=f"usr-{username[:12]}",
             display_name=display_name,
             current_status="active",
         )
@@ -439,8 +486,7 @@ async def api_register(request: Request):
         expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
-            member_id=member.id,
-            did=member.did or "",
+            user_id=user.id,
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,
@@ -448,7 +494,7 @@ async def api_register(request: Request):
         session.add(auth_session)
         await session.commit()
 
-        member_summary = _member_to_summary(member)
+        member_summary = _member_to_summary(member, user)
 
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
     response_data = AuthVerifyResponse(
@@ -485,8 +531,13 @@ async def api_did_reset(request: Request):
         m = await db.get(Member, member.id)
         if not m:
             return json({"error": "Member not found"}, status=401)
-        m.did = None
-        m.member_id = f"usr-{m.username or str(m.id)[:12]}"
+
+        # Load user via member.user_id and clear user.did
+        user = await db.get(User, m.user_id)
+        if not user:
+            return json({"error": "User not found"}, status=401)
+        user.did = None
+        m.member_id = f"usr-{user.username or str(m.id)[:12]}"
         await db.commit()
 
     return json({"success": True, "message": "DID cleared. Generate a new identity to re-link."})
@@ -520,9 +571,18 @@ async def api_did_link(request: Request):
         return json({"error": "Invalid signature"}, status=401)
 
     async with request.app.ctx.db() as db:
-        # Check DID not already used by another member
+        # Load the member to get user_id
+        m = await db.get(Member, member.id)
+        if not m:
+            return json({"error": "Member not found"}, status=401)
+
+        user = await db.get(User, m.user_id)
+        if not user:
+            return json({"error": "User not found"}, status=401)
+
+        # Check DID not already used by another User
         existing = await db.execute(
-            select(Member.id).where(Member.did == did, Member.id != member.id)
+            select(User.id).where(User.did == did, User.id != user.id)
         )
         if existing.scalar_one_or_none() is not None:
             return json({"error": "DID already linked to another account"}, status=409)
@@ -542,8 +602,7 @@ async def api_did_link(request: Request):
 
         auth_challenge.used = True
 
-        m = await db.get(Member, member.id)
-        m.did = did
+        user.did = did
         m.member_id = f"did-{did[-12:]}"
         await db.commit()
 
@@ -600,21 +659,21 @@ async def api_set_credentials(request: Request):
         if not auth_session:
             return json({"error": "Session expired"}, status=401)
 
-        # Load the member
-        member = await db.get(Member, auth_session.member_id)
-        if not member:
-            return json({"error": "Member not found"}, status=401)
+        # Load the user
+        user = await db.get(User, auth_session.user_id)
+        if not user:
+            return json({"error": "User not found"}, status=401)
 
         # Check username uniqueness
         existing = await db.execute(
-            select(Member.id).where(Member.username == username, Member.id != member.id)
+            select(User.id).where(User.username == username, User.id != user.id)
         )
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Username already taken"}, status=409)
 
         # Update credentials
-        member.username = username
-        member.password_hash = _hash_password(password)
+        user.username = username
+        user.password_hash = _hash_password(password)
         await db.commit()
 
     response_data = SetCredentialsResponse(success=True, username=username)

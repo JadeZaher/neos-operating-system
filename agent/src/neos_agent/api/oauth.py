@@ -23,7 +23,7 @@ from sanic.response import redirect
 from sqlalchemy import select
 
 from neos_agent.auth.middleware import make_session_cookie
-from neos_agent.db.models import AuthSession, Ecosystem, Member
+from neos_agent.db.models import AuthSession, Ecosystem, Member, User
 
 logger = logging.getLogger(__name__)
 
@@ -182,44 +182,62 @@ async def oauth_callback(request: Request, provider: str):
     if not oauth_id:
         return redirect(f"{frontend_base}/login?error=oauth_failed")
 
-    # Find or create member
+    # Find or create User, then ensure Member exists
     async with request.app.ctx.db() as session:
+        # Try to find User by oauth_provider + oauth_id
         result = await session.execute(
-            select(Member).where(
-                Member.oauth_provider == provider,
-                Member.oauth_id == oauth_id,
+            select(User).where(
+                User.oauth_provider == provider,
+                User.oauth_id == oauth_id,
             )
         )
-        member = result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-        if member is None:
-            # Check if there's a member with the same email as username
-            if email:
-                email_result = await session.execute(
-                    select(Member).where(Member.username == email)
-                )
-                member = email_result.scalar_one_or_none()
-                if member:
-                    # Link OAuth to existing account
-                    member.oauth_provider = provider
-                    member.oauth_id = oauth_id
-                    if picture and not member.profile_picture:
-                        member.profile_picture = picture
+        if user is None and email:
+            # Check if there's a user with the same email as username
+            email_result = await session.execute(
+                select(User).where(User.username == email)
+            )
+            user = email_result.scalar_one_or_none()
+            if user:
+                # Link OAuth to existing account
+                user.oauth_provider = provider
+                user.oauth_id = oauth_id
+                if picture and not user.profile_picture:
+                    user.profile_picture = picture
 
-        if member is None:
-            # New user — create member
-            eco_result = await session.execute(select(Ecosystem).limit(1))
-            ecosystem = eco_result.scalar_one_or_none()
-            if ecosystem is None:
-                return redirect(f"{frontend_base}/login?error=no_ecosystem")
-
-            member = Member(
-                ecosystem_id=ecosystem.id,
-                member_id=f"oauth-{provider}-{oauth_id[:12]}",
+        if user is None:
+            # New user — create User
+            user = User(
                 oauth_provider=provider,
                 oauth_id=oauth_id,
                 display_name=display_name or f"User-{oauth_id[:8]}",
                 profile_picture=picture,
+            )
+            session.add(user)
+            await session.flush()
+
+        # Find default ecosystem
+        eco_result = await session.execute(select(Ecosystem).limit(1))
+        ecosystem = eco_result.scalar_one_or_none()
+        if ecosystem is None:
+            return redirect(f"{frontend_base}/login?error=no_ecosystem")
+
+        # Find or create Member for this user + ecosystem
+        member_result = await session.execute(
+            select(Member).where(
+                Member.user_id == user.id,
+                Member.ecosystem_id == ecosystem.id,
+            )
+        )
+        member = member_result.scalar_one_or_none()
+
+        if member is None:
+            member = Member(
+                user_id=user.id,
+                ecosystem_id=ecosystem.id,
+                member_id=f"oauth-{provider}-{oauth_id[:12]}",
+                display_name=display_name or f"User-{oauth_id[:8]}",
                 current_status="active",
             )
             session.add(member)
@@ -230,8 +248,7 @@ async def oauth_callback(request: Request, provider: str):
         expires_at = _dt.datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
-            member_id=member.id,
-            did=member.did or "",
+            user_id=user.id,
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,

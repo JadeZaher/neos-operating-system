@@ -15,7 +15,7 @@ from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, select
 
-from neos_agent.db.models import Domain, Ecosystem, Member
+from neos_agent.db.models import Domain, Ecosystem, Member, User
 from neos_agent.db.course_models import Quiz, QuizResult
 
 from .helpers import require_auth
@@ -34,22 +34,15 @@ ecosystems_api_bp = Blueprint("ecosystems_api", url_prefix="/api/v1/ecosystems")
 # --- Helpers ---
 
 
-async def _get_member_ecosystem_ids(db, member_or_did) -> list[uuid.UUID]:
-    """Return all ecosystem_ids for a member (by DID string or member object)."""
-    if isinstance(member_or_did, str):
-        # Legacy: called with a DID string
-        if not member_or_did:
-            return []
+async def _get_member_ecosystem_ids(db, member_or_user) -> list[uuid.UUID]:
+    """Return all ecosystem_ids for a member (by user_id or member object)."""
+    if hasattr(member_or_user, "user_id") and member_or_user.user_id:
         result = await db.execute(
-            select(Member.ecosystem_id).where(Member.did == member_or_did)
+            select(Member.ecosystem_id).where(Member.user_id == member_or_user.user_id)
         )
-    elif hasattr(member_or_did, "did") and member_or_did.did:
+    elif hasattr(member_or_user, "id"):
         result = await db.execute(
-            select(Member.ecosystem_id).where(Member.did == member_or_did.did)
-        )
-    elif hasattr(member_or_did, "id"):
-        result = await db.execute(
-            select(Member.ecosystem_id).where(Member.id == member_or_did.id)
+            select(Member.ecosystem_id).where(Member.id == member_or_user.id)
         )
     else:
         return []
@@ -228,11 +221,12 @@ async def create_ecosystem(request: Request):
         await db.flush()
 
         # Add the creating member to this ecosystem
-        mid = f"did-{member.did[-12:]}" if member.did else f"usr-{str(member.id)[:12]}"
+        user = getattr(request.ctx, "user", None)
+        mid = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
             ecosystem_id=eco.id,
+            user_id=user.id if user else member.user_id,
             member_id=mid,
-            did=member.did,
             display_name=member.display_name,
             current_status="active",
         )
@@ -273,10 +267,10 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Access denied"}, status=403)
 
         # Verify steward role: must be steward of any domain in this ecosystem
-        # Resolve the authenticated DID to a member id within this ecosystem
+        # Resolve the authenticated user to a member id within this ecosystem
         member_row = await db.execute(
             select(Member.id).where(
-                Member.did == member.did,
+                Member.user_id == member.user_id,
                 Member.ecosystem_id == ecosystem_id,
             ).limit(1)
         )
@@ -338,29 +332,23 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             return json({"error": "Ecosystem not found"}, status=404)
 
         # Check if already a member
-        if member.did:
-            existing = await db.execute(
-                select(Member.id).where(
-                    Member.ecosystem_id == ecosystem_id,
-                    Member.did == member.did,
-                ).limit(1)
-            )
-        else:
-            existing = await db.execute(
-                select(Member.id).where(
-                    Member.ecosystem_id == ecosystem_id,
-                    Member.id == member.id,
-                ).limit(1)
-            )
+        user = getattr(request.ctx, "user", None)
+        user_id = user.id if user else member.user_id
+        existing = await db.execute(
+            select(Member.id).where(
+                Member.ecosystem_id == ecosystem_id,
+                Member.user_id == user_id,
+            ).limit(1)
+        )
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Already a member of this ecosystem"}, status=409)
 
         # Auto-approve: create an active member record immediately
-        mid = f"did-{member.did[-12:]}" if member.did else f"usr-{str(member.id)[:12]}"
+        mid = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
             ecosystem_id=ecosystem_id,
+            user_id=user_id,
             member_id=mid,
-            did=member.did,
             display_name=member.display_name,
             current_status="active",
             onboarding_status="complete",

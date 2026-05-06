@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie
-from neos_agent.db.models import AuthChallenge, AuthSession, Member
+from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
 
 logger = logging.getLogger(__name__)
 
@@ -96,28 +96,43 @@ async def verify_challenge(request: Request):
             await session.commit()
             return json({"error": "Invalid signature"}, status=401)
 
-        # Find or create member
+        # Find or create User by DID
+        user_result = await session.execute(
+            select(User).where(User.did == did)
+        )
+        user = user_result.scalar_one_or_none()
+
+        if not display_name:
+            display_name = f"Member-{did[-8:]}"
+
+        if user is None:
+            user = User(
+                did=did,
+                display_name=display_name,
+            )
+            session.add(user)
+            await session.flush()
+
+        # Find default ecosystem
+        eco_result = await session.execute(select(Ecosystem).limit(1))
+        ecosystem = eco_result.scalar_one_or_none()
+        if ecosystem is None:
+            return json({"error": "No ecosystem configured"}, status=500)
+
+        # Find or create Member for this user + ecosystem
         member_result = await session.execute(
-            select(Member).where(Member.did == did)
+            select(Member).where(
+                Member.user_id == user.id,
+                Member.ecosystem_id == ecosystem.id,
+            )
         )
         member = member_result.scalar_one_or_none()
 
         if member is None:
-            # New identity — need a display name
-            if not display_name:
-                display_name = f"Member-{did[-8:]}"
-
-            # Find the first ecosystem for association
-            from neos_agent.db.models import Ecosystem
-            eco_result = await session.execute(select(Ecosystem).limit(1))
-            ecosystem = eco_result.scalar_one_or_none()
-            if ecosystem is None:
-                return json({"error": "No ecosystem configured"}, status=500)
-
             member = Member(
+                user_id=user.id,
                 ecosystem_id=ecosystem.id,
                 member_id=f"did-{did[-12:]}",
-                did=did,
                 display_name=display_name,
                 current_status="active",
             )
@@ -129,8 +144,7 @@ async def verify_challenge(request: Request):
         expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
         auth_session = AuthSession(
             id=session_id,
-            member_id=member.id,
-            did=did,
+            user_id=user.id,
             expires_at=expires_at,
             user_agent=request.headers.get("user-agent"),
             ip_address=request.remote_addr,

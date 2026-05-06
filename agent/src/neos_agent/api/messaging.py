@@ -97,14 +97,22 @@ messaging_api_bp = Blueprint("messaging_api", url_prefix="/api/v1/messaging")
 
 async def _get_current_member_id(session, member_or_did, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
     """Resolve the authenticated member to a member id within the active ecosystems."""
+    from neos_agent.db.models import User
     if isinstance(member_or_did, str):
         if not member_or_did:
             return None
-        stmt = select(Member.id).where(Member.did == member_or_did)
-    elif hasattr(member_or_did, "did") and member_or_did.did:
-        stmt = select(Member.id).where(Member.did == member_or_did.did)
+        # DID string — resolve via User table
+        user_result = await session.execute(
+            select(User.id).where(User.did == member_or_did).limit(1)
+        )
+        user_id = user_result.scalar_one_or_none()
+        if not user_id:
+            return None
+        stmt = select(Member.id).where(Member.user_id == user_id)
+    elif hasattr(member_or_did, "user_id") and member_or_did.user_id:
+        stmt = select(Member.id).where(Member.user_id == member_or_did.user_id)
     elif hasattr(member_or_did, "id"):
-        # No DID — look up by member ID directly
+        # No user_id — look up by member ID directly
         return member_or_did.id
     else:
         return None

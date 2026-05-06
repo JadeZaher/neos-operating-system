@@ -38,6 +38,7 @@ from neos_agent.db.models import (
     Base,
     # Core
     Ecosystem,
+    User,
     Member,
     MemberOnboarding,
     MemberStatusTransition,
@@ -165,6 +166,7 @@ PURGE_ORDER = [
     "member_status_transitions",
     "member_onboarding",
     "members",
+    "users",
     "ecosystems",
 ]
 
@@ -217,8 +219,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
 
     # Migrate: add columns that create_all won't add to existing tables
     migrations = [
-        ("members", "username", "ALTER TABLE members ADD COLUMN IF NOT EXISTS username VARCHAR(100) UNIQUE"),
-        ("members", "password_hash", "ALTER TABLE members ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"),
+        ("members", "user_id", "ALTER TABLE members ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id)"),
         ("quizzes", "ecosystem_id", "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS ecosystem_id UUID REFERENCES ecosystems(id)"),
         ("quizzes", "domain_id", "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS domain_id UUID REFERENCES domains(id)"),
         ("quizzes", "is_entry_quiz", "ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS is_entry_quiz BOOLEAN DEFAULT FALSE NOT NULL"),
@@ -352,13 +353,46 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
         await session.flush()
 
         # ===============================================================
+        # 1b. USERS — 11 unique people
+        # ===============================================================
+        u_josh_id = _uid("usr.josh")
+        u_nathan_id = _uid("usr.nathan")
+        u_ahmed_id = _uid("usr.ahmed")
+        u_kenny_id = _uid("usr.kenny")
+        u_jak_id = _uid("usr.jak")
+        u_rachel_id = _uid("usr.rachel")
+        u_brandon_id = _uid("usr.brandon")
+        u_drew_id = _uid("usr.drew")
+        u_max_id = _uid("usr.max")
+        u_david_id = _uid("usr.david")
+        u_rua_id = _uid("usr.rua")
+
+        users_spec = [
+            (u_josh_id, DID_JOSH, "Josh Pasmore"),
+            (u_nathan_id, DID_NATHAN, "Nathan R"),
+            (u_ahmed_id, DID_AHMED, "Ahmed (Jade Oni)"),
+            (u_kenny_id, DID_KENNY, "Kenny"),
+            (u_jak_id, DID_JAK, "Jak"),
+            (u_rachel_id, DID_RACHEL, "Rachel"),
+            (u_brandon_id, DID_BRANDON, "Brandon"),
+            (u_drew_id, DID_DREW, "Drew"),
+            (u_max_id, DID_MAX, "Max Gershfield"),
+            (u_david_id, DID_DAVID, "David Ellams"),
+            (u_rua_id, DID_RUA, "Rua"),
+        ]
+
+        for uid, did, name in users_spec:
+            session.add(User(id=uid, did=did, display_name=name))
+        await session.flush()
+
+        # ===============================================================
         # 2. MEMBERS — 11 records (Ahmed in both OmniOne & Escherbridge) + 1 exited
         # ===============================================================
         # OmniOne
         m_josh_id = _uid("mbr.omni.josh")
         m_nathan_id = _uid("mbr.omni.nathan")
         m_ahmed_id = _uid("mbr.omni.ahmed")
-        # Escherbridge (Ahmed has a separate member record but same DID)
+        # Escherbridge (Ahmed has a separate member record but same user_id)
         m_ahmed_eb_id = _uid("mbr.eb.ahmed")
         m_kenny_id = _uid("mbr.eb.kenny")
         m_jak_id = _uid("mbr.eb.jak")
@@ -374,45 +408,45 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
 
         # fmt: off
         members_spec = [
-            # (id, eco_id, member_id_str, did, display_name, status, profile, skills_offered, skills_needed, notes, gov_days_ago)
+            # (id, eco_id, user_id, member_id_str, display_name, status, profile, skills_offered, skills_needed, notes, gov_days_ago)
             # ── OmniOne ──
-            (m_josh_id,  eco_omni_id, "MBR-OMNI-001", DID_JOSH,  "Josh Pasmore",  "active", "co_creator",
+            (m_josh_id,  eco_omni_id, u_josh_id, "MBR-OMNI-001", "Josh Pasmore",  "active", "co_creator",
              ["governance-design", "facilitation", "conflict-resolution"], ["permaculture"],
              "OmniOne founding steward and primary facilitator", 1),
-            (m_nathan_id, eco_omni_id, "MBR-OMNI-002", DID_NATHAN, "Nathan R", "active", "builder",
+            (m_nathan_id, eco_omni_id, u_nathan_id, "MBR-OMNI-002", "Nathan R", "active", "builder",
              ["community-building", "event-coordination", "outreach"], ["digital-tools"],
              "Community builder and engagement coordinator", 2),
-            (m_ahmed_id, eco_omni_id, "MBR-OMNI-003", DID_AHMED, "Ahmed (Jade Oni)", "active", "townhall",
+            (m_ahmed_id, eco_omni_id, u_ahmed_id, "MBR-OMNI-003", "Ahmed (Jade Oni)", "active", "townhall",
              ["governance-specialist", "multi-ecosystem-coordination", "workshop-facilitation"], ["permaculture"],
              "Multi-ecosystem participant and governance specialist; also active in Escherbridge", 3),
 
             # ── Escherbridge ──
-            (m_ahmed_eb_id, eco_eb_id, "MBR-EB-001", DID_AHMED, "Ahmed (Jade Oni)", "active", "co_creator",
+            (m_ahmed_eb_id, eco_eb_id, u_ahmed_id, "MBR-EB-001", "Ahmed (Jade Oni)", "active", "co_creator",
              ["creative-direction", "governance-design", "facilitation"], ["systems-thinking"],
              "Escherbridge owner and co-creator; also active in OmniOne", 1),
-            (m_kenny_id,  eco_eb_id, "MBR-EB-002", DID_KENNY,  "Kenny",  "active", "builder",
+            (m_kenny_id,  eco_eb_id, u_kenny_id, "MBR-EB-002", "Kenny",  "active", "builder",
              ["creative-technology", "interactive-installations", "creative-coding"], ["grant-writing"],
              "Creative technologist at Escherbridge", 2),
-            (m_jak_id, eco_eb_id, "MBR-EB-003", DID_JAK, "Jak", "active", "townhall",
+            (m_jak_id, eco_eb_id, u_jak_id, "MBR-EB-003", "Jak", "active", "townhall",
              ["3d-printing", "digital-fabrication", "documentation"], ["accounting"],
              "Digital fabrication specialist at Escherbridge", 3),
 
             # ── Plan Systems ──
-            (m_rachel_id,  eco_ps_id, "MBR-PS-001", DID_RACHEL,  "Rachel",  "active", "co_creator",
+            (m_rachel_id,  eco_ps_id, u_rachel_id, "MBR-PS-001", "Rachel",  "active", "co_creator",
              ["strategic-planning", "systems-design", "organizational-development"], ["technology"],
              "Plan Systems lead and strategic planning specialist", 1),
-            (m_brandon_id, eco_ps_id, "MBR-PS-002", DID_BRANDON, "Brandon", "active", "builder",
+            (m_brandon_id, eco_ps_id, u_brandon_id, "MBR-PS-002", "Brandon", "active", "builder",
              ["systems-design", "data-visualization", "process-automation"], ["facilitation"],
              "Systems design specialist building planning tools", 2),
-            (m_drew_id,    eco_ps_id, "MBR-PS-003", DID_DREW,    "Drew",    "active", "townhall",
+            (m_drew_id,    eco_ps_id, u_drew_id, "MBR-PS-003", "Drew",    "active", "townhall",
              ["documentation", "knowledge-management", "process-mapping"], ["strategic-planning"],
              "Knowledge management specialist and process documentarian", 4),
 
             # ── Oasis (2 members) ──
-            (m_max_id, eco_oa_id, "MBR-OA-001", DID_MAX, "Max Gershfield", "active", "co_creator",
+            (m_max_id, eco_oa_id, u_max_id, "MBR-OA-001", "Max Gershfield", "active", "co_creator",
              ["decentralized-governance", "protocol-design", "community-building"], ["legal-frameworks"],
              "Oasis founder and Web4 protocol architect", 1),
-            (m_david_id, eco_oa_id, "MBR-OA-002", DID_DAVID, "David Ellams", "active", "builder",
+            (m_david_id, eco_oa_id, u_david_id, "MBR-OA-002", "David Ellams", "active", "builder",
              ["distributed-systems", "smart-contracts", "infrastructure-engineering"], ["facilitation"],
              "Distributed systems engineer", 2),
         ]
@@ -426,13 +460,13 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             "allow_discovery": True,
         }
 
-        for (mid, eco_id, member_id_str, did, name, status, profile,
+        for (mid, eco_id, uid, member_id_str, name, status, profile,
              skills_o, skills_n, notes, gov_days) in members_spec:
             session.add(Member(
                 id=mid,
                 ecosystem_id=eco_id,
+                user_id=uid,
                 member_id=member_id_str,
-                did=did,
                 display_name=name,
                 current_status=status,
                 profile=profile,
@@ -449,8 +483,8 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
         rua = Member(
             id=m_rua_id,
             ecosystem_id=eco_omni_id,
+            user_id=u_rua_id,
             member_id="MBR-OMNI-EX-001",
-            did=DID_RUA,
             display_name="Rua",
             current_status="exited",
             profile="townhall",

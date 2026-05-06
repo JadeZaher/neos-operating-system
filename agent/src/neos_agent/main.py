@@ -194,7 +194,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     @app.on_request
     async def auth_middleware(request: Request):
         from neos_agent.auth.middleware import is_public_route, verify_session_cookie
-        from neos_agent.db.models import AuthSession, Ecosystem, Member as MemberModel
+        from neos_agent.db.models import AuthSession, Ecosystem, Member as MemberModel, User as UserModel
         from neos_agent.auth.ecosystem_scope import EcosystemScope
 
         # Helper: parse selected ecosystem IDs from cookie
@@ -210,24 +210,26 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             except (json.JSONDecodeError, ValueError):
                 return []
 
-        # Helper: load ecosystem objects for given IDs (or member default)
+        # Helper: load ecosystem objects for given IDs (or user default)
         # Returns (selected_ecosystems, selected_ids, all_authorized_ids)
-        async def _load_ecosystems(db, member, selected_ids):
-            # First, determine ALL ecosystems the member is authorized for
+        async def _load_ecosystems(db, user, selected_ids):
+            # First, determine ALL ecosystems the user is authorized for
             all_authorized_ids = set()
-            if member:
+            primary_eco_id = None
+            if user:
                 member_result = await db.execute(
                     select(MemberModel.ecosystem_id).where(
-                        MemberModel.did == member.did,
+                        MemberModel.user_id == user.id,
                         MemberModel.current_status == "active",
                     )
                 )
                 all_authorized_ids = set(member_result.scalars().all())
-                all_authorized_ids.add(member.ecosystem_id)
+                if all_authorized_ids:
+                    primary_eco_id = next(iter(all_authorized_ids))
 
             if selected_ids:
                 # Filter selected_ids to only authorized ones
-                if member:
+                if user:
                     selected_ids = [eid for eid in selected_ids if eid in all_authorized_ids]
 
                 result = await db.execute(
@@ -236,14 +238,14 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 ecosystems = list(result.scalars().all())
                 eco_ids = [e.id for e in ecosystems]
                 return ecosystems, eco_ids, list(all_authorized_ids)
-            if member:
-                eco = await db.get(Ecosystem, member.ecosystem_id)
+            if primary_eco_id:
+                eco = await db.get(Ecosystem, primary_eco_id)
                 if eco:
                     return [eco], [eco.id], list(all_authorized_ids)
             return [], [], list(all_authorized_ids)
 
-        # Helper: resolve member from session cookie
-        async def _try_resolve_member():
+        # Helper: resolve user from session cookie
+        async def _try_resolve_user():
             cookie = request.cookies.get("neos_session")
             if not cookie:
                 return None
@@ -261,7 +263,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     )
                     auth_session = result.scalar_one_or_none()
                     if auth_session:
-                        return await db.get(MemberModel, auth_session.member_id)
+                        return await db.get(UserModel, auth_session.user_id)
                     return None
             except Exception:
                 logger.debug("Session resolve failed on public route")
@@ -272,14 +274,23 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             return None
 
         if is_public_route(request.path):
-            member = await _try_resolve_member()
-            request.ctx.member = member
+            user = await _try_resolve_user()
+            request.ctx.user = user
             selected_ids = _parse_selected_cookie()
             try:
                 async with app.ctx.db() as db:
-                    ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, member, selected_ids)
+                    ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
+                    # Load primary member for backward compat
+                    if user:
+                        member_result = await db.execute(
+                            select(MemberModel).where(MemberModel.user_id == user.id).limit(1)
+                        )
+                        request.ctx.member = member_result.scalar_one_or_none()
+                    else:
+                        request.ctx.member = None
             except Exception:
                 ecosystems, eco_ids, all_auth_ids = [], [], []
+                request.ctx.member = None
                 request.ctx.ecosystem_scope = EcosystemScope.empty()
             request.ctx.ecosystems = ecosystems
             request.ctx.selected_ecosystem_ids = eco_ids
@@ -310,11 +321,30 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     response.delete_cookie("neos_session", path="/")
                     return response
 
-                member = await db.get(MemberModel, auth_session.member_id)
-                request.ctx.member = member
+                user = await db.get(UserModel, auth_session.user_id)
+                request.ctx.user = user
 
                 selected_ids = _parse_selected_cookie()
-                ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, member, selected_ids)
+                ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
+
+                # Load member in first selected ecosystem for backward compat
+                member = None
+                if user and eco_ids:
+                    member_result = await db.execute(
+                        select(MemberModel).where(
+                            MemberModel.user_id == user.id,
+                            MemberModel.ecosystem_id.in_(eco_ids),
+                        ).limit(1)
+                    )
+                    member = member_result.scalar_one_or_none()
+                if member is None and user:
+                    # Fallback: any member for this user
+                    member_result = await db.execute(
+                        select(MemberModel).where(MemberModel.user_id == user.id).limit(1)
+                    )
+                    member = member_result.scalar_one_or_none()
+
+                request.ctx.member = member
                 request.ctx.ecosystems = ecosystems
                 request.ctx.selected_ecosystem_ids = eco_ids
                 request.ctx.authorized_ecosystem_ids = all_auth_ids
