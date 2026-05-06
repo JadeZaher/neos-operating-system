@@ -22,6 +22,7 @@ from neos_agent.db.models import (
     Ecosystem,
     Member,
     Proposal,
+    User,
 )
 
 
@@ -35,6 +36,7 @@ DOMAIN_ID = uuid.uuid4()
 MEMBER_ID = uuid.uuid4()
 PROPOSAL_ID = uuid.uuid4()
 DECISION_ID = uuid.uuid4()
+USER_KAI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.views.user.kai")
 
 
 async def _seed_data(session: AsyncSession) -> None:
@@ -46,6 +48,7 @@ async def _seed_data(session: AsyncSession) -> None:
         status="active",
     )
     session.add(ecosystem)
+    session.add(User(id=USER_KAI_ID, display_name="Kai"))
     await session.flush()
 
     agreement = Agreement(
@@ -78,6 +81,7 @@ async def _seed_data(session: AsyncSession) -> None:
     member = Member(
         id=MEMBER_ID,
         ecosystem_id=ECOSYSTEM_ID,
+        user_id=USER_KAI_ID,
         member_id="MEM-KAI-001",
         display_name="Kai",
         current_status="active",

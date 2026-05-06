@@ -23,6 +23,7 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
     MemberStatusTransition,
+    User,
 )
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,9 @@ ECOSYSTEM_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 OWNER_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 OTHER_ID = uuid.UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
 NONEXISTENT_ID = uuid.UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
+USER_OWNER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.alice.owner")
+USER_OTHER_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.bob.other")
+USER_AUTH_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.auth")
 
 
 # ---------------------------------------------------------------------------
@@ -44,19 +48,23 @@ async def _seed_data(session: AsyncSession) -> None:
         description="Test ecosystem", status="active",
     )
     session.add(ecosystem)
+    session.add(User(id=USER_OWNER_ID, display_name="Alice Owner", phone="+1234567890"))
+    session.add(User(id=USER_OTHER_ID, display_name="Bob Other"))
     await session.flush()
 
     session.add(Member(
         id=OWNER_ID, ecosystem_id=ECOSYSTEM_ID,
+        user_id=USER_OWNER_ID,
         member_id="MEM-OWNER-001", display_name="Alice Owner",
         current_status="active", profile="co_creator",
         skills_offered=["facilitation", "design"],
         skills_needed=["legal"],
         interests=["permaculture", "governance"],
-        phone="+1234567890", notes="Owner notes",
+        notes="Owner notes",
     ))
     session.add(Member(
         id=OTHER_ID, ecosystem_id=ECOSYSTEM_ID,
+        user_id=USER_OTHER_ID,
         member_id="MEM-OTHER-002", display_name="Bob Other",
         current_status="onboarding", profile="builder",
     ))
@@ -86,6 +94,7 @@ def _create_app(auth_as=OWNER_ID):
         # Only column attributes are safe — no relationship access.
         request.ctx.member = Member(
             id=auth_as, ecosystem_id=ECOSYSTEM_ID,
+            user_id=USER_AUTH_ID,
             member_id="MEM-AUTH", display_name="Auth User",
             current_status="active", profile="co_creator",
         )

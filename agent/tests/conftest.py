@@ -22,6 +22,7 @@ from neos_agent.db.models import (
     Member,
     Message,
     Proposal,
+    User,
 )
 
 
@@ -195,6 +196,9 @@ async def db_session(db_engine):
 
 # Stable UUIDs for seed data
 ECO_ID = uuid.UUID("00000000000000000000000000000001")
+USER_LANI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.lani")
+USER_KAI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.kai")
+USER_MANU_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.manu")
 MEMBER_STEWARD_ID = uuid.UUID("00000000000000000000000000000010")
 MEMBER_BUILDER_ID = uuid.UUID("00000000000000000000000000000020")
 MEMBER_TH_ID = uuid.UUID("00000000000000000000000000000030")
@@ -227,10 +231,18 @@ async def seeded_db(db_engine):
         eco = Ecosystem(id=ECO_ID, name="OmniOne", status="active")
         session.add(eco)
 
+        # Users (platform identities)
+        user_lani = User(id=USER_LANI_ID, display_name="Lani")
+        user_kai = User(id=USER_KAI_ID, display_name="Kai")
+        user_manu = User(id=USER_MANU_ID, display_name="Manu")
+        session.add_all([user_lani, user_kai, user_manu])
+        await session.flush()
+
         # Members
         lani = Member(
             id=MEMBER_STEWARD_ID,
             ecosystem_id=ECO_ID,
+            user_id=USER_LANI_ID,
             member_id="MEM-001",
             display_name="Lani",
             current_status="active",
@@ -239,6 +251,7 @@ async def seeded_db(db_engine):
         kai = Member(
             id=MEMBER_BUILDER_ID,
             ecosystem_id=ECO_ID,
+            user_id=USER_KAI_ID,
             member_id="MEM-002",
             display_name="Kai",
             current_status="active",
@@ -247,6 +260,7 @@ async def seeded_db(db_engine):
         manu = Member(
             id=MEMBER_TH_ID,
             ecosystem_id=ECO_ID,
+            user_id=USER_MANU_ID,
             member_id="MEM-003",
             display_name="Manu",
             current_status="active",
@@ -357,18 +371,27 @@ async def seeded_messaging_db(db_engine):
         eco = Ecosystem(id=ECO_ID, name="OmniOne", status="active")
         session.add(eco)
 
+        user_lani = User(id=USER_LANI_ID, display_name="Lani")
+        user_kai = User(id=USER_KAI_ID, display_name="Kai")
+        user_manu = User(id=USER_MANU_ID, display_name="Manu")
+        session.add_all([user_lani, user_kai, user_manu])
+        await session.flush()
+
         lani = Member(
             id=MEMBER_STEWARD_ID, ecosystem_id=ECO_ID,
+            user_id=USER_LANI_ID,
             member_id="MEM-001", display_name="Lani",
             current_status="active", profile="co_creator",
         )
         kai = Member(
             id=MEMBER_BUILDER_ID, ecosystem_id=ECO_ID,
+            user_id=USER_KAI_ID,
             member_id="MEM-002", display_name="Kai",
             current_status="active", profile="builder",
         )
         manu = Member(
             id=MEMBER_TH_ID, ecosystem_id=ECO_ID,
+            user_id=USER_MANU_ID,
             member_id="MEM-003", display_name="Manu",
             current_status="active", profile="townhall",
         )

@@ -22,6 +22,7 @@ from neos_agent.db.models import (
     Conversation,
     ConversationParticipant,
     Member,
+    User,
 )
 from neos_agent.messaging.connections import connection_manager
 from neos_agent.messaging.handlers import (
@@ -76,7 +77,14 @@ async def messaging_ws(request: Request, ws):
             if not auth_session:
                 await ws.close(code=4001, reason="Session expired")
                 return
-            member = await db.get(Member, auth_session.member_id)
+            user = await db.get(User, auth_session.user_id)
+            if not user:
+                await ws.close(code=4001, reason="User not found")
+                return
+            member_result = await db.execute(
+                select(Member).where(Member.user_id == user.id).limit(1)
+            )
+            member = member_result.scalar_one_or_none()
             if not member:
                 await ws.close(code=4001, reason="Member not found")
                 return

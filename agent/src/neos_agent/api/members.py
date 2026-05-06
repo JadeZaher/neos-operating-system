@@ -239,12 +239,12 @@ async def list_members(request: Request):
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
 
-        stmt = stmt.offset(offset).limit(per_page)
+        stmt = stmt.options(selectinload(Member.user)).offset(offset).limit(per_page)
         result = await session.execute(stmt)
         members = result.scalars().all()
 
     return json({
-        "items": [_member_to_list_item(m) for m in members],
+        "items": [_member_to_list_item(m, user=m.user) for m in members],
         "total": total,
         "page": page,
         "per_page": per_page,
@@ -263,7 +263,7 @@ async def get_member(request: Request, member_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         stmt = (
             select(Member)
-            .options(selectinload(Member.onboarding))
+            .options(selectinload(Member.onboarding), selectinload(Member.user))
             .where(Member.id == member_id)
         )
         if eco_ids:
@@ -275,7 +275,7 @@ async def get_member(request: Request, member_id: uuid.UUID):
     if m is None:
         return json({"error": "Member not found"}, status=404)
 
-    return json(_member_to_detail(m, ob=m.onboarding))
+    return json(_member_to_detail(m, ob=m.onboarding, user=m.user))
 
 
 @members_api_bp.post("/")
@@ -342,7 +342,7 @@ async def update_member(request: Request, member_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        stmt = select(Member).where(Member.id == member_id)
+        stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
@@ -356,13 +356,21 @@ async def update_member(request: Request, member_id: uuid.UUID):
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
             )
+        # phone and profile_picture live on User, not Member
+        user_fields = {}
+        for field in ("phone", "profile_picture"):
+            if field in update_data:
+                user_fields[field] = update_data.pop(field)
         for field, value in update_data.items():
             setattr(m, field, value)
+        if user_fields and m.user:
+            for field, value in user_fields.items():
+                setattr(m.user, field, value)
 
         await session.commit()
         await session.refresh(m)
 
-    return json(_member_to_detail(m))
+    return json(_member_to_detail(m, user=m.user))
 
 
 @members_api_bp.post("/<member_id:uuid>/status")
@@ -385,7 +393,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        stmt = select(Member).where(Member.id == member_id)
+        stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
 
@@ -412,7 +420,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
 
         logger.info("Member %s status: %s -> %s", member_id, old_status, req.status)
 
-    return json(_member_to_detail(m))
+    return json(_member_to_detail(m, user=m.user))
 
 
 @members_api_bp.get("/<member_id:uuid>/onboarding")

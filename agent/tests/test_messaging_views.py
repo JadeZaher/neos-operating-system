@@ -21,6 +21,7 @@ from neos_agent.db.models import (
     ConversationParticipant,
     Member,
     Message,
+    User,
 )
 from neos_agent.messaging.queries import get_entity_discussions
 from neos_agent.messaging.routes import (
@@ -440,8 +441,15 @@ class TestEdgeCases:
         db = seeded_messaging_db
         # MEMBER_TH_ID (Manu) is only in the group, not the DM
         # Let's create a new member with no conversations
+        new_user = User(
+            id=uuid.uuid5(uuid.NAMESPACE_DNS, "test.msg.views.new.person"),
+            display_name="New Person",
+        )
+        db.add(new_user)
+        await db.flush()
         new_member = Member(
             ecosystem_id=ECO_ID,
+            user_id=new_user.id,
             member_id="MEM-NEW",
             display_name="New Person",
             current_status="active",

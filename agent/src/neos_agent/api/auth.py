@@ -33,6 +33,7 @@ from .schemas import (
     MemberSummary,
     SetCredentialsRequest,
     SetCredentialsResponse,
+    UserSummary,
 )
 
 logger = logging.getLogger(__name__)
@@ -292,7 +293,6 @@ async def api_me(request: Request):
                     )
                 )
 
-    from .schemas import UserSummary
     user_summary = UserSummary(
         id=user.id,
         display_name=user.display_name,
