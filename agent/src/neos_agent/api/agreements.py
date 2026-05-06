@@ -149,7 +149,10 @@ def _bump_version(agreement: Agreement) -> None:
     parts = agreement.version.split(".")
     if len(parts) == 2:
         major, minor = parts
-        agreement.version = f"{major}.{int(minor) + 1}"
+        try:
+            agreement.version = f"{major}.{int(minor) + 1}"
+        except ValueError:
+            agreement.version = agreement.version + ".1"
     else:
         agreement.version = agreement.version + ".1"
 
@@ -443,9 +446,14 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
 
         old_status = agreement.status
         agreement.status = new_status
+        _bump_version(agreement)
 
         if new_status == "ratified" and agreement.ratification_date is None:
             agreement.ratification_date = _dt.date.today()
+
+        agreement.version_fingerprint = generate_fingerprint(
+            agreement.title, agreement.text, agreement.version, agreement.status
+        )
 
         await db.commit()
         await db.refresh(agreement)
@@ -504,11 +512,12 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         )
         reviews = review_result.scalars().all()
 
-        # Load versions
+        # Load versions (capped at 50 most recent)
         version_result = await db.execute(
             select(AgreementVersion)
             .where(AgreementVersion.agreement_id == agreement_id)
             .order_by(AgreementVersion.created_at.desc())
+            .limit(50)
         )
         versions = version_result.scalars().all()
 
@@ -573,12 +582,21 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
 async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_id: uuid.UUID):
     """POST /api/v1/agreements/:id/rollback/:version_id -- restore agreement to a previous version.
 
+    Requires the member to be the agreement proposer or have 'active'/'steward' status.
+    Status rollback is restricted: cannot rollback to a status that isn't reachable
+    from the current status (or the same status). Content fields are always restored.
+
     Creates a snapshot of the current state, then restores from the specified version.
     Returns JSON: AgreementDetail
     """
     member, err = require_auth(request)
     if err:
         return err
+
+    # Permission check: only proposers or steward/active members can rollback
+    member_status = getattr(member, "current_status", None)
+    if member_status not in ("active", "steward", "co_creator"):
+        return json({"error": "Insufficient permissions: rollback requires active/steward/co_creator status"}, status=403)
 
     eco_ids = get_ecosystem_ids(request)
 
@@ -610,16 +628,24 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         if target_version is None:
             return json({"error": "Version not found"}, status=404)
 
+        # Validate status rollback: only allow if same status or a valid transition
+        if target_version.status != agreement.status:
+            allowed = _VALID_TRANSITIONS.get(agreement.status, set())
+            if target_version.status not in allowed:
+                return json(
+                    {"error": f"Cannot rollback to status '{target_version.status}' from current '{agreement.status}'. Invalid transition."},
+                    status=400,
+                )
+
         # Snapshot current state before rollback
         snapshot = _snapshot_agreement(
             agreement,
             change_reason=f"Rollback to version {target_version.version}",
-            changed_by=(request.json or {}).get("changed_by"),
+            changed_by=member.display_name,
         )
         db.add(snapshot)
 
         # Restore fields from target version
-        agreement.version = target_version.version
         agreement.status = target_version.status
         agreement.title = target_version.title
         agreement.text = target_version.text
@@ -631,12 +657,19 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         agreement.review_date = target_version.review_date
         agreement.sunset_date = target_version.sunset_date
         agreement.ratification_date = target_version.ratification_date
-        agreement.version_fingerprint = target_version.version_fingerprint
+
+        # Bump version (don't restore old version number — always move forward)
+        _bump_version(agreement)
+
+        # Regenerate fingerprint for the restored state
+        agreement.version_fingerprint = generate_fingerprint(
+            agreement.title, agreement.text, agreement.version, agreement.status
+        )
 
         await db.commit()
         await db.refresh(agreement)
 
-        logger.info("Agreement %s rolled back to version %s", agreement_id, target_version.version)
+        logger.info("Agreement %s rolled back to version %s by %s", agreement_id, target_version.version, member.display_name)
 
         # Re-load with ratification records
         stmt = (

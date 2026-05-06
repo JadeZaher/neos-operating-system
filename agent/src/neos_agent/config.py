@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     # AI Provider settings (LiteLLM/OpenRouter)
     AI_API_KEY: str = ""  # Empty = AI disabled (governance still works)
     AI_BASE_URL: str | None = None
-    AI_MODEL: str = "openrouter/anthropic/claude-sonnet-4-20250514"
-    AI_PROVIDER: str = "openrouter"  # openrouter, anthropic, openai, local
+    AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
+    AI_PROVIDER: str = "anthropic"  # openrouter, anthropic, openai, local
 
     # Legacy aliases (backward compat with existing .env files)
     ANTHROPIC_API_KEY: str = ""
