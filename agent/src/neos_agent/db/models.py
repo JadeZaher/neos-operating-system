@@ -797,6 +797,9 @@ class AgentSession(TimestampMixin, Base):
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
     context: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    privacy: Mapped[str] = mapped_column(String(20), nullable=False, default="private", doc="private | ecosystem | public")
+    share_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, doc="URL-safe token for shared links")
+    total_tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 # ========================
