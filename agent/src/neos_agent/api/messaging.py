@@ -388,6 +388,100 @@ async def create_conversation(request: Request):
     return json(detail.model_dump(mode="json"), status=201)
 
 
+@messaging_api_bp.post("/conversations/<conversation_id:uuid>/messages")
+async def send_message(request: Request, conversation_id: uuid.UUID):
+    """POST /api/v1/messaging/conversations/:id/messages -- Send a message (REST fallback).
+
+    Accepts JSON: {"content": "..."}
+    Returns JSON: MessageSchema with 201 status.
+
+    This is the REST alternative to WebSocket message sending, ensuring
+    messages can be sent even when WebSocket connections fail.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    content = (body.get("content") or "").strip()
+    if not content:
+        return json({"error": "content is required"}, status=400)
+    if len(content) > 10_000:
+        return json({"error": "Message too long (max 10000 chars)"}, status=400)
+
+    eco_ids = get_ecosystem_ids(request)
+
+    async with request.app.ctx.db() as session:
+        member_id = await _get_current_member_id(session, member, eco_ids)
+        if member_id is None:
+            return json({"error": "Member not found"}, status=404)
+
+        # Verify participation
+        participant_check = await session.execute(
+            select(ConversationParticipant.id)
+            .where(ConversationParticipant.conversation_id == conversation_id)
+            .where(ConversationParticipant.member_id == member_id)
+        )
+        if participant_check.scalar_one_or_none() is None:
+            return json({"error": "Not a participant"}, status=403)
+
+        # Persist message
+        msg = Message(
+            conversation_id=conversation_id,
+            sender_id=member_id,
+            content=content,
+            message_type="text",
+        )
+        session.add(msg)
+        await session.commit()
+        await session.refresh(msg)
+
+        # Resolve sender display name
+        sender_result = await session.execute(
+            select(Member.display_name).where(Member.id == member_id)
+        )
+        sender_name = sender_result.scalar() or "Unknown"
+
+        # Broadcast to connected WebSocket clients
+        try:
+            from neos_agent.messaging.connections import connection_manager
+            participant_ids_result = await session.execute(
+                select(ConversationParticipant.member_id)
+                .where(ConversationParticipant.conversation_id == conversation_id)
+            )
+            participant_ids = list(participant_ids_result.scalars().all())
+
+            payload = {
+                "type": "message",
+                "data": {
+                    "id": str(msg.id),
+                    "conversation_id": str(conversation_id),
+                    "sender_id": str(member_id),
+                    "sender_name": sender_name,
+                    "content": msg.content,
+                    "message_type": "text",
+                    "created_at": msg.created_at.isoformat(),
+                },
+            }
+            await connection_manager.broadcast_to_participants(
+                participant_ids, payload, exclude_member_id=member_id
+            )
+        except Exception:
+            logger.debug("WS broadcast failed (non-fatal)")
+
+        result = MessageSchema(
+            id=msg.id,
+            sender_id=member_id,
+            sender_name=sender_name,
+            content=msg.content,
+            message_type="text",
+            created_at=msg.created_at,
+            edited_at=msg.edited_at,
+        )
+
+    return json(result.model_dump(mode="json"), status=201)
+
+
 @messaging_api_bp.get("/conversations/<conversation_id:uuid>/messages")
 async def list_messages(request: Request, conversation_id: uuid.UUID):
     """GET /api/v1/messaging/conversations/:id/messages -- Paginated message history.
