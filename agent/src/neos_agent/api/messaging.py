@@ -328,6 +328,9 @@ async def create_conversation(request: Request):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
+    # Normalize type: accept "direct" as alias for "dm"
+    if create_req.type == "direct":
+        create_req.type = "dm"
     if create_req.type not in ("dm", "group"):
         return json({"error": "type must be 'dm' or 'group'"}, status=400)
 
