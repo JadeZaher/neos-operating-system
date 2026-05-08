@@ -231,10 +231,15 @@ async def api_me(request: Request):
     cookie = request.cookies.get("neos_session")
 
     if not cookie:
+        all_cookies = list(request.cookies.keys())
+        logger.info("/auth/me: no neos_session cookie. All cookies: %s, Origin: %s, Referer: %s",
+                     all_cookies, request.headers.get("origin"), request.headers.get("referer"))
         return json({"error": "Not authenticated"}, status=401)
 
     session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
     if not session_id:
+        logger.warning("/auth/me: cookie present but verification failed (len=%d, secret_prefix=%s)",
+                       len(cookie), settings.SESSION_SECRET[:8])
         return json({"error": "Invalid session"}, status=401)
 
     async with request.app.ctx.db() as db:

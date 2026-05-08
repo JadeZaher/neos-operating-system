@@ -258,7 +258,12 @@ async def oauth_callback(request: Request, provider: str):
 
     # Set session cookie and redirect to frontend
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
-    response = redirect(f"{frontend_base}/dashboard")
+    redirect_url = f"{frontend_base}/dashboard"
+    logger.info(
+        "OAuth %s callback success: user_id=%s, session_id=%s, redirect_to=%s, cookie_len=%d",
+        provider, user.id, session_id, redirect_url, len(cookie_value),
+    )
+    response = redirect(redirect_url)
     response.add_cookie(
         "neos_session",
         cookie_value,
@@ -268,6 +273,16 @@ async def oauth_callback(request: Request, provider: str):
         max_age=settings.SESSION_MAX_AGE_HOURS * 3600,
         path="/",
     )
+    # Log the actual Set-Cookie header being sent
+    set_cookie_headers = [
+        v for k, v in response.headers.items() if k.lower() == "set-cookie"
+    ]
+    logger.info("OAuth response headers: Location=%s, Set-Cookie count=%d",
+                response.headers.get("location"), len(set_cookie_headers))
+    for sc in set_cookie_headers:
+        # Mask the cookie value for security, show attributes
+        masked = sc[:30] + "..." + sc[sc.index(";"):] if ";" in sc else sc[:30] + "..."
+        logger.info("  Set-Cookie: %s", masked)
     return response
 
 
