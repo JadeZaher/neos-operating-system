@@ -2,8 +2,12 @@
 
 Blueprint: chat_api_bp, url_prefix="/api/v1/chat"
 
-Provides SSE streaming chat using the AI provider, with graceful
-fallback when AI is disabled.
+Provides an agentic SSE streaming chat with:
+- Full governance system prompt (skills, principles, page context)
+- 23 governance tools via tool_use
+- Skill matching from trigger conditions
+- Token usage logging
+- Privacy / sharing for sessions
 """
 from __future__ import annotations
 
@@ -17,15 +21,24 @@ from pydantic import BaseModel
 from sanic import Blueprint, json as json_response
 from sanic.request import Request
 from sanic.response import ResponseStream
-from sqlalchemy import select, or_
+from sqlalchemy import select
 
 from neos_agent.db.models import AgentSession
-from neos_agent.ai.provider import acompletion, is_ai_enabled
+from neos_agent.ai.provider import is_ai_enabled
+from neos_agent.agent.governance_tools import get_tool_definitions, execute_tool
+from neos_agent.agent.system_prompt import assemble_system_prompt
 
 logger = logging.getLogger(__name__)
 
 chat_api_bp = Blueprint("chat_api", url_prefix="/api/v1/chat")
 
+# Maximum agentic loop iterations to prevent runaway tool chains
+_MAX_TOOL_ROUNDS = 8
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 class ChatSendRequest(BaseModel):
     message: str
@@ -43,6 +56,63 @@ def _sse_event(event: str, data: str) -> str:
     lines = data.split("\n")
     data_lines = "\n".join(f"data: {line}" for line in lines)
     return f"event: {event}\n{data_lines}\n\n"
+
+
+def _match_skill(message: str, registry) -> str | None:
+    """Match user message to a skill via trigger condition keywords.
+
+    Scans Section C (Trigger Conditions) of each skill for keyword overlap
+    with the user's message. Returns the best-matching skill name, or None.
+    """
+    if not registry or not registry.is_loaded:
+        return None
+
+    msg_lower = message.lower()
+    best_skill = None
+    best_score = 0
+
+    for skill in registry.all_skills():
+        try:
+            parsed = registry.get(skill.name)
+        except KeyError:
+            continue
+
+        trigger_text = (parsed.content.sections or {}).get("C", "") or ""
+        if not trigger_text:
+            continue
+
+        # Simple keyword overlap scoring
+        trigger_words = set(trigger_text.lower().split())
+        msg_words = set(msg_lower.split())
+        # Filter out tiny words
+        trigger_words = {w for w in trigger_words if len(w) > 3}
+        overlap = trigger_words & msg_words
+        score = len(overlap)
+
+        if score > best_score:
+            best_score = score
+            best_skill = skill.name
+
+    # Require at least 2 keyword matches to activate a skill
+    return best_skill if best_score >= 2 else None
+
+
+def _page_to_context(page_context: dict | None) -> str | None:
+    """Extract a page context hint from the frontend's page_context object."""
+    if not page_context:
+        return None
+    path = page_context.get("path", "")
+    # Match known governance page segments
+    for segment in ["agreements", "proposals", "domains", "members", "conflicts",
+                     "safeguards", "emergency", "decisions", "exit", "onboarding", "discover"]:
+        if segment in path:
+            return segment
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @chat_api_bp.get("/sessions")
@@ -85,10 +155,11 @@ async def list_sessions(request: Request):
 
 @chat_api_bp.post("/send")
 async def send_message(request: Request):
-    """POST /api/v1/chat/send — SSE streaming chat endpoint.
+    """POST /api/v1/chat/send — Agentic SSE streaming chat endpoint.
 
-    Streams AI responses as SSE events. Falls back to a static message
-    when AI is not configured.
+    Runs a tool-use loop: sends messages to the AI with governance tools,
+    executes any tool calls, feeds results back, and streams everything
+    as SSE events (append, tool_start, tool_result, usage, done).
     """
     member = getattr(request.ctx, "member", None)
     if not member:
@@ -98,6 +169,8 @@ async def send_message(request: Request):
     message = body.get("message", "").strip()
     if not message:
         return json_response({"error": "Message is required"}, status=400)
+
+    page_context = body.get("page_context")
 
     if not is_ai_enabled():
         async def disabled_stream(response):
@@ -113,39 +186,141 @@ async def send_message(request: Request):
 
     async def chat_stream(response):
         try:
-            result = await acompletion(
-                messages=[{"role": "user", "content": message}],
-                system="You are a helpful governance assistant for the NEOS platform. Help users understand governance processes, agreements, proposals, and other platform features.",
-                max_tokens=1024,
-                temperature=0.7,
-                stream=True,
+            import litellm
+            from neos_agent.config import get_settings
+            settings = get_settings()
+
+            registry = getattr(request.app.ctx, "skills", None)
+
+            # --- Build system prompt with skill awareness ---
+            page_hint = _page_to_context(page_context)
+            matched_skill = _match_skill(message, registry)
+
+            ecosystem_names = []
+            if hasattr(member, "ecosystem") and member.ecosystem:
+                ecosystem_names = [member.ecosystem.name]
+
+            system_prompt = assemble_system_prompt(
+                active_skill=matched_skill,
+                skill_registry=registry,
+                page_context=page_hint,
+                ecosystem_names=ecosystem_names or None,
             )
 
-            if result is None:
-                await response.write(_sse_event("append", "AI is currently unavailable. Please try again later."))
-                await response.write(_sse_event("done", ""))
-                return
+            # Notify client which skill was matched
+            if matched_skill:
+                await response.write(_sse_event("skill", matched_skill))
 
-            usage = None
-            async for chunk in result:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    usage = chunk.usage
-                if hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if hasattr(delta, "content") and delta.content:
-                        await response.write(_sse_event("append", delta.content))
+            # --- Prepare tool definitions ---
+            tools = get_tool_definitions()
 
-            usage_data = {}
-            if usage:
-                usage_data = {
-                    "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-                    "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
-                    "total_tokens": getattr(usage, "total_tokens", 0) or 0,
-                }
+            # --- Agentic loop ---
+            messages = [{"role": "user", "content": message}]
+            total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+            litellm.drop_params = True
+            base_kwargs = {
+                "model": settings.AI_MODEL,
+                "api_key": settings.AI_API_KEY,
+                "temperature": 0.7,
+                "max_tokens": 2048,
+                "timeout": 60,
+            }
+            if settings.AI_BASE_URL:
+                base_kwargs["api_base"] = settings.AI_BASE_URL
+
+            for _ in range(_MAX_TOOL_ROUNDS):
+                # Non-streaming call to support tool_use detection
+                resp = await litellm.acompletion(
+                    **base_kwargs,
+                    messages=[{"role": "system", "content": system_prompt}] + messages,
+                    tools=[{"type": "function", "function": t} for t in tools] if tools else None,
+                    stream=False,
+                )
+
+                # Accumulate usage (litellm types are dynamic)
+                usage = getattr(resp, "usage", None)
+                if usage:
+                    total_usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+                    total_usage["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+                    total_usage["total_tokens"] += getattr(usage, "total_tokens", 0) or 0
+
+                choices = getattr(resp, "choices", None)
+                choice = choices[0] if choices else None
+                if not choice:
+                    break
+
+                assistant_msg = choice.message
+
+                # Stream any text content
+                if assistant_msg.content:
+                    await response.write(_sse_event("append", assistant_msg.content))
+
+                # Check for tool calls
+                tool_calls = getattr(assistant_msg, "tool_calls", None)
+                if not tool_calls or choice.finish_reason != "tool_calls":
+                    # No tool calls — we're done
+                    messages.append({"role": "assistant", "content": assistant_msg.content or ""})
+                    break
+
+                # Process tool calls
+                # Add assistant message with tool_calls to conversation
+                messages.append(assistant_msg.model_dump())
+
+                for tc in tool_calls:
+                    fn = tc.function
+                    tool_name = fn.name
+                    try:
+                        tool_args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                    except json.JSONDecodeError:
+                        tool_args = {}
+
+                    # Notify client: tool starting
+                    await response.write(_sse_event("tool_start", json.dumps({
+                        "name": tool_name,
+                        "args": tool_args,
+                    })))
+
+                    # Execute the tool
+                    try:
+                        db_factory = getattr(request.app.ctx, "db", None)
+                        if db_factory:
+                            async with db_factory() as db:
+                                ecosystem_ids = None
+                                if hasattr(member, "ecosystem_id") and member.ecosystem_id:
+                                    ecosystem_ids = [str(member.ecosystem_id)]
+                                result = await execute_tool(tool_name, tool_args, db, ecosystem_ids=ecosystem_ids)
+                        else:
+                            result = {"success": False, "error": "Database unavailable"}
+                    except Exception as e:
+                        logger.exception("Tool execution failed: %s", tool_name)
+                        result = {"success": False, "error": str(e)}
+
+                    # Notify client: tool result
+                    await response.write(_sse_event("tool_result", json.dumps({
+                        "name": tool_name,
+                        "success": result.get("success", False),
+                        "data": result.get("data") if result.get("success") else None,
+                        "error": result.get("error") if not result.get("success") else None,
+                    })))
+
+                    # Add tool result to conversation
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result),
+                    })
+
+                # Loop continues — model will process tool results
+
+            # Send usage
+            if total_usage["total_tokens"] > 0:
                 logger.info("Chat token usage: prompt=%d completion=%d total=%d",
-                            usage_data["prompt_tokens"], usage_data["completion_tokens"], usage_data["total_tokens"])
-            await response.write(_sse_event("usage", json.dumps(usage_data)))
+                            total_usage["prompt_tokens"], total_usage["completion_tokens"],
+                            total_usage["total_tokens"])
+            await response.write(_sse_event("usage", json.dumps(total_usage)))
             await response.write(_sse_event("done", ""))
+
         except Exception as exc:
             logger.exception("Chat streaming failed")
             err_msg = str(exc).replace("\n", " ")
@@ -184,7 +359,6 @@ async def update_session_privacy(request: Request, session_id: str):
                 return json_response({"error": "Session not found"}, status=404)
 
             sess.privacy = privacy
-            # Generate a share token when making non-private, clear when private
             if privacy != "private" and not sess.share_token:
                 sess.share_token = secrets.token_urlsafe(32)
             elif privacy == "private":
@@ -202,7 +376,7 @@ async def update_session_privacy(request: Request, session_id: str):
 
 @chat_api_bp.get("/shared/<share_token:str>")
 async def get_shared_session(request: Request, share_token: str):
-    """GET /api/v1/chat/shared/:token — View a shared chat session (no auth required for public)."""
+    """GET /api/v1/chat/shared/:token — View a shared chat session."""
     member = getattr(request.ctx, "member", None)
 
     try:
@@ -214,7 +388,6 @@ async def get_shared_session(request: Request, share_token: str):
             if not sess:
                 return json_response({"error": "Shared session not found"}, status=404)
 
-            # Access control
             if sess.privacy == "private":
                 return json_response({"error": "This session is private"}, status=403)
             if sess.privacy == "ecosystem" and (not member or member.ecosystem_id != sess.ecosystem_id):
