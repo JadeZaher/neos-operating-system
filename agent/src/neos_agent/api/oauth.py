@@ -152,7 +152,9 @@ async def oauth_callback(request: Request, provider: str):
     settings = request.app.ctx.settings
     code = request.args.get("code")
     error = request.args.get("error")
-    frontend_base = settings.OAUTH_REDIRECT_BASE or "http://localhost:5173"
+    # FRONTEND_URL is where the user's browser should land after OAuth.
+    # Falls back to OAUTH_REDIRECT_BASE for backward compat, then localhost.
+    frontend_base = settings.FRONTEND_URL or settings.OAUTH_REDIRECT_BASE or "http://localhost:5173"
 
     if error or not code:
         return redirect(f"{frontend_base}/login?error=oauth_denied")

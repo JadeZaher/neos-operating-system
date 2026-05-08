@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     LINKEDIN_CLIENT_ID: str = ""
     LINKEDIN_CLIENT_SECRET: str = ""
-    OAUTH_REDIRECT_BASE: str = ""  # e.g. "http://localhost:5173" or production URL
+    OAUTH_REDIRECT_BASE: str = ""  # Base URL for OAuth callback (backend URL)
+    FRONTEND_URL: str = ""  # Frontend URL for post-OAuth redirect (if different from OAUTH_REDIRECT_BASE)
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

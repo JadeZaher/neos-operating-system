@@ -50,7 +50,8 @@ def _create_app(db_session_factory):
     settings = MagicMock()
     settings.SESSION_SECRET = SESSION_SECRET
     settings.SESSION_MAX_AGE_HOURS = 24
-    settings.OAUTH_REDIRECT_BASE = "https://frontend.example.com"
+    settings.OAUTH_REDIRECT_BASE = "https://backend.example.com"
+    settings.FRONTEND_URL = "https://frontend.example.com"
     settings.GOOGLE_CLIENT_ID = "google-client-id"
     settings.GOOGLE_CLIENT_SECRET = "google-secret"
     settings.LINKEDIN_CLIENT_ID = "linkedin-client-id"
@@ -122,7 +123,7 @@ async def test_oauth_callback_returns_302_with_cookie():
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, response = await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=test-auth-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     assert response.status_code == 302, f"Expected 302, got {response.status_code}"
@@ -152,7 +153,7 @@ async def test_oauth_callback_cookie_is_valid():
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, response = await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=test-auth-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     # Extract cookie value from Set-Cookie header
@@ -190,7 +191,7 @@ async def test_oauth_cookie_works_with_auth_me():
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, callback_response = await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=test-auth-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     assert callback_response.status_code == 302
@@ -232,7 +233,7 @@ async def test_oauth_linkedin_callback_works():
         mock_exchange.return_value = FAKE_LINKEDIN_USER
         _, response = await app.asgi_client.get(
             "/api/v1/auth/oauth/linkedin/callback?code=test-li-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     assert response.status_code == 302
@@ -250,7 +251,7 @@ async def test_oauth_callback_error_param_redirects_to_login():
 
     _, response = await app.asgi_client.get(
         "/api/v1/auth/oauth/google/callback?error=access_denied",
-        allow_redirects=False,
+        follow_redirects=False,
     )
 
     assert response.status_code == 302
@@ -273,7 +274,7 @@ async def test_oauth_callback_no_code_redirects_to_login():
 
     _, response = await app.asgi_client.get(
         "/api/v1/auth/oauth/google/callback",
-        allow_redirects=False,
+        follow_redirects=False,
     )
 
     assert response.status_code == 302
@@ -293,7 +294,7 @@ async def test_oauth_callback_exchange_failure_redirects():
         mock_exchange.return_value = None  # exchange failed
         _, response = await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=bad-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     assert response.status_code == 302
@@ -344,7 +345,7 @@ async def test_password_login_cookie_works_with_auth_me():
         mock_exchange.return_value = FAKE_GOOGLE_USER
         await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=setup-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     # Set credentials on the user
@@ -408,7 +409,7 @@ async def test_redirect_vs_json_cookie_format():
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, oauth_response = await app.asgi_client.get(
             "/api/v1/auth/oauth/google/callback?code=test-code",
-            allow_redirects=False,
+            follow_redirects=False,
         )
 
     oauth_set_cookie = oauth_response.headers.get("set-cookie", "")
