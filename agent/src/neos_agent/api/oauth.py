@@ -273,16 +273,10 @@ async def oauth_callback(request: Request, provider: str):
         max_age=settings.SESSION_MAX_AGE_HOURS * 3600,
         path="/",
     )
-    # Log the actual Set-Cookie header being sent
-    set_cookie_headers = [
-        v for k, v in response.headers.items() if k.lower() == "set-cookie"
-    ]
-    logger.info("OAuth response headers: Location=%s, Set-Cookie count=%d",
-                response.headers.get("location"), len(set_cookie_headers))
-    for sc in set_cookie_headers:
-        # Mask the cookie value for security, show attributes
-        masked = sc[:30] + "..." + sc[sc.index(";"):] if ";" in sc else sc[:30] + "..."
-        logger.info("  Set-Cookie: %s", masked)
+    # Log cookie info
+    logger.info("OAuth response: Location=%s, cookies=%s",
+                response.headers.get("location"),
+                list(response.cookies.keys()))
     return response
 
 
