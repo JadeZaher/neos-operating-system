@@ -146,10 +146,16 @@ async def _get_first_ecosystem_id(
 
 async def search_agreements(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
     """Search agreements by type, domain, status, affected_party, date_range."""
-    stmt = select(Agreement)
+    stmt = select(Agreement).options(selectinload(Agreement.ecosystem))
 
     if ecosystem_ids:
-        stmt = stmt.where(Agreement.ecosystem_id.in_(ecosystem_ids))
+        # Include agreements owned by or shared with the selected ecosystems
+        stmt = stmt.where(
+            or_(
+                Agreement.ecosystem_id.in_(ecosystem_ids),
+                Agreement.shared_ecosystem_ids.isnot(None),
+            )
+        )
 
     if "type" in args and args["type"]:
         stmt = stmt.where(Agreement.type == args["type"])
@@ -172,6 +178,22 @@ async def search_agreements(args: dict, db: AsyncSession, ecosystem_ids: list | 
     stmt = stmt.limit(20)
     result = await db.execute(stmt)
     rows = result.scalars().all()
+
+    # Post-filter shared ecosystem agreements: keep if any selected ecosystem
+    # appears in the agreement's shared_ecosystem_ids list
+    if ecosystem_ids:
+        eco_id_strs = {str(eid) for eid in ecosystem_ids}
+        filtered = []
+        for a in rows:
+            # Always keep agreements owned by a selected ecosystem
+            if str(a.ecosystem_id) in eco_id_strs:
+                filtered.append(a)
+            elif a.shared_ecosystem_ids:
+                # Keep if any shared ID overlaps with selected
+                shared = {str(sid) for sid in a.shared_ecosystem_ids}
+                if shared & eco_id_strs:
+                    filtered.append(a)
+        rows = filtered
 
     if not rows:
         return {
@@ -196,6 +218,9 @@ async def search_agreements(args: dict, db: AsyncSession, ecosystem_ids: list | 
             "type": a.type,
             "status": a.status,
             "domain": a.domain,
+            "ecosystem_name": a.ecosystem.name if a.ecosystem else None,
+            "ecosystem_id": str(a.ecosystem_id),
+            "shared_ecosystem_ids": a.shared_ecosystem_ids,
             "created_date": str(a.created_date) if a.created_date else None,
         }
         for a in rows_sorted
@@ -215,13 +240,29 @@ async def get_agreement(args: dict, db: AsyncSession, ecosystem_ids: list | None
 
     stmt = (
         select(Agreement)
-        .options(selectinload(Agreement.ratification_records))
+        .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ecosystem))
         .where(Agreement.agreement_id == agreement_id)
     )
     if ecosystem_ids:
-        stmt = stmt.where(Agreement.ecosystem_id.in_(ecosystem_ids))
+        # Allow access if owned by or shared with any selected ecosystem
+        eco_id_strs = [str(eid) for eid in ecosystem_ids]
+        stmt = stmt.where(
+            or_(
+                Agreement.ecosystem_id.in_(ecosystem_ids),
+                Agreement.shared_ecosystem_ids.isnot(None),
+            )
+        )
     result = await db.execute(stmt)
     agr = result.scalars().first()
+
+    # Post-filter shared access
+    if agr and ecosystem_ids:
+        eco_id_strs_set = {str(eid) for eid in ecosystem_ids}
+        if str(agr.ecosystem_id) not in eco_id_strs_set:
+            shared = {str(sid) for sid in (agr.shared_ecosystem_ids or [])}
+            if not (shared & eco_id_strs_set):
+                agr = None
+
     if agr is None:
         return {"success": False, "error": f"Agreement '{agreement_id}' not found."}
 
@@ -246,6 +287,9 @@ async def get_agreement(args: dict, db: AsyncSession, ecosystem_ids: list | None
         "domain": agr.domain,
         "text": agr.text,
         "hierarchy_level": agr.hierarchy_level,
+        "ecosystem_name": agr.ecosystem.name if agr.ecosystem else None,
+        "ecosystem_id": str(agr.ecosystem_id),
+        "shared_ecosystem_ids": agr.shared_ecosystem_ids,
         "review_date": str(agr.review_date) if agr.review_date else None,
         "sunset_date": str(agr.sunset_date) if agr.sunset_date else None,
         "ratification_date": str(agr.ratification_date) if agr.ratification_date else None,

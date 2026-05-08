@@ -328,6 +328,7 @@ def assemble_system_prompt(
     skill_registry: SkillRegistry | None = None,
     page_context: str | None = None,
     ecosystem_names: list[str] | None = None,
+    selected_ecosystem_ids: list[str] | None = None,
 ) -> str:
     """Assemble the complete system prompt from all three layers.
 
@@ -344,6 +345,8 @@ def assemble_system_prompt(
         Optional page the user is currently viewing (e.g. "agreements").
     ecosystem_names:
         List of ecosystem names the agent is scoped to.
+    selected_ecosystem_ids:
+        Validated list of ecosystem UUIDs the user has selected.
     """
     # Resolve ecosystem names list (prefer new param, fall back to legacy)
     names = ecosystem_names or ([ecosystem_name] if ecosystem_name else ["NEOS"])
@@ -362,6 +365,27 @@ def assemble_system_prompt(
         skill_index = []
 
     foundation = build_foundation_prompt(names, skill_index)
+
+    # Append active ecosystem scope context
+    if selected_ecosystem_ids and len(names) > 0:
+        eco_context_parts = ["\n\n## Active Ecosystem Scope\n"]
+        if len(names) == 1:
+            eco_context_parts.append(f"You are operating within **{names[0]}**.")
+        else:
+            eco_list = ", ".join(f"**{n}**" for n in names)
+            eco_context_parts.append(
+                f"The user has {len(names)} ecosystems active: {eco_list}.\n"
+                "All tool queries will span these ecosystems. "
+                "When searching agreements, members, domains, or decisions, results include data from all active ecosystems.\n\n"
+                "### Cross-Ecosystem Agreements\n"
+                "Agreements can be linked across domains between ecosystems. "
+                "When the user is working across multiple ecosystems:\n"
+                "- Search results may include agreements from different ecosystems — note which ecosystem each belongs to.\n"
+                "- When drafting agreements, clarify which ecosystem the agreement will belong to.\n"
+                "- Shared agreements (e.g. collaboration protocols, shared domain agreements) may reference domains in multiple ecosystems.\n"
+                "- Respect each ecosystem's governance autonomy — an agreement in one ecosystem does not automatically apply to another."
+            )
+        foundation += "\n".join(eco_context_parts)
 
     # Append page context hint
     if page_context and page_context in _PAGE_CONTEXT_HINTS:
