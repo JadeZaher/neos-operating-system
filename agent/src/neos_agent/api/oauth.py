@@ -274,9 +274,9 @@ async def oauth_callback(request: Request, provider: str):
         path="/",
     )
     # Log cookie info
-    logger.info("OAuth response: Location=%s, cookies=%s",
-                response.headers.get("location"),
-                list(response.cookies.keys()))
+    logger.info("OAuth response: status=%s, Location=%s, has_cookie=%s",
+                response.status, response.headers.get("location"),
+                "neos_session" in str(response.cookies))
     return response
 
 
