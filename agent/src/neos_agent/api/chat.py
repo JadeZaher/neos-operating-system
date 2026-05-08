@@ -196,15 +196,26 @@ async def send_message(request: Request):
             page_hint = _page_to_context(page_context)
             matched_skill = _match_skill(message, registry)
 
+            # Use validated ecosystem scope from auth middleware (anti-spoof:
+            # middleware already filters cookie IDs to only those the user
+            # has active membership in).
+            eco_scope = getattr(request.ctx, "ecosystem_scope", None)
             ecosystem_names = []
-            if hasattr(member, "ecosystem") and member.ecosystem:
+            validated_eco_ids = []
+            if eco_scope and eco_scope.selected:
+                ecosystem_names = [e.name for e in eco_scope.selected]
+                validated_eco_ids = [str(eid) for eid in eco_scope.selected_ids]
+            elif hasattr(member, "ecosystem") and member.ecosystem:
                 ecosystem_names = [member.ecosystem.name]
+                if member.ecosystem_id:
+                    validated_eco_ids = [str(member.ecosystem_id)]
 
             system_prompt = assemble_system_prompt(
                 active_skill=matched_skill,
                 skill_registry=registry,
                 page_context=page_hint,
                 ecosystem_names=ecosystem_names or None,
+                selected_ecosystem_ids=validated_eco_ids or None,
             )
 
             # Notify client which skill was matched
@@ -286,10 +297,7 @@ async def send_message(request: Request):
                         db_factory = getattr(request.app.ctx, "db", None)
                         if db_factory:
                             async with db_factory() as db:
-                                ecosystem_ids = None
-                                if hasattr(member, "ecosystem_id") and member.ecosystem_id:
-                                    ecosystem_ids = [str(member.ecosystem_id)]
-                                result = await execute_tool(tool_name, tool_args, db, ecosystem_ids=ecosystem_ids)
+                                result = await execute_tool(tool_name, tool_args, db, ecosystem_ids=validated_eco_ids or None)
                         else:
                             result = {"success": False, "error": "Database unavailable"}
                     except Exception as e:
