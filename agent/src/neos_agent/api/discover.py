@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 
 from neos_agent.db.course_models import Course, Quiz, QuizResult
 from neos_agent.db.models import Ecosystem, Member, SharesNeeds, Collaboration, Domain
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +310,242 @@ async def list_shares_needs(request: Request):
             })
 
     return json({"items": items, "total": total, "page": page, "per_page": per_page})
+
+
+# ---------------------------------------------------------------------------
+# Shares / Needs — Admin Management
+# ---------------------------------------------------------------------------
+
+
+@discover_api_bp.get("/shares-needs/admin")
+async def admin_list_shares_needs(request: Request):
+    """GET /api/v1/discover/shares-needs/admin -- Admin list of ALL shares & needs.
+
+    Unlike the public endpoint, this returns items regardless of visibility or status.
+    Query params:
+        q            – search term
+        type         – filter by "share" or "need"
+        category     – category filter
+        status       – status filter (active, fulfilled, withdrawn)
+        ecosystem_id – filter to a specific ecosystem UUID
+        page         – pagination page (default 1)
+        per_page     – items per page (default 50, max 100)
+    """
+    member, err = require_admin(request)
+    if err:
+        return err
+
+    search = request.args.get("q", "").strip()
+    type_filter = request.args.get("type")
+    category_filter = request.args.get("category")
+    status_filter = request.args.get("status")
+    ecosystem_id_filter = request.args.get("ecosystem_id")
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(100, max(1, int(request.args.get("per_page", 50))))
+    offset = (page - 1) * per_page
+
+    filters = []
+    if search:
+        pattern = f"%{_escape_like(search)}%"
+        filters.append(SharesNeeds.title.ilike(pattern) | SharesNeeds.description.ilike(pattern))
+    if type_filter:
+        filters.append(SharesNeeds.type == type_filter)
+    if category_filter:
+        filters.append(SharesNeeds.category == category_filter)
+    if status_filter:
+        filters.append(SharesNeeds.status == status_filter)
+    if ecosystem_id_filter:
+        try:
+            filters.append(SharesNeeds.ecosystem_id == uuid.UUID(ecosystem_id_filter))
+        except ValueError:
+            return json({"error": "Invalid ecosystem_id"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        total_row = await session.execute(
+            select(func.count(SharesNeeds.id)).where(*filters)
+        )
+        total = total_row.scalar() or 0
+
+        stmt = (
+            select(SharesNeeds)
+            .where(*filters)
+            .order_by(SharesNeeds.created_at.desc())
+            .offset(offset)
+            .limit(per_page)
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+
+        # Bulk-load domain names
+        domain_ids = list({r.domain_id for r in rows})
+        domain_names: dict[uuid.UUID, str] = {}
+        if domain_ids:
+            d_rows = await session.execute(
+                select(Domain.id, Domain.domain_id).where(Domain.id.in_(domain_ids))
+            )
+            for d in d_rows:
+                domain_names[d.id] = d.domain_id
+
+        # Bulk-load ecosystem names
+        eco_ids = list({r.ecosystem_id for r in rows})
+        eco_names: dict[uuid.UUID, str] = {}
+        if eco_ids:
+            e_rows = await session.execute(
+                select(Ecosystem.id, Ecosystem.name).where(Ecosystem.id.in_(eco_ids))
+            )
+            for e in e_rows:
+                eco_names[e.id] = e.name
+
+        # Stats
+        stats_row = await session.execute(
+            select(
+                func.count(SharesNeeds.id).label("total"),
+                func.sum(func.case((SharesNeeds.type == "share", 1), else_=0)).label("shares"),
+                func.sum(func.case((SharesNeeds.type == "need", 1), else_=0)).label("needs"),
+                func.sum(func.case((SharesNeeds.status == "active", 1), else_=0)).label("active"),
+                func.sum(func.case((SharesNeeds.status == "fulfilled", 1), else_=0)).label("fulfilled"),
+                func.sum(func.case((SharesNeeds.status == "withdrawn", 1), else_=0)).label("withdrawn"),
+            )
+        )
+        stats = stats_row.first()
+
+        items = []
+        for r in rows:
+            items.append({
+                "id": str(r.id),
+                "ecosystem_id": str(r.ecosystem_id),
+                "ecosystem_name": eco_names.get(r.ecosystem_id),
+                "domain_id": str(r.domain_id),
+                "domain_name": domain_names.get(r.domain_id),
+                "type": r.type,
+                "title": r.title,
+                "description": r.description,
+                "category": r.category,
+                "capacity": r.capacity,
+                "tags": r.tags if isinstance(r.tags, list) else [],
+                "visibility": r.visibility,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+
+    return json({
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "stats": {
+            "total": stats.total or 0,
+            "shares": stats.shares or 0,
+            "needs": stats.needs or 0,
+            "active": stats.active or 0,
+            "fulfilled": stats.fulfilled or 0,
+            "withdrawn": stats.withdrawn or 0,
+        },
+    })
+
+
+@discover_api_bp.put("/shares-needs/<sn_id:str>")
+async def update_share_need(request: Request, sn_id: str):
+    """PUT /api/v1/discover/shares-needs/<id> -- Update a share or need (admin)."""
+    member, err = require_admin(request)
+    if err:
+        return err
+
+    try:
+        sn_uuid = uuid.UUID(sn_id)
+    except ValueError:
+        return json({"error": "Invalid ID"}, status=400)
+
+    body = request.json or {}
+    allowed_fields = {"title", "description", "category", "capacity", "tags", "visibility", "domain_id", "ecosystem_id"}
+    update_data = {k: v for k, v in body.items() if k in allowed_fields}
+
+    if not update_data:
+        return json({"error": "No valid fields to update"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        record = await session.get(SharesNeeds, sn_uuid)
+        if not record:
+            return json({"error": "Share/Need not found"}, status=404)
+
+        for key, value in update_data.items():
+            setattr(record, key, value)
+
+        await session.commit()
+        await session.refresh(record)
+
+    return json({
+        "id": str(record.id),
+        "ecosystem_id": str(record.ecosystem_id),
+        "domain_id": str(record.domain_id),
+        "type": record.type,
+        "title": record.title,
+        "description": record.description,
+        "category": record.category,
+        "capacity": record.capacity,
+        "tags": record.tags if isinstance(record.tags, list) else [],
+        "visibility": record.visibility,
+        "status": record.status,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    })
+
+
+@discover_api_bp.post("/shares-needs/<sn_id:str>/status")
+async def update_share_need_status(request: Request, sn_id: str):
+    """POST /api/v1/discover/shares-needs/<id>/status -- Change status (admin)."""
+    member, err = require_admin(request)
+    if err:
+        return err
+
+    try:
+        sn_uuid = uuid.UUID(sn_id)
+    except ValueError:
+        return json({"error": "Invalid ID"}, status=400)
+
+    body = request.json or {}
+    new_status = body.get("status")
+    if new_status not in ("active", "fulfilled", "withdrawn"):
+        return json({"error": "Status must be 'active', 'fulfilled', or 'withdrawn'"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        record = await session.get(SharesNeeds, sn_uuid)
+        if not record:
+            return json({"error": "Share/Need not found"}, status=404)
+
+        old_status = record.status
+        record.status = new_status
+        await session.commit()
+        await session.refresh(record)
+
+    return json({
+        "id": str(record.id),
+        "type": record.type,
+        "title": record.title,
+        "status": record.status,
+        "previous_status": old_status,
+    })
+
+
+@discover_api_bp.delete("/shares-needs/<sn_id:str>")
+async def delete_share_need(request: Request, sn_id: str):
+    """DELETE /api/v1/discover/shares-needs/<id> -- Delete a share or need (admin)."""
+    member, err = require_admin(request)
+    if err:
+        return err
+
+    try:
+        sn_uuid = uuid.UUID(sn_id)
+    except ValueError:
+        return json({"error": "Invalid ID"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        record = await session.get(SharesNeeds, sn_uuid)
+        if not record:
+            return json({"error": "Share/Need not found"}, status=404)
+
+        await session.delete(record)
+        await session.commit()
+
+    return json({"ok": True, "message": "Share/Need deleted"})
 
 
 @discover_api_bp.post("/shares-needs")
