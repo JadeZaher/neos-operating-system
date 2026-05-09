@@ -5,8 +5,10 @@ Blueprint: chat_api_bp, url_prefix="/api/v1/chat"
 Provides an agentic SSE streaming chat with:
 - Full governance system prompt (skills, principles, page context)
 - 23 governance tools via tool_use
-- Skill matching from trigger conditions
-- Token usage logging
+- Persistent sessions saved to AgentSession DB
+- Conversation history (up to 20 user messages per session)
+- Skill transitions via SkillRouter transition patterns
+- Session listing, search, and detail retrieval
 - Privacy / sharing for sessions
 """
 from __future__ import annotations
@@ -17,16 +19,16 @@ import secrets
 import uuid
 import datetime as _dt
 
-from pydantic import BaseModel
 from sanic import Blueprint, json as json_response
 from sanic.request import Request
 from sanic.response import ResponseStream
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from neos_agent.db.models import AgentSession
-from neos_agent.ai.provider import is_ai_enabled
+from neos_agent.ai.provider import acompletion, is_ai_enabled
 from neos_agent.agent.governance_tools import get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
+from neos_agent.agent.router import SkillRouter
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +37,17 @@ chat_api_bp = Blueprint("chat_api", url_prefix="/api/v1/chat")
 # Maximum agentic loop iterations to prevent runaway tool chains
 _MAX_TOOL_ROUNDS = 8
 
+# Hard limit on conversation length (user messages).
+# The frontend should warn before hitting this; the backend enforces it.
+_MAX_CONVERSATION_MESSAGES = 20
+
+# Shared router instance
+_skill_router = SkillRouter()
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-class ChatSendRequest(BaseModel):
-    message: str
-    session_id: str | None = None
-
-
-class ChatSessionSchema(BaseModel):
-    id: str
-    title: str | None = None
-    created_at: str
 
 
 def _sse_event(event: str, data: str) -> str:
@@ -58,43 +57,28 @@ def _sse_event(event: str, data: str) -> str:
     return f"event: {event}\n{data_lines}\n\n"
 
 
-def _match_skill(message: str, registry) -> str | None:
-    """Match user message to a skill via trigger condition keywords.
+def _sanitize_history(raw_history: list[dict]) -> list[dict]:
+    """Validate and sanitize conversation history from the client.
 
-    Scans Section C (Trigger Conditions) of each skill for keyword overlap
-    with the user's message. Returns the best-matching skill name, or None.
+    Only keeps user/assistant text messages (no tool messages — those are
+    replayed within a single request's agentic loop, not across requests).
+    Enforces the hard message limit.
     """
-    if not registry or not registry.is_loaded:
-        return None
-
-    msg_lower = message.lower()
-    best_skill = None
-    best_score = 0
-
-    for skill in registry.all_skills():
-        try:
-            parsed = registry.get(skill.name)
-        except KeyError:
+    clean: list[dict] = []
+    user_count = 0
+    for entry in raw_history:
+        role = entry.get("role")
+        content = entry.get("content", "")
+        if role not in ("user", "assistant"):
             continue
-
-        trigger_text = (parsed.content.sections or {}).get("C", "") or ""
-        if not trigger_text:
+        if not isinstance(content, str):
             continue
-
-        # Simple keyword overlap scoring
-        trigger_words = set(trigger_text.lower().split())
-        msg_words = set(msg_lower.split())
-        # Filter out tiny words
-        trigger_words = {w for w in trigger_words if len(w) > 3}
-        overlap = trigger_words & msg_words
-        score = len(overlap)
-
-        if score > best_score:
-            best_score = score
-            best_skill = skill.name
-
-    # Require at least 2 keyword matches to activate a skill
-    return best_skill if best_score >= 2 else None
+        if role == "user":
+            user_count += 1
+            if user_count > _MAX_CONVERSATION_MESSAGES:
+                break
+        clean.append({"role": role, "content": content})
+    return clean
 
 
 def _page_to_context(page_context: dict | None) -> str | None:
@@ -102,12 +86,85 @@ def _page_to_context(page_context: dict | None) -> str | None:
     if not page_context:
         return None
     path = page_context.get("path", "")
-    # Match known governance page segments
     for segment in ["agreements", "proposals", "domains", "members", "conflicts",
                      "safeguards", "emergency", "decisions", "exit", "onboarding", "discover"]:
         if segment in path:
             return segment
     return None
+
+
+def _generate_title(messages: list[dict]) -> str | None:
+    """Extract a title from the first user message."""
+    for m in messages:
+        if m.get("role") == "user":
+            content = m.get("content", "")
+            if isinstance(content, str) and content.strip():
+                return content.strip()[:80]
+    return None
+
+
+async def _save_session(
+    request: Request,
+    session_id: str | None,
+    member,
+    messages: list[dict],
+    skill_name: str | None,
+    total_usage: dict,
+    ecosystem_id: uuid.UUID | None,
+    ecosystem_ids: list[str] | None,
+) -> str:
+    """Persist conversation to AgentSession. Returns the session ID."""
+    db_factory = getattr(request.app.ctx, "db", None)
+    if not db_factory:
+        return session_id or str(uuid.uuid4())
+
+    # Only save user/assistant text messages (not tool messages from the loop)
+    storable = [m for m in messages if m.get("role") in ("user", "assistant")]
+
+    try:
+        async with db_factory() as db:
+            sess = None
+            if session_id:
+                result = await db.execute(
+                    select(AgentSession).where(
+                        AgentSession.id == uuid.UUID(session_id),
+                        AgentSession.member_id == member.id,
+                    )
+                )
+                sess = result.scalar_one_or_none()
+
+            if sess:
+                # Update existing session
+                sess.context = {"messages": storable}
+                sess.skill_name = skill_name
+                sess.total_tokens_used = (sess.total_tokens_used or 0) + total_usage.get("total_tokens", 0)
+                if not sess.title:
+                    sess.title = _generate_title(storable)
+            else:
+                # Create new session
+                eco_id = ecosystem_id or (member.ecosystem_id if hasattr(member, "ecosystem_id") else None)
+                if not eco_id:
+                    logger.warning("Cannot save session: no ecosystem_id available")
+                    return session_id or str(uuid.uuid4())
+                new_id = uuid.uuid4()
+                sess = AgentSession(
+                    id=new_id,
+                    ecosystem_id=eco_id,
+                    ecosystem_ids=[str(e) for e in ecosystem_ids] if ecosystem_ids else None,
+                    member_id=member.id,
+                    skill_name=skill_name,
+                    title=_generate_title(storable),
+                    context={"messages": storable},
+                    total_tokens_used=total_usage.get("total_tokens", 0),
+                )
+                db.add(sess)
+                session_id = str(new_id)
+
+            await db.commit()
+            return str(sess.id)
+    except Exception:
+        logger.exception("Failed to save chat session")
+        return session_id or str(uuid.uuid4())
 
 
 # ---------------------------------------------------------------------------
@@ -117,40 +174,125 @@ def _page_to_context(page_context: dict | None) -> str | None:
 
 @chat_api_bp.get("/sessions")
 async def list_sessions(request: Request):
-    """GET /api/v1/chat/sessions — List chat sessions for current member."""
+    """GET /api/v1/chat/sessions — List chat sessions for current member.
+
+    Query params:
+        q: Optional search string to filter by title
+        limit: Max results (default 30, max 50)
+        offset: Pagination offset (default 0)
+    """
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json_response({"error": "Authentication required"}, status=401)
+
+    q = request.args.get("q", "").strip()
+    try:
+        limit = min(int(request.args.get("limit", "30")), 50)
+    except ValueError:
+        limit = 30
+    try:
+        offset = max(int(request.args.get("offset", "0")), 0)
+    except ValueError:
+        offset = 0
+
+    try:
+        async with request.app.ctx.db() as session:
+            query = (
+                select(AgentSession)
+                .where(AgentSession.member_id == member.id)
+                .order_by(AgentSession.updated_at.desc())
+            )
+
+            if q:
+                query = query.where(AgentSession.title.ilike(f"%{q}%"))
+
+            query = query.offset(offset).limit(limit)
+
+            result = await session.execute(query)
+            sessions = result.scalars().all()
+
+            items = []
+            for s in sessions:
+                msgs = (s.context or {}).get("messages", [])
+                title = s.title
+                if not title:
+                    title = _generate_title(msgs)
+                msg_count = len([m for m in msgs if m.get("role") == "user"])
+                items.append({
+                    "id": str(s.id),
+                    "title": title,
+                    "skill": s.skill_name,
+                    "message_count": msg_count,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                })
+
+            return json_response({"sessions": items})
+    except Exception:
+        logger.exception("Failed to list chat sessions")
+        return json_response({"sessions": []})
+
+
+@chat_api_bp.get("/sessions/<session_id:str>")
+async def get_session(request: Request, session_id: str):
+    """GET /api/v1/chat/sessions/:id — Load a specific chat session with messages."""
     member = getattr(request.ctx, "member", None)
     if not member:
         return json_response({"error": "Authentication required"}, status=401)
 
     try:
-        async with request.app.ctx.db() as session:
-            result = await session.execute(
-                select(AgentSession)
-                .where(AgentSession.member_id == member.id)
-                .order_by(AgentSession.updated_at.desc())
-                .limit(20)
+        async with request.app.ctx.db() as db:
+            result = await db.execute(
+                select(AgentSession).where(
+                    AgentSession.id == uuid.UUID(session_id),
+                    AgentSession.member_id == member.id,
+                )
             )
-            sessions = result.scalars().all()
-            items = []
-            for s in sessions:
-                messages = (s.context or {}).get("messages", [])
-                title = s.title
-                if not title and messages:
-                    for m in messages:
-                        if m.get("role") == "user":
-                            content = m.get("content", "")
-                            if isinstance(content, str):
-                                title = content[:80]
-                            break
-                items.append({
-                    "id": str(s.id),
-                    "title": title,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                })
-            return json_response({"sessions": items})
+            sess = result.scalar_one_or_none()
+            if not sess:
+                return json_response({"error": "Session not found"}, status=404)
+
+            msgs = (sess.context or {}).get("messages", [])
+            return json_response({
+                "id": str(sess.id),
+                "title": sess.title,
+                "skill": sess.skill_name,
+                "privacy": sess.privacy,
+                "share_token": sess.share_token,
+                "messages": msgs,
+                "created_at": sess.created_at.isoformat() if sess.created_at else None,
+                "updated_at": sess.updated_at.isoformat() if sess.updated_at else None,
+            })
     except Exception:
-        logger.exception("Failed to list chat sessions")
-        return json_response({"sessions": []})
+        logger.exception("Failed to load chat session")
+        return json_response({"error": "Internal error"}, status=500)
+
+
+@chat_api_bp.delete("/sessions/<session_id:str>")
+async def delete_session(request: Request, session_id: str):
+    """DELETE /api/v1/chat/sessions/:id — Delete a chat session."""
+    member = getattr(request.ctx, "member", None)
+    if not member:
+        return json_response({"error": "Authentication required"}, status=401)
+
+    try:
+        async with request.app.ctx.db() as db:
+            result = await db.execute(
+                select(AgentSession).where(
+                    AgentSession.id == uuid.UUID(session_id),
+                    AgentSession.member_id == member.id,
+                )
+            )
+            sess = result.scalar_one_or_none()
+            if not sess:
+                return json_response({"error": "Session not found"}, status=404)
+
+            await db.delete(sess)
+            await db.commit()
+            return json_response({"ok": True})
+    except Exception:
+        logger.exception("Failed to delete chat session")
+        return json_response({"error": "Internal error"}, status=500)
 
 
 @chat_api_bp.post("/send")
@@ -159,7 +301,7 @@ async def send_message(request: Request):
 
     Runs a tool-use loop: sends messages to the AI with governance tools,
     executes any tool calls, feeds results back, and streams everything
-    as SSE events (append, tool_start, tool_result, usage, done).
+    as SSE events (append, tool_start, tool_result, usage, session, done).
     """
     member = getattr(request.ctx, "member", None)
     if not member:
@@ -171,6 +313,17 @@ async def send_message(request: Request):
         return json_response({"error": "Message is required"}, status=400)
 
     page_context = body.get("page_context")
+    raw_history = body.get("history", [])
+    active_skill = body.get("active_skill")
+    session_id = body.get("session_id")
+
+    # Enforce conversation limit server-side
+    history = _sanitize_history(raw_history) if isinstance(raw_history, list) else []
+    user_msg_count = sum(1 for m in history if m["role"] == "user") + 1
+    if user_msg_count > _MAX_CONVERSATION_MESSAGES:
+        return json_response({
+            "error": f"Conversation limit reached ({_MAX_CONVERSATION_MESSAGES} messages). Please start a new conversation.",
+        }, status=400)
 
     if not is_ai_enabled():
         async def disabled_stream(response):
@@ -185,71 +338,62 @@ async def send_message(request: Request):
         )
 
     async def chat_stream(response):
+        nonlocal session_id
         try:
-            import litellm
-            from neos_agent.config import get_settings
-            settings = get_settings()
-
             registry = getattr(request.app.ctx, "skills", None)
 
             # --- Build system prompt with skill awareness ---
             page_hint = _page_to_context(page_context)
-            matched_skill = _match_skill(message, registry)
+            current_skill = active_skill
 
-            # Use validated ecosystem scope from auth middleware (anti-spoof:
-            # middleware already filters cookie IDs to only those the user
-            # has active membership in).
+            # Use validated ecosystem scope from auth middleware
             eco_scope = getattr(request.ctx, "ecosystem_scope", None)
             ecosystem_names = []
             validated_eco_ids = []
+            ecosystem_id = None
             if eco_scope and eco_scope.selected:
                 ecosystem_names = [e.name for e in eco_scope.selected]
                 validated_eco_ids = [str(eid) for eid in eco_scope.selected_ids]
+                ecosystem_id = eco_scope.selected_ids[0] if eco_scope.selected_ids else None
             elif hasattr(member, "ecosystem") and member.ecosystem:
                 ecosystem_names = [member.ecosystem.name]
                 if member.ecosystem_id:
                     validated_eco_ids = [str(member.ecosystem_id)]
+                    ecosystem_id = member.ecosystem_id
 
             system_prompt = assemble_system_prompt(
-                active_skill=matched_skill,
+                active_skill=current_skill,
                 skill_registry=registry,
                 page_context=page_hint,
                 ecosystem_names=ecosystem_names or None,
                 selected_ecosystem_ids=validated_eco_ids or None,
             )
 
-            # Notify client which skill was matched
-            if matched_skill:
-                await response.write(_sse_event("skill", matched_skill))
+            if current_skill:
+                await response.write(_sse_event("skill", current_skill))
 
             # --- Prepare tool definitions ---
-            tools = get_tool_definitions()
+            tool_defs = get_tool_definitions()
+            tools_for_api = [{"type": "function", "function": t} for t in tool_defs] if tool_defs else None
 
             # --- Agentic loop ---
-            messages = [{"role": "user", "content": message}]
+            messages = history + [{"role": "user", "content": message}]
             total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-            litellm.drop_params = True
-            base_kwargs = {
-                "model": settings.AI_MODEL,
-                "api_key": settings.AI_API_KEY,
-                "temperature": 0.7,
-                "max_tokens": 2048,
-                "timeout": 60,
-            }
-            if settings.AI_BASE_URL:
-                base_kwargs["api_base"] = settings.AI_BASE_URL
-
             for _ in range(_MAX_TOOL_ROUNDS):
-                # Non-streaming call to support tool_use detection
-                resp = await litellm.acompletion(
-                    **base_kwargs,
-                    messages=[{"role": "system", "content": system_prompt}] + messages,
-                    tools=[{"type": "function", "function": t} for t in tools] if tools else None,
-                    stream=False,
+                resp = await acompletion(
+                    messages=messages,
+                    system=system_prompt,
+                    tools=tools_for_api,
+                    max_tokens=2048,
+                    timeout=60,
                 )
 
-                # Accumulate usage (litellm types are dynamic)
+                if resp is None:
+                    await response.write(_sse_event("append", "AI service is not available."))
+                    break
+
+                # Accumulate usage
                 usage = getattr(resp, "usage", None)
                 if usage:
                     total_usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
@@ -263,19 +407,16 @@ async def send_message(request: Request):
 
                 assistant_msg = choice.message
 
-                # Stream any text content
                 if assistant_msg.content:
                     await response.write(_sse_event("append", assistant_msg.content))
 
                 # Check for tool calls
                 tool_calls = getattr(assistant_msg, "tool_calls", None)
                 if not tool_calls or choice.finish_reason != "tool_calls":
-                    # No tool calls — we're done
                     messages.append({"role": "assistant", "content": assistant_msg.content or ""})
                     break
 
                 # Process tool calls
-                # Add assistant message with tool_calls to conversation
                 messages.append(assistant_msg.model_dump())
 
                 for tc in tool_calls:
@@ -286,13 +427,11 @@ async def send_message(request: Request):
                     except json.JSONDecodeError:
                         tool_args = {}
 
-                    # Notify client: tool starting
                     await response.write(_sse_event("tool_start", json.dumps({
                         "name": tool_name,
                         "args": tool_args,
                     })))
 
-                    # Execute the tool
                     try:
                         db_factory = getattr(request.app.ctx, "db", None)
                         if db_factory:
@@ -304,7 +443,6 @@ async def send_message(request: Request):
                         logger.exception("Tool execution failed: %s", tool_name)
                         result = {"success": False, "error": str(e)}
 
-                    # Notify client: tool result
                     await response.write(_sse_event("tool_result", json.dumps({
                         "name": tool_name,
                         "success": result.get("success", False),
@@ -312,14 +450,44 @@ async def send_message(request: Request):
                         "error": result.get("error") if not result.get("success") else None,
                     })))
 
-                    # Add tool result to conversation
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": json.dumps(result),
                     })
 
-                # Loop continues — model will process tool results
+                # --- Skill transition detection via router ---
+                if current_skill:
+                    round_tool_calls = []
+                    for tc in tool_calls:
+                        fn = tc.function
+                        try:
+                            tc_args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                        except (json.JSONDecodeError, TypeError):
+                            tc_args = {}
+                        round_tool_calls.append({
+                            "name": fn.name,
+                            "args": tc_args,
+                            "success": True,
+                        })
+
+                    new_skill = _skill_router.detect_transition(
+                        current_skill, round_tool_calls, "",
+                    )
+                    if new_skill is not None and new_skill != current_skill:
+                        current_skill = new_skill
+                        await response.write(_sse_event("skill_transition", json.dumps({
+                            "from": active_skill,
+                            "to": new_skill,
+                        })))
+
+            # --- Persist session ---
+            session_id = await _save_session(
+                request, session_id, member, messages,
+                current_skill, total_usage,
+                ecosystem_id, validated_eco_ids,
+            )
+            await response.write(_sse_event("session", json.dumps({"session_id": session_id})))
 
             # Send usage
             if total_usage["total_tokens"] > 0:

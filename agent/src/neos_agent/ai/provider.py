@@ -20,7 +20,9 @@ async def acompletion(
     max_tokens: int = 1024,
     temperature: float = 0.7,
     stream: bool = False,
-) -> dict | None:
+    tools: list[dict] | None = None,
+    timeout: int = 30,
+):
     """Async completion via LiteLLM. Returns None if AI is disabled.
 
     Args:
@@ -30,10 +32,15 @@ async def acompletion(
         max_tokens: Maximum tokens in response
         temperature: Sampling temperature
         stream: If True, returns an async generator instead of dict
+        tools: Optional list of tool definitions for function calling.
+               When provided, returns the raw litellm response object
+               so callers can inspect tool_calls on the message.
+        timeout: Request timeout in seconds
 
     Returns:
         Dict with "content" key containing the response text, or None if disabled.
         If stream=True, returns an async generator yielding content chunks.
+        If tools are provided, returns the raw litellm response object.
     """
     try:
         import litellm
@@ -67,8 +74,11 @@ async def acompletion(
         "temperature": temperature,
         "api_key": api_key,
         "stream": stream,
-        "timeout": 30,
+        "timeout": timeout,
     }
+
+    if tools:
+        kwargs["tools"] = tools
 
     # Add base URL if configured (for self-hosted or custom endpoints)
     if settings.AI_BASE_URL:
@@ -79,6 +89,12 @@ async def acompletion(
             return await litellm.acompletion(**kwargs)
 
         response = await litellm.acompletion(**kwargs)
+
+        # When tools are provided, return the raw response so callers
+        # can inspect tool_calls, finish_reason, etc.
+        if tools:
+            return response
+
         content = response.choices[0].message.content if response.choices else ""
         return {"content": content, "model": resolved_model, "usage": dict(response.usage) if response.usage else None}
     except Exception as e:

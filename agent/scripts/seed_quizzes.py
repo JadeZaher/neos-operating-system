@@ -7,7 +7,7 @@ Usage:
 Creates:
   8 courses (2 per ecosystem: 1 ecosystem-wide, 1 domain-scoped)
   16 quizzes (2 per course: mix of standard, assessment, and onboarding)
-  16 quiz results (2 members x 2 quizzes x 4 ecosystems)
+  33 quiz results (16 existing + 8 collab + 4 onboarding + 4 failed + 1 retake)
   4 quiz progress records (leads in-progress on onboarding readiness)
   8 user tags (2 per ecosystem lead)
   4 user badges (1 per ecosystem lead)
@@ -496,7 +496,7 @@ async def seed(database_url: str) -> None:
         await session.flush()
 
         # ---------------------------------------------------------------
-        # Quiz Results (16 total)
+        # Quiz Results (33 total)
         # ---------------------------------------------------------------
         result_count = 0
 
@@ -507,6 +507,37 @@ async def seed(database_url: str) -> None:
             ("ps", "ps_design", m_rachel_id, "rachel", m_brandon_id, "brandon"),
             ("oa", "oa_protocol", m_max_id, "max", m_david_id, "david"),
         ]
+
+        collab_answers_lead = {
+            "collab_listening": 4,
+            "collab_action": 3,
+            "collab_harmony": 5,
+            "collab_structure": 4,
+            "collab_innovation": 3,
+            "collab_empathy": 5,
+        }
+        collab_answers_second = {
+            "collab_listening": 3,
+            "collab_action": 5,
+            "collab_harmony": 2,
+            "collab_structure": 5,
+            "collab_innovation": 4,
+            "collab_empathy": 3,
+        }
+        onboarding_answers_complete = {
+            "read_agreements": True,
+            "understand_consent": True,
+            "know_steward": True,
+            "expectations": "I want to contribute to collective governance and bring my skills to the community.",
+            "commitment": "3-5 hours",
+        }
+        gov_answers_failed = {
+            "q1": "Everyone must agree enthusiastically",  # wrong
+            "q2": "To make all decisions unilaterally",    # wrong
+            "q3": "Consent",                               # wrong
+            "q4": "Existential risk to the ecosystem",
+            "q5": "To delay membership",                   # wrong
+        }
 
         gov_answers_perfect = {
             "q1": "No one has a principled objection",
@@ -588,6 +619,71 @@ async def seed(database_url: str) -> None:
                 completed_at=datetime.utcnow() - timedelta(days=4),
             ))
             result_count += 1
+
+            # Lead — collaboration style (assessment, no score/pass)
+            session.add(QuizResult(
+                id=_uid(f"qr.{eco_short}.{lead_short}.collab"),
+                quiz_id=_uid(f"quiz.dom.{domain_short}.collab"),
+                member_id=lead_id,
+                survey_results=collab_answers_lead,
+                score=None,
+                is_passed=None,
+                time_spent=120000,
+                completed_at=datetime.utcnow() - timedelta(days=5),
+            ))
+            result_count += 1
+
+            # Second member — collaboration style (assessment, no score/pass)
+            session.add(QuizResult(
+                id=_uid(f"qr.{eco_short}.{second_short}.collab"),
+                quiz_id=_uid(f"quiz.dom.{domain_short}.collab"),
+                member_id=second_id,
+                survey_results=collab_answers_second,
+                score=None,
+                is_passed=None,
+                time_spent=130000,
+                completed_at=datetime.utcnow() - timedelta(days=4),
+            ))
+            result_count += 1
+
+            # Second member — onboarding readiness (completed)
+            session.add(QuizResult(
+                id=_uid(f"qr.{eco_short}.{second_short}.onboard"),
+                quiz_id=_uid(f"quiz.eco.{eco_short}.onboard"),
+                member_id=second_id,
+                survey_results=onboarding_answers_complete,
+                score=None,
+                is_passed=True,
+                time_spent=180000,
+                completed_at=datetime.utcnow() - timedelta(days=6),
+            ))
+            result_count += 1
+
+            # Second member — failed governance attempt (before passing)
+            session.add(QuizResult(
+                id=_uid(f"qr.{eco_short}.{second_short}.gov.fail1"),
+                quiz_id=_uid(f"quiz.eco.{eco_short}.gov"),
+                member_id=second_id,
+                survey_results=gov_answers_failed,
+                score=20.0,
+                is_passed=False,
+                time_spent=210000,
+                completed_at=datetime.utcnow() - timedelta(days=10),
+            ))
+            result_count += 1
+
+        # Kenny (Escherbridge second) — domain knowledge retake (100%, improved)
+        session.add(QuizResult(
+            id=_uid("qr.eb.kenny.domain.retake1"),
+            quiz_id=_uid("quiz.dom.eb_art.know"),
+            member_id=m_kenny_id,
+            survey_results=domain_answers_perfect,
+            score=100.0,
+            is_passed=True,
+            time_spent=140000,
+            completed_at=datetime.utcnow() - timedelta(days=2),
+        ))
+        result_count += 1
 
         # ---------------------------------------------------------------
         # Quiz Progress (4 — leads in-progress on onboarding readiness)

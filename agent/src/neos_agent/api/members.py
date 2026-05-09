@@ -27,6 +27,14 @@ from neos_agent.db.models import (
     MemberStatusTransition,
     User,
 )
+from neos_agent.db.course_models import (
+    Course,
+    Quiz,
+    QuizProgress,
+    QuizResult,
+    UserBadge,
+    UserTag,
+)
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
 
 logger = logging.getLogger(__name__)
@@ -74,6 +82,16 @@ class OnboardingSnapshot(BaseModel):
 
 # Rebuild MemberDetail now that OnboardingSnapshot is defined
 MemberDetail.model_rebuild()
+
+
+class MemberProfileResponse(MemberDetail):
+    user_id: uuid.UUID
+    username: str | None = None
+    user_display_name: str | None = None
+    profile_picture: str | None = None
+    quiz_summary: dict
+    badges: list
+    tags: list
 
 
 class MemberCreateRequest(BaseModel):
@@ -190,6 +208,44 @@ def _member_to_detail(m: Member, ob: MemberOnboarding | None = None, user: User 
     ).model_dump(mode="json")
 
 
+def _member_to_profile(
+    m: Member,
+    ob: MemberOnboarding | None,
+    user: User | None,
+    quiz_summary: dict,
+    badges: list,
+    tags: list,
+) -> dict:
+    return MemberProfileResponse(
+        id=m.id,
+        member_id=m.member_id,
+        display_name=m.display_name,
+        current_status=m.current_status,
+        profile=m.profile,
+        phone=user.phone if user else None,
+        profile_picture=user.profile_picture if user else None,
+        onboarding_status=m.onboarding_status,
+        created_at=m.created_at,
+        ecosystem_id=m.ecosystem_id,
+        did=user.did if user else None,
+        skills_offered=m.skills_offered,
+        skills_needed=m.skills_needed,
+        interests=m.interests,
+        kyc_status=m.kyc_status,
+        last_governance_activity_date=m.last_governance_activity_date,
+        notes=m.notes,
+        privacy=m.privacy,
+        updated_at=m.updated_at,
+        onboarding=_onboarding_snapshot(ob),
+        user_id=user.id if user else m.user_id,
+        username=user.username if user else None,
+        user_display_name=user.display_name if user else None,
+        quiz_summary=quiz_summary,
+        badges=badges,
+        tags=tags,
+    ).model_dump(mode="json")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -276,6 +332,157 @@ async def get_member(request: Request, member_id: uuid.UUID):
         return json({"error": "Member not found"}, status=404)
 
     return json(_member_to_detail(m, ob=m.onboarding, user=m.user))
+
+
+@members_api_bp.get("/<member_id:uuid>/profile")
+async def get_member_profile(request: Request, member_id: uuid.UUID):
+    """GET /api/v1/members/:id/profile -- Enriched member profile.
+
+    Returns the full member + user schema plus quiz progress summary,
+    earned badges, and profile tags inline.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    eco_ids = get_ecosystem_ids(request)
+
+    async with request.app.ctx.db() as session:
+        stmt = (
+            select(Member)
+            .options(selectinload(Member.onboarding), selectinload(Member.user))
+            .where(Member.id == member_id)
+        )
+        if eco_ids:
+            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
+
+        result = await session.execute(stmt)
+        m = result.scalar_one_or_none()
+
+        if m is None:
+            return json({"error": "Member not found"}, status=404)
+
+        # Fetch all quiz results for this member
+        results_stmt = select(QuizResult).where(QuizResult.member_id == member_id)
+        quiz_results = (await session.execute(results_stmt)).scalars().all()
+
+        # Fetch in-progress quiz records
+        progress_stmt = select(QuizProgress).where(QuizProgress.member_id == member_id)
+        quiz_progress_rows = (await session.execute(progress_stmt)).scalars().all()
+
+        # Fetch published quizzes scoped to this member's ecosystem.
+        # A quiz belongs to this ecosystem if quiz.ecosystem_id matches directly,
+        # or if it belongs to a course in this ecosystem.
+        quizzes_stmt = (
+            select(Quiz)
+            .outerjoin(Quiz.course)
+            .where(Quiz.is_published.is_(True))
+            .where(
+                or_(
+                    Quiz.ecosystem_id == m.ecosystem_id,
+                    Course.ecosystem_id == m.ecosystem_id,
+                )
+            )
+        )
+        published_quizzes = (await session.execute(quizzes_stmt)).scalars().unique().all()
+
+        # Fetch badges and tags
+        badges_stmt = select(UserBadge).where(UserBadge.member_id == member_id)
+        badges = (await session.execute(badges_stmt)).scalars().all()
+
+        tags_stmt = select(UserTag).where(UserTag.member_id == member_id)
+        tags = (await session.execute(tags_stmt)).scalars().all()
+
+    # Build quiz summary
+    completed_ids = {r.quiz_id for r in quiz_results}
+    in_progress_ids = {p.quiz_id for p in quiz_progress_rows} - completed_ids
+    passed_ids = {r.quiz_id for r in quiz_results if r.is_passed}
+    total_available = len(published_quizzes)
+    not_started = max(0, total_available - len(completed_ids) - len(in_progress_ids))
+
+    # Best score per quiz (highest score among all attempts)
+    best_scores: dict[uuid.UUID, tuple[float | None, bool | None, _dt.datetime | None]] = {}
+    for r in quiz_results:
+        existing = best_scores.get(r.quiz_id)
+        if existing is None or (r.score is not None and (existing[0] is None or r.score > existing[0])):
+            best_scores[r.quiz_id] = (r.score, r.is_passed, r.completed_at)
+
+    quiz_list = []
+    for q in published_quizzes:
+        if q.id in completed_ids:
+            best = best_scores.get(q.id, (None, None, None))
+            quiz_list.append({
+                "quiz_id": str(q.id),
+                "quiz_title": q.title,
+                "status": "completed",
+                "score": best[0],
+                "is_passed": best[1],
+                "completed_at": best[2].isoformat() if best[2] else None,
+            })
+        elif q.id in in_progress_ids:
+            quiz_list.append({
+                "quiz_id": str(q.id),
+                "quiz_title": q.title,
+                "status": "in_progress",
+                "score": None,
+                "is_passed": None,
+                "completed_at": None,
+            })
+        else:
+            quiz_list.append({
+                "quiz_id": str(q.id),
+                "quiz_title": q.title,
+                "status": "not_started",
+                "score": None,
+                "is_passed": None,
+                "completed_at": None,
+            })
+
+    quiz_summary = {
+        "total_available": total_available,
+        "completed": len(completed_ids),
+        "passed": len(passed_ids),
+        "in_progress": len(in_progress_ids),
+        "not_started": not_started,
+        "quizzes": quiz_list,
+    }
+
+    badges_list = [
+        {
+            "id": str(b.id),
+            "badge_key": b.badge_key,
+            "badge_name": b.badge_name,
+            "badge_description": b.badge_description,
+            "badge_category": b.badge_category,
+            "badge_icon": b.badge_icon,
+            "strength": b.strength,
+            "earned_at": b.earned_at.isoformat() if b.earned_at else None,
+        }
+        for b in badges
+    ]
+
+    tags_list = [
+        {
+            "id": str(t.id),
+            "tag_key": t.tag_key,
+            "tag_value": t.tag_value,
+            "tag_category": t.tag_category,
+            "data_type": t.data_type,
+            "numeric_value": t.numeric_value,
+        }
+        for t in tags
+    ]
+
+    return json(
+        _member_to_profile(
+            m,
+            ob=m.onboarding,
+            user=m.user,
+            quiz_summary=quiz_summary,
+            badges=badges_list,
+            tags=tags_list,
+        )
+    )
 
 
 @members_api_bp.post("/")
