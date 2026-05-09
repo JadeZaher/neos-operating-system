@@ -2346,6 +2346,47 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
                 status="active",
             ))
 
+        # Extra shares/needs with varied statuses for admin demo
+        session.add(SharesNeeds(
+            id=_uid("sn.omni.fulfilled"),
+            ecosystem_id=eco_omni_id,
+            domain_id=dom_omni_gov_id,
+            type="need",
+            title="Community Governance Workshop Facilitator",
+            description="OmniOne needed an experienced facilitator for their quarterly governance workshop. This need has been fulfilled through the Escherbridge creative community.",
+            category="skill",
+            capacity="one-time",
+            tags=["facilitation", "workshop", "governance"],
+            visibility="public",
+            status="fulfilled",
+        ))
+        session.add(SharesNeeds(
+            id=_uid("sn.ps.withdrawn"),
+            ecosystem_id=eco_ps_id,
+            domain_id=dom_ps_design_id,
+            type="share",
+            title="Legacy 2D Planning Template Library",
+            description="Plan Systems previously offered a library of 2D planning templates. This share has been withdrawn as the templates have been migrated to the PLAN 3D platform.",
+            category="resource",
+            capacity="archived",
+            tags=["planning", "templates", "legacy"],
+            visibility="public",
+            status="withdrawn",
+        ))
+        session.add(SharesNeeds(
+            id=_uid("sn.oa.fulfilled"),
+            ecosystem_id=eco_oa_id,
+            domain_id=dom_oa_protocol_id,
+            type="need",
+            title="Smart Contract Security Audit Partner",
+            description="Oasis needed a security audit partner for their holonic interoperability layer. Need fulfilled by Plan Systems security team.",
+            category="skill",
+            capacity="project",
+            tags=["security", "audit", "smart-contracts"],
+            visibility="ecosystem",
+            status="fulfilled",
+        ))
+
         await session.flush()
 
         # ===============================================================

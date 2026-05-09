@@ -18,6 +18,16 @@ def require_auth(request: Request):
     return member, None
 
 
+def require_admin(request: Request):
+    """Return (member, None) if member has admin profile, or (None, 403_response)."""
+    member = getattr(request.ctx, "member", None)
+    if member is None:
+        return None, json({"error": "Authentication required"}, status=401)
+    if member.profile not in ("co_creator", "builder"):
+        return None, json({"error": "Admin access required"}, status=403)
+    return member, None
+
+
 def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
     """Return ecosystem IDs to filter by.
 
