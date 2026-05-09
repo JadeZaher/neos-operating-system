@@ -1,4 +1,4 @@
-"""23 governance MCP-style tools for the NEOS agent.
+"""29 governance MCP-style tools for the NEOS agent.
 
 Each tool is an async function with signature:
     async def handler(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict
@@ -1486,6 +1486,384 @@ async def create_repair_agreement(args: dict, db: AsyncSession, ecosystem_ids: l
 
 
 # ===================================================================
+# TOOL 24: list_ecosystems
+# ===================================================================
+
+async def list_ecosystems(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """List all ecosystems, optionally filtered by name, status, or visibility."""
+    stmt = select(Ecosystem).order_by(Ecosystem.name)
+
+    if args.get("name"):
+        stmt = stmt.where(Ecosystem.name.ilike(f"%{args['name']}%"))
+    if args.get("status"):
+        stmt = stmt.where(Ecosystem.status == args["status"])
+    if args.get("visibility"):
+        stmt = stmt.where(Ecosystem.visibility == args["visibility"])
+
+    result = await db.execute(stmt)
+    ecosystems = result.scalars().all()
+
+    data = [
+        {
+            "id": str(e.id),
+            "name": e.name,
+            "description": e.description,
+            "status": e.status,
+            "location": e.location,
+            "website": e.website,
+            "visibility": e.visibility,
+            "founded_date": str(e.founded_date) if e.founded_date else None,
+            "governance_summary": e.governance_summary,
+        }
+        for e in ecosystems
+    ]
+
+    return {
+        "success": True,
+        "data": {
+            "ecosystems": data,
+            "count": len(data),
+        },
+    }
+
+
+# ===================================================================
+# TOOL 25: get_ecosystem
+# ===================================================================
+
+async def get_ecosystem(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Get full ecosystem details by name, including member count, domain count, and agreement count."""
+    name = args.get("name", "")
+    if not name:
+        return {"success": False, "error": "'name' is required."}
+
+    stmt = select(Ecosystem).where(func.lower(Ecosystem.name) == name.lower())
+    result = await db.execute(stmt)
+    eco = result.scalars().first()
+
+    if eco is None:
+        # Try partial match
+        stmt2 = select(Ecosystem).where(Ecosystem.name.ilike(f"%{name}%"))
+        result2 = await db.execute(stmt2)
+        eco = result2.scalars().first()
+
+    if eco is None:
+        return {"success": False, "error": f"Ecosystem '{name}' not found."}
+
+    # Count members
+    member_count = await db.execute(
+        select(func.count()).select_from(Member).where(
+            Member.ecosystem_id == eco.id,
+            Member.current_status == "active",
+        )
+    )
+    member_count = member_count.scalar() or 0
+
+    # Count domains
+    domain_count = await db.execute(
+        select(func.count()).select_from(Domain).where(Domain.ecosystem_id == eco.id)
+    )
+    domain_count = domain_count.scalar() or 0
+
+    # Count agreements
+    agr_count = await db.execute(
+        select(func.count()).select_from(Agreement).where(Agreement.ecosystem_id == eco.id)
+    )
+    agr_count = agr_count.scalar() or 0
+
+    return {
+        "success": True,
+        "data": {
+            "id": str(eco.id),
+            "name": eco.name,
+            "description": eco.description,
+            "status": eco.status,
+            "location": eco.location,
+            "website": eco.website,
+            "contact_email": eco.contact_email,
+            "visibility": eco.visibility,
+            "founded_date": str(eco.founded_date) if eco.founded_date else None,
+            "tags": eco.tags,
+            "governance_summary": eco.governance_summary,
+            "active_member_count": member_count,
+            "domain_count": domain_count,
+            "agreement_count": agr_count,
+        },
+    }
+
+
+# ===================================================================
+# TOOL 26: search_proposals
+# ===================================================================
+
+async def search_proposals(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Search proposals by type, domain, status, proposer, or ecosystem. Returns up to 30 results."""
+    stmt = select(Proposal).options(selectinload(Proposal.ecosystem))
+
+    if ecosystem_ids:
+        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+
+    if "type" in args and args["type"]:
+        stmt = stmt.where(Proposal.type == args["type"])
+    if "status" in args and args["status"]:
+        stmt = stmt.where(Proposal.status == args["status"])
+    if "proposer" in args and args["proposer"]:
+        stmt = stmt.where(Proposal.proposer.ilike(f"%{args['proposer']}%"))
+    if "affected_domain" in args and args["affected_domain"]:
+        stmt = stmt.where(Proposal.affected_domain.ilike(f"%{args['affected_domain']}%"))
+    if "ecosystem_name" in args and args["ecosystem_name"]:
+        stmt = stmt.join(Ecosystem).where(Ecosystem.name.ilike(f"%{args['ecosystem_name']}%"))
+
+    stmt = stmt.order_by(Proposal.created_date.desc()).limit(30)
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    if not rows:
+        return {
+            "success": True,
+            "data": {
+                "proposals": [],
+                "count": 0,
+                "message": "No proposals found matching the search criteria.",
+            },
+        }
+
+    proposals = [
+        {
+            "proposal_id": p.proposal_id,
+            "title": p.title,
+            "type": p.type,
+            "status": p.status,
+            "decision_type": p.decision_type,
+            "proposer": p.proposer,
+            "affected_domain": p.affected_domain,
+            "urgency": p.urgency,
+            "ecosystem_name": p.ecosystem.name if p.ecosystem else None,
+            "created_date": str(p.created_date) if p.created_date else None,
+            "version": p.version,
+        }
+        for p in rows
+    ]
+
+    return {"success": True, "data": {"proposals": proposals, "count": len(proposals)}}
+
+
+# ===================================================================
+# TOOL 27: get_proposal
+# ===================================================================
+
+async def get_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Get full proposal details by business ID, including advice logs, consent records, and test reports."""
+    proposal_id = args.get("proposal_id", "")
+    if not proposal_id:
+        return {"success": False, "error": "'proposal_id' is required."}
+
+    stmt = (
+        select(Proposal)
+        .options(
+            selectinload(Proposal.ecosystem),
+            selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
+            selectinload(Proposal.consent_records).selectinload(ConsentRecord.participants),
+        )
+        .where(Proposal.proposal_id == proposal_id)
+    )
+    if ecosystem_ids:
+        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+    result = await db.execute(stmt)
+    prop = result.scalars().first()
+
+    if prop is None:
+        return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
+
+    advice_data = []
+    for log in prop.advice_logs:
+        advice_data.append({
+            "advice_log_id": str(log.id),
+            "window_start": str(log.advice_window_start) if log.advice_window_start else None,
+            "window_end": str(log.advice_window_end) if log.advice_window_end else None,
+            "urgency": log.urgency,
+            "summary": log.summary,
+            "proposer_modifications": log.proposer_modifications,
+            "entries": [
+                {
+                    "advisor": e.advisor,
+                    "role": e.role,
+                    "date": str(e.date) if e.date else None,
+                    "advice_text": e.advice_text,
+                }
+                for e in log.entries
+            ],
+            "non_respondents": [
+                {
+                    "name": nr.name,
+                    "date_notified": str(nr.date_notified) if nr.date_notified else None,
+                    "round": nr.round,
+                }
+                for nr in (log.non_respondents if hasattr(log, "non_respondents") else [])
+            ],
+        })
+
+    consent_data = []
+    for rec in prop.consent_records:
+        consent_data.append({
+            "consent_mode": rec.consent_mode,
+            "date": str(rec.date) if rec.date else None,
+            "round": rec.round,
+            "participants": [
+                {
+                    "name": p.name,
+                    "position": p.position,
+                    "reason": p.reason,
+                    "round": p.round,
+                }
+                for p in rec.participants
+            ],
+        })
+
+    data = {
+        "proposal_id": prop.proposal_id,
+        "title": prop.title,
+        "type": prop.type,
+        "version": prop.version,
+        "status": prop.status,
+        "decision_type": prop.decision_type,
+        "proposer": prop.proposer,
+        "co_sponsors": prop.co_sponsors,
+        "affected_domain": prop.affected_domain,
+        "impacted_parties": prop.impacted_parties,
+        "urgency": prop.urgency,
+        "proposed_change": prop.proposed_change,
+        "rationale": prop.rationale,
+        "created_date": str(prop.created_date) if prop.created_date else None,
+        "advice_deadline": str(prop.advice_deadline) if prop.advice_deadline else None,
+        "consent_deadline": str(prop.consent_deadline) if prop.consent_deadline else None,
+        "test_duration": prop.test_duration,
+        "related_proposals": prop.related_proposals,
+        "synergy_check": prop.synergy_check,
+        "ecosystem_name": prop.ecosystem.name if prop.ecosystem else None,
+        "ecosystem_id": str(prop.ecosystem_id),
+        "advice_logs": advice_data,
+        "consent_records": consent_data,
+    }
+    return {"success": True, "data": data}
+
+
+# ===================================================================
+# TOOL 28: update_proposal_status
+# ===================================================================
+
+async def update_proposal_status(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """Transition a proposal through the ACT lifecycle: created→advice→consent→test→ratified→implemented."""
+    PROPOSAL_TRANSITIONS = {
+        "created": ["advice", "withdrawn"],
+        "advice": ["consent", "withdrawn"],
+        "consent": ["test", "ratified", "rejected", "withdrawn"],
+        "test": ["ratified", "rejected", "implemented", "withdrawn"],
+        "ratified": ["implemented", "archived"],
+        "implemented": ["archived"],
+        "rejected": ["created"],  # can be re-submitted
+        "withdrawn": ["created"],
+        "archived": [],
+    }
+
+    proposal_id = args.get("proposal_id", "")
+    new_status = args.get("new_status", "")
+    if not proposal_id or not new_status:
+        return {"success": False, "error": "'proposal_id' and 'new_status' are required."}
+
+    stmt = select(Proposal).where(Proposal.proposal_id == proposal_id)
+    if ecosystem_ids:
+        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+    result = await db.execute(stmt)
+    prop = result.scalars().first()
+
+    if prop is None:
+        return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
+
+    current = prop.status
+    allowed = PROPOSAL_TRANSITIONS.get(current, [])
+    if new_status not in allowed:
+        return {
+            "success": False,
+            "error": (
+                f"Cannot transition from '{current}' to '{new_status}'. "
+                f"Valid transitions from '{current}': {allowed}."
+            ),
+        }
+
+    prop.status = new_status
+
+    # Increment version on significant transitions
+    if new_status in ("consent", "ratified", "implemented"):
+        prop.version = _increment_version(prop.version)
+
+    await db.flush()
+
+    return {
+        "success": True,
+        "data": {
+            "proposal_id": proposal_id,
+            "previous_status": current,
+            "new_status": new_status,
+            "version": prop.version,
+        },
+    }
+
+
+# ===================================================================
+# TOOL 29: list_domains
+# ===================================================================
+
+async def list_domains(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+    """List domains, optionally filtered by ecosystem, status, or parent. Returns up to 50 results."""
+    stmt = select(Domain).order_by(Domain.domain_id)
+
+    if ecosystem_ids:
+        stmt = stmt.where(Domain.ecosystem_id.in_(ecosystem_ids))
+
+    if "status" in args and args["status"]:
+        stmt = stmt.where(Domain.status == args["status"])
+
+    if "ecosystem_name" in args and args["ecosystem_name"]:
+        stmt = stmt.join(Ecosystem).where(Ecosystem.name.ilike(f"%{args['ecosystem_name']}%"))
+
+    if "parent_domain_id" in args and args["parent_domain_id"]:
+        # Join parent domain
+        parent_alias = Domain
+        stmt = stmt.join(parent_alias, Domain.parent_domain_id == parent_alias.id)
+        stmt = stmt.where(parent_alias.domain_id.ilike(f"%{args['parent_domain_id']}%"))
+
+    stmt = stmt.limit(50)
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    if not rows:
+        return {
+            "success": True,
+            "data": {
+                "domains": [],
+                "count": 0,
+                "message": "No domains found matching the criteria.",
+            },
+        }
+
+    domains = [
+        {
+            "domain_id": d.domain_id,
+            "version": d.version,
+            "status": d.status,
+            "purpose": d.purpose,
+            "current_steward": d.current_steward,
+            "ecosystem_id": str(d.ecosystem_id),
+            "parent_domain_id": str(d.parent_domain_id) if d.parent_domain_id else None,
+        }
+        for d in rows
+    ]
+
+    return {"success": True, "data": {"domains": domains, "count": len(domains)}}
+
+
+# ===================================================================
 # TOOL REGISTRY
 # ===================================================================
 
@@ -1868,6 +2246,93 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
             "required": ["case_id", "title"],
         },
         handler=create_repair_agreement,
+    ),
+    # 24
+    ToolDef(
+        name="list_ecosystems",
+        description="List all NEOS ecosystems. Supports optional filters by name (partial match), status, or visibility. Use this to discover available ecosystems like Escherbridge, OmniOne, etc.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Partial name match (e.g. 'escher' matches Escherbridge)."},
+                "status": {"type": "string", "enum": ["active", "inactive", "proposed"], "description": "Filter by ecosystem status."},
+                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Filter by visibility."},
+            },
+            "required": [],
+        },
+        handler=list_ecosystems,
+    ),
+    # 25
+    ToolDef(
+        name="get_ecosystem",
+        description="Get full details of an ecosystem by name, including description, location, website, active member count, domain count, and agreement count. Use this to get details about a specific ecosystem like Escherbridge or OmniOne.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Ecosystem name (exact or partial match, case-insensitive)."},
+            },
+            "required": ["name"],
+        },
+        handler=get_ecosystem,
+    ),
+    # 26
+    ToolDef(
+        name="search_proposals",
+        description="Search proposals by type, domain, status, proposer, or ecosystem name. Returns up to 30 results ordered by recency (newest first). Supports filtering to find proposals in specific ecosystems or domains.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "description": "Proposal type filter."},
+                "status": {"type": "string", "description": "Proposal status filter (draft, created, advice, consent, test, ratified, implemented, rejected, withdrawn, archived)."},
+                "proposer": {"type": "string", "description": "Partial proposer name match."},
+                "affected_domain": {"type": "string", "description": "Partial affected domain match."},
+                "ecosystem_name": {"type": "string", "description": "Partial ecosystem name match (e.g. 'escher' for Escherbridge)."},
+            },
+            "required": [],
+        },
+        handler=search_proposals,
+    ),
+    # 27
+    ToolDef(
+        name="get_proposal",
+        description="Get full proposal details by its business ID (e.g. PROP-2026-001), including title, type, status, decision type, rationale, proposed change, advice logs with entries, and consent records with participant positions. Use to inspect a specific proposal in detail.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal business key (e.g. PROP-2026-001)."},
+            },
+            "required": ["proposal_id"],
+        },
+        handler=get_proposal,
+    ),
+    # 28
+    ToolDef(
+        name="update_proposal_status",
+        description="Transition a proposal through the ACT lifecycle: created → advice → consent → test → ratified → implemented → archived. Supports rejected/withdrawn states with re-submission. Auto-increments version on significant transitions.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "string", "description": "The proposal business key."},
+                "new_status": {"type": "string", "description": "Target status (created, advice, consent, test, ratified, implemented, rejected, withdrawn, archived)."},
+            },
+            "required": ["proposal_id", "new_status"],
+        },
+        handler=update_proposal_status,
+    ),
+    # 29
+    ToolDef(
+        name="list_domains",
+        description="List domains, optionally filtered by ecosystem name, status, or parent domain. Returns up to 50 results with domain ID, purpose, steward, and nesting info. Use to discover domains in ecosystems like Escherbridge (Creative Tech Studio, Creative Arts Studio, Creative Fabrication Lab).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "Domain status filter (draft, active, archived)."},
+                "ecosystem_name": {"type": "string", "description": "Partial ecosystem name match (e.g. 'escher' for Escherbridge)."},
+                "parent_domain_id": {"type": "string", "description": "Partial parent domain ID match (for sub-domains)."},
+            },
+            "required": [],
+        },
+        handler=list_domains,
     ),
 ]
 

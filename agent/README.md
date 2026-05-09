@@ -18,7 +18,7 @@ agent/
       registry.py        # In-memory SKILL.md index
       graph.py           # Dependency graph (topological sort)
     agent/
-      governance_tools.py  # 14 MCP-style governance tools
+      governance_tools.py  # 29 MCP-style governance tools
       system_prompt.py     # 3-layer dynamic prompt assembly
       router.py            # Skill transition router (15 patterns)
     api/
@@ -248,29 +248,44 @@ POST /chat/send
 Streams governance-aware AI responses via Server-Sent Events. The agent uses:
 
 - **System prompt**: Foundation context + active skill content + dependency graph
-- **14 governance tools**: `search_agreements`, `create_proposal`, `record_consent_position`, `check_quorum`, `create_decision_record`, etc.
+- **29 governance tools**: `search_agreements`, `create_proposal`, `search_proposals`, `get_proposal`, `update_proposal_status`, `list_ecosystems`, `get_ecosystem`, `list_domains`, `record_consent_position`, `check_quorum`, `create_decision_record`, etc.
 - **Skill router**: Detects when the conversation should transition between governance skills (e.g., from agreement creation to consent round)
 
 ## Governance Tools
 
-The agent exposes 14 tools to Claude, enabling it to query and modify governance state during conversations:
+The agent exposes 29 tools to Claude, enabling it to query and modify governance state during conversations:
 
 | Tool | Description |
 |---|---|
-| `search_agreements` | Search agreements by status, type, or keyword |
-| `get_agreement` | Fetch a specific agreement by ID |
+| `search_agreements` | Search agreements by status, type, domain, or date range |
+| `get_agreement` | Fetch a specific agreement by ID with full details |
 | `create_agreement_draft` | Create a new agreement in draft status |
-| `update_agreement_status` | Transition agreement status |
-| `check_authority` | Verify a member's authority for an action |
-| `create_proposal` | Submit a new governance proposal |
+| `update_agreement_status` | Transition agreement through ACT lifecycle |
+| `check_authority` | Verify a member's authority for an action in a domain |
+| `get_member_roles` | Get all role assignments for a member |
+| `create_proposal` | Submit a new ACT governance proposal |
+| `search_proposals` | Search proposals by ecosystem, domain, status, proposer, or type |
+| `get_proposal` | Fetch a specific proposal with advice logs, consent records, and test reports |
+| `update_proposal_status` | Transition proposal through ACT lifecycle (created→advice→consent→test→ratified→implemented) |
 | `record_advice` | Record an advice entry on a proposal |
 | `record_consent_position` | Record consent, objection, or stand-aside |
-| `check_quorum` | Check if quorum requirements are met |
+| `check_quorum` | Check if quorum requirements are met for a proposal |
 | `create_decision_record` | Create a Layer IX decision record |
-| `search_precedents` | Search decision records by domain or keyword |
-| `get_domain` | Fetch domain details with elements/metrics |
+| `search_precedents` | Search decision records by skill, domain, tags, or text |
+| `list_ecosystems` | List all ecosystems (filter by name, status, visibility) |
+| `get_ecosystem` | Get full ecosystem details with member/domain/agreement counts |
+| `get_domain` | Fetch domain contract details with elements and metrics |
+| `list_domains` | List domains (filter by ecosystem, status, parent) |
+| `create_domain_draft` | Create a new domain contract in draft status |
+| `create_ecosystem` | Create a new NEOS ecosystem |
 | `get_active_members` | List active members, optionally by profile |
-| `lookup_skill` | Look up a governance skill from the registry |
+| `create_conflict_case` | Report a new conflict requiring governance process |
+| `triage_conflict` | Route a conflict to the appropriate resolution tier |
+| `create_repair_agreement` | Create a repair agreement for a conflict case |
+| `get_emergency_state` | Check the current circuit breaker state |
+| `declare_emergency` | Declare an emergency and open the circuit breaker |
+| `create_exit_record` | Start a voluntary exit process for a member |
+| `create_safeguard_audit` | Create a governance health audit (Layer VII safeguard) |
 
 ## Testing
 
