@@ -31,6 +31,6 @@ class AuditCreateRequest(BaseModel):
 
 
 class HealthSummary(BaseModel):
-    latest_audit: AuditDetail | None = None
+    latest_audit: AuditDetail | dict | None = None
     total_audits: int = 0
     latest_health_score: int | None = None

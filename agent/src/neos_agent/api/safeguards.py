@@ -20,7 +20,7 @@ from sanic.request import Request
 from sqlalchemy import func, select
 
 from neos_agent.db.models import GovernanceHealthAudit
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_name_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
 from neos_agent.api.schemas.safeguards import AuditCreateRequest, AuditDetail, AuditListItem, HealthSummary
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,8 @@ def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
 async def health_summary(request: Request):
     """GET /api/v1/safeguards -- latest audit + health metrics summary.
 
-    Returns the most recent audit details and aggregate counts.
+    Returns the most recent audit details and aggregate counts
+    across all selected ecosystems.
     """
     member, err = require_auth(request)
     if err:
@@ -91,41 +92,19 @@ async def health_summary(request: Request):
             GovernanceHealthAudit.audit_date.desc()
         )
         if eco_ids:
-            base_stmt = base_stmt.where(
-                GovernanceHealthAudit.ecosystem_id.in_(eco_ids)
-            )
+            base_stmt = apply_ecosystem_filter(base_stmt, GovernanceHealthAudit, eco_ids)
 
         # Latest audit
         latest_stmt = base_stmt.limit(1)
         latest_result = await session.execute(latest_stmt)
         latest_audit = latest_result.scalar_one_or_none()
 
-        # Total count
-        count_base = select(func.count()).select_from(
-            GovernanceHealthAudit
-        )
-        if eco_ids:
-            count_base = count_base.where(
-                GovernanceHealthAudit.ecosystem_id.in_(eco_ids)
-            )
+        # Total count across all selected ecosystems
+        count_base = select(func.count()).select_from(base_stmt.subquery())
         total = await session.scalar(count_base) or 0
 
     summary = HealthSummary(
-        latest_audit=AuditDetail(
-            id=latest_audit.id,
-            audit_id=latest_audit.audit_id,
-            audit_date=latest_audit.audit_date,
-            auditor=latest_audit.auditor,
-            overall_health_score=latest_audit.overall_health_score,
-            status=latest_audit.status,
-            created_at=latest_audit.created_at,
-            ecosystem_id=latest_audit.ecosystem_id,
-            capture_risk_indicators=latest_audit.capture_risk_indicators,
-            findings=latest_audit.findings,
-            recommendations=latest_audit.recommendations,
-            next_audit_date=latest_audit.next_audit_date,
-            updated_at=latest_audit.updated_at,
-        ) if latest_audit else None,
+        latest_audit=_audit_to_detail(latest_audit) if latest_audit else None,
         total_audits=total,
         latest_health_score=latest_audit.overall_health_score if latest_audit else None,
     )
@@ -137,7 +116,8 @@ async def health_summary(request: Request):
 async def list_audits(request: Request):
     """GET /api/v1/safeguards/audits -- paginated audit list.
 
-    Query params: page (default 1), per_page (default 25, max 100).
+    Query params: status, q, page (default 1), per_page (default 25, max 100).
+    Lists audits across all selected ecosystems.
     """
     member, err = require_auth(request)
     if err:
@@ -154,7 +134,19 @@ async def list_audits(request: Request):
             GovernanceHealthAudit.audit_date.desc()
         )
         if eco_ids:
-            stmt = stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, GovernanceHealthAudit, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, GovernanceHealthAudit, request)
+
+        status = request.args.get("status")
+        if status:
+            stmt = stmt.where(GovernanceHealthAudit.status == status)
+
+        search = request.args.get("q")
+        if search:
+            stmt = stmt.where(build_search_filter(
+                GovernanceHealthAudit, search,
+                GovernanceHealthAudit.auditor, GovernanceHealthAudit.audit_id,
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
@@ -185,7 +177,7 @@ async def get_audit(request: Request, audit_id: uuid.UUID):
             GovernanceHealthAudit.id == audit_id
         )
         if eco_ids:
-            stmt = stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
+            stmt = apply_ecosystem_filter(stmt, GovernanceHealthAudit, eco_ids)
 
         result = await session.execute(stmt)
         audit = result.scalar_one_or_none()

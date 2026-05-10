@@ -7,8 +7,7 @@ import uuid
 
 from sanic import json
 from sanic.request import Request
-from sqlalchemy import or_, cast, String, select
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import or_, cast, String, Text, select, text, literal
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +70,12 @@ def apply_ecosystem_filter(stmt, model, eco_ids: list[uuid.UUID], include_shared
         return stmt.where(primary_match)
 
     # Also match if any of eco_ids appear in the shared_ecosystem_ids JSON array.
-    # shared_ecosystem_ids is a JSON array of UUID strings, e.g. ["uuid1", "uuid2"].
-    # Use PostgreSQL overlap: cast JSON to text[] and check overlap with requested IDs.
-    str_ids = [str(eid) for eid in eco_ids]
-    shared_match = cast(
-        model.shared_ecosystem_ids, ARRAY(String)
-    ).overlap(str_ids)
+    # shared_ecosystem_ids is stored as JSON (not JSONB), so we cast to text
+    # and check if any UUID string appears in it.
+    shared_text = cast(model.shared_ecosystem_ids, Text)
+    shared_conditions = [shared_text.contains(str(eid)) for eid in eco_ids]
 
-    return stmt.where(or_(primary_match, shared_match))
+    return stmt.where(or_(primary_match, *shared_conditions))
 
 
 def apply_ecosystem_name_filter(stmt, model, request: Request):
