@@ -15,7 +15,6 @@ import uuid
 import datetime as _dt
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, select
@@ -25,14 +24,11 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_name_filter
+from neos_agent.api.schemas.onboarding import CeremonyState, OnboardingListItem, SectionConsentRequest
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
 
 # The 6 UAF consent sections used to calculate completion_percentage
 _CONSENT_SECTIONS = [
@@ -43,34 +39,6 @@ _CONSENT_SECTIONS = [
     "data_sovereignty",
     "exit_rights",
 ]
-
-
-class OnboardingListItem(BaseModel):
-    id: uuid.UUID
-    member_id: uuid.UUID
-    member_display_name: str | None = None
-    facilitator: str | None = None
-    completion_percentage: int | None = 0
-    consent_date: _dt.date | None = None
-    cooling_off_start: _dt.date | None = None
-    cooling_off_end: _dt.date | None = None
-    created_at: _dt.datetime
-
-
-class CeremonyState(BaseModel):
-    member_id: uuid.UUID
-    section_consents: dict
-    completion_percentage: int
-    cooling_off_start: _dt.date | None = None
-    cooling_off_end: _dt.date | None = None
-    consent_date: _dt.date | None = None
-    facilitator: str | None = None
-    uaf_version_consented: str | None = None
-
-
-class SectionConsentRequest(BaseModel):
-    section: str
-    consented: bool
 
 
 # ---------------------------------------------------------------------------

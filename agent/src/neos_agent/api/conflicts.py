@@ -15,7 +15,6 @@ import uuid
 import datetime as _dt
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, or_, select
@@ -25,116 +24,18 @@ from neos_agent.db.models import (
     ConflictCase,
     RepairAgreementRecord,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.schemas.conflicts import (
+    ConflictCreateRequest,
+    ConflictDetail,
+    ConflictListItem,
+    ConflictUpdateRequest,
+    RepairAgreementSchema,
+    RepairCreateRequest,
+    RepairUpdateRequest,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class RepairAgreementSchema(BaseModel):
-    id: uuid.UUID
-    title: str
-    commitments: dict | None = None
-    responsible_party: str | None = None
-    status: str
-    checkin_30_date: _dt.date | None = None
-    checkin_30_notes: str | None = None
-    checkin_60_date: _dt.date | None = None
-    checkin_60_notes: str | None = None
-    checkin_90_date: _dt.date | None = None
-    checkin_90_notes: str | None = None
-    completed_date: _dt.date | None = None
-    created_at: _dt.datetime
-
-
-class ConflictListItem(BaseModel):
-    id: uuid.UUID
-    case_id: str
-    title: str
-    status: str
-    severity: str | None = None
-    scope: str | None = None
-    tier: int | None = None
-    urgency: str | None = None
-    safety_flag: bool = False
-    domain: str | None = None
-    created_at: _dt.datetime
-
-
-class ConflictDetail(ConflictListItem):
-    ecosystem_id: uuid.UUID
-    description: str | None = None
-    reporter_id: uuid.UUID | None = None
-    root_cause_category: str | None = None
-    parties: dict | None = None
-    facilitator_id: uuid.UUID | None = None
-    triage_notes: str | None = None
-    resolution_summary: str | None = None
-    resolved_date: _dt.date | None = None
-    updated_at: _dt.datetime
-    repair_agreements: list[RepairAgreementSchema] = []
-
-
-class ConflictCreateRequest(BaseModel):
-    ecosystem_id: uuid.UUID
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    title: str
-    description: str | None = None
-    reporter_id: uuid.UUID | None = None
-    severity: str | None = None
-    scope: str | None = None
-    tier: int | None = None
-    root_cause_category: str | None = None
-    urgency: str | None = None
-    safety_flag: bool = False
-    parties: dict | None = None
-    domain: str | None = None
-
-
-class ConflictUpdateRequest(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    status: str | None = None
-    severity: str | None = None
-    scope: str | None = None
-    tier: int | None = None
-    root_cause_category: str | None = None
-    urgency: str | None = None
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    safety_flag: bool | None = None
-    parties: dict | None = None
-    facilitator_id: uuid.UUID | None = None
-    domain: str | None = None
-    triage_notes: str | None = None
-    resolution_summary: str | None = None
-    resolved_date: _dt.date | None = None
-
-
-class RepairCreateRequest(BaseModel):
-    title: str
-    commitments: dict | None = None
-    responsible_party: str | None = None
-    checkin_30_date: _dt.date | None = None
-    checkin_60_date: _dt.date | None = None
-    checkin_90_date: _dt.date | None = None
-
-
-class RepairUpdateRequest(BaseModel):
-    title: str | None = None
-    commitments: dict | None = None
-    responsible_party: str | None = None
-    status: str | None = None
-    checkin_30_date: _dt.date | None = None
-    checkin_30_notes: str | None = None
-    checkin_60_date: _dt.date | None = None
-    checkin_60_notes: str | None = None
-    checkin_90_date: _dt.date | None = None
-    checkin_90_notes: str | None = None
-    completed_date: _dt.date | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +145,7 @@ async def list_conflicts(request: Request):
 
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, ConflictCase, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, ConflictCase, request)
 
         status = request.args.get("status")
         if status:
@@ -259,13 +161,9 @@ async def list_conflicts(request: Request):
 
         search = request.args.get("q")
         if search:
-            pattern = f"%{_escape_like(search)}%"
-            stmt = stmt.where(
-                or_(
-                    ConflictCase.case_id.ilike(pattern),
-                    ConflictCase.title.ilike(pattern),
-                )
-            )
+            stmt = stmt.where(build_search_filter(
+                ConflictCase, search, ConflictCase.title, ConflictCase.case_id
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0

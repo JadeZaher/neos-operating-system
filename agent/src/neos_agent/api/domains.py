@@ -15,12 +15,19 @@ import uuid
 import datetime as _dt
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from neos_agent.api.schemas.domains import (
+    DomainCreateRequest,
+    DomainDetail,
+    DomainElementSchema,
+    DomainListItem,
+    DomainMetricSchema,
+    DomainUpdateRequest,
+)
 from neos_agent.db.models import (
     Domain,
     DomainElement,
@@ -28,74 +35,10 @@ from neos_agent.db.models import (
     Member,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.services.fingerprint import generate_fingerprint
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class DomainElementSchema(BaseModel):
-    id: uuid.UUID
-    element_name: str
-    element_value: dict | None = None
-
-
-class DomainMetricSchema(BaseModel):
-    id: uuid.UUID
-    metric: str
-    target: str | None = None
-    measurement_method: str | None = None
-
-
-class DomainListItem(BaseModel):
-    id: uuid.UUID
-    domain_id: str
-    version: str
-    status: str
-    purpose: str | None = None
-    current_steward: str | None = None
-    parent_domain_id: uuid.UUID | None = None
-    created_at: _dt.datetime
-    version_fingerprint: str | None = None
-
-
-class DomainDetail(DomainListItem):
-    ecosystem_id: uuid.UUID
-    steward_id: uuid.UUID | None = None
-    created_by: str | None = None
-    metric_definitions: str | dict | None = None
-    elements: dict | None = None
-    updated_at: _dt.datetime
-    domain_elements: list[DomainElementSchema] = []
-    domain_metrics: list[DomainMetricSchema] = []
-
-
-class DomainCreateRequest(BaseModel):
-    ecosystem_id: uuid.UUID
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    purpose: str | None = None
-    current_steward: str | None = None
-    steward_id: uuid.UUID | None = None
-    parent_domain_id: uuid.UUID | None = None
-    created_by: str | None = None
-    metric_definitions: str | dict | None = None
-    elements: dict | None = None
-
-
-class DomainUpdateRequest(BaseModel):
-    status: str | None = None
-    purpose: str | None = None
-    current_steward: str | None = None
-    steward_id: uuid.UUID | None = None
-    parent_domain_id: uuid.UUID | None = None
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    metric_definitions: str | dict | None = None
-    elements: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +136,7 @@ async def list_domains(request: Request):
 
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, Domain, request)
 
         status = request.args.get("status")
         if status:
@@ -200,13 +144,9 @@ async def list_domains(request: Request):
 
         search = request.args.get("q")
         if search:
-            pattern = f"%{_escape_like(search)}%"
-            stmt = stmt.where(
-                or_(
-                    Domain.domain_id.ilike(pattern),
-                    Domain.purpose.ilike(pattern),
-                )
-            )
+            stmt = stmt.where(build_search_filter(
+                Domain, search, Domain.domain_id, Domain.purpose
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0

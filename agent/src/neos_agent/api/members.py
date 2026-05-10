@@ -15,7 +15,6 @@ import uuid
 import datetime as _dt
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, or_, select
@@ -35,108 +34,19 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.schemas.members import (
+    MemberCreateRequest,
+    MemberDetail,
+    MemberListItem,
+    MemberProfileResponse,
+    MemberUpdateRequest,
+    OnboardingChecklistItem,
+    OnboardingSnapshot,
+    StatusTransitionRequest,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class MemberListItem(BaseModel):
-    id: uuid.UUID
-    member_id: str
-    display_name: str
-    current_status: str
-    profile: str | None = None
-    phone: str | None = None
-    profile_picture: str | None = None
-    onboarding_status: str | None = None
-    created_at: _dt.datetime
-
-
-class MemberDetail(MemberListItem):
-    ecosystem_id: uuid.UUID
-    did: str | None = None
-    skills_offered: list | dict | None = None
-    skills_needed: list | dict | None = None
-    interests: list | dict | None = None
-    kyc_status: str | None = None
-    last_governance_activity_date: _dt.date | None = None
-    notes: str | None = None
-    privacy: dict | None = None
-    updated_at: _dt.datetime
-    onboarding: OnboardingSnapshot | None = None
-
-
-class OnboardingSnapshot(BaseModel):
-    id: uuid.UUID
-    facilitator: str | None = None
-    completion_percentage: int | None = 0
-    consent_date: _dt.date | None = None
-    cooling_off_start: _dt.date | None = None
-    cooling_off_end: _dt.date | None = None
-
-
-# Rebuild MemberDetail now that OnboardingSnapshot is defined
-MemberDetail.model_rebuild()
-
-
-class MemberProfileResponse(MemberDetail):
-    user_id: uuid.UUID
-    username: str | None = None
-    user_display_name: str | None = None
-    profile_picture: str | None = None
-    quiz_summary: dict
-    badges: list
-    tags: list
-
-
-class MemberCreateRequest(BaseModel):
-    ecosystem_id: uuid.UUID
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    display_name: str
-    profile: str | None = None
-    phone: str | None = None
-    profile_picture: str | None = None
-    skills_offered: list | dict | None = None
-    skills_needed: list | dict | None = None
-    interests: list | dict | None = None
-    notes: str | None = None
-
-
-class MemberUpdateRequest(BaseModel):
-    display_name: str | None = None
-    profile: str | None = None
-    phone: str | None = None
-    profile_picture: str | None = None
-    skills_offered: list | dict | None = None
-    skills_needed: list | dict | None = None
-    interests: list | dict | None = None
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    notes: str | None = None
-    privacy: dict | None = None
-
-
-class StatusTransitionRequest(BaseModel):
-    status: str
-    trigger: str | None = None
-    notes: str | None = None
-
-
-class OnboardingChecklistItem(BaseModel):
-    id: uuid.UUID
-    facilitator: str | None = None
-    mentor_id: uuid.UUID | None = None
-    uaf_version_consented: str | None = None
-    consent_date: _dt.date | None = None
-    cooling_off_start: _dt.date | None = None
-    cooling_off_end: _dt.date | None = None
-    section_consents: dict | None = None
-    checklist_items: dict | None = None
-    completion_percentage: int | None = 0
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +183,7 @@ async def list_members(request: Request):
 
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, Member, request)
 
         status = request.args.get("status")
         if status:
@@ -284,13 +195,9 @@ async def list_members(request: Request):
 
         search = request.args.get("q")
         if search:
-            pattern = f"%{_escape_like(search)}%"
-            stmt = stmt.where(
-                or_(
-                    Member.display_name.ilike(pattern),
-                    Member.member_id.ilike(pattern),
-                )
-            )
+            stmt = stmt.where(build_search_filter(
+                Member, search, Member.display_name, Member.member_id
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0

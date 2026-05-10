@@ -15,7 +15,7 @@ import datetime as _dt
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
@@ -26,7 +26,7 @@ from neos_agent.db.models import (
     ReviewRecord,
 )
 
-from .helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from .helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
     AgreementCreateRequest,
@@ -61,6 +61,8 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
     if eco_ids:
         stmt = apply_ecosystem_filter(stmt, Agreement, eco_ids)
 
+    stmt = apply_ecosystem_name_filter(stmt, Agreement, request)
+
     agreement_type = request.args.get("type")
     if agreement_type:
         stmt = stmt.where(Agreement.type == agreement_type)
@@ -75,13 +77,9 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{_escape_like(search)}%"
-        stmt = stmt.where(
-            or_(
-                Agreement.title.ilike(pattern),
-                Agreement.agreement_id.ilike(pattern),
-            )
-        )
+        stmt = stmt.where(build_search_filter(
+            Agreement, search, Agreement.title, Agreement.agreement_id
+        ))
 
     return stmt
 

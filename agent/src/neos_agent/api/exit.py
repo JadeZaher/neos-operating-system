@@ -16,56 +16,15 @@ import datetime as _dt
 from datetime import timedelta, timezone
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, or_, select
 
 from neos_agent.db.models import ExitRecord
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.schemas.exit import ExitCreateRequest, ExitDetail, ExitListItem, ExitStatusRequest
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class ExitListItem(BaseModel):
-    id: uuid.UUID
-    exit_type: str
-    status: str
-    member_id: uuid.UUID
-    declared_date: _dt.date | None = None
-    target_completion_date: _dt.date | None = None
-    completed_date: _dt.date | None = None
-    created_at: _dt.datetime
-
-
-class ExitDetail(ExitListItem):
-    ecosystem_id: uuid.UUID
-    coordinator_id: uuid.UUID | None = None
-    commitment_inventory: list | dict | None = None
-    unwinding_status: dict | None = None
-    data_export_requested: bool = False
-    data_export_completed: _dt.date | None = None
-    departure_notice: str | None = None
-    re_entry_eligible: bool = True
-    notes: str | None = None
-    updated_at: _dt.datetime
-
-
-class ExitCreateRequest(BaseModel):
-    ecosystem_id: uuid.UUID
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    member_id: uuid.UUID
-    exit_type: str = "standard"
-    reason: str | None = None
-
-
-class ExitStatusRequest(BaseModel):
-    new_status: str
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +107,7 @@ async def list_exits(request: Request):
 
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, ExitRecord, request)
 
         status = request.args.get("status")
         if status:
@@ -159,8 +119,9 @@ async def list_exits(request: Request):
 
         search = request.args.get("q")
         if search:
-            pattern = f"%{_escape_like(search)}%"
-            stmt = stmt.where(ExitRecord.departure_notice.ilike(pattern))
+            stmt = stmt.where(build_search_filter(
+                ExitRecord, search, ExitRecord.reason
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 from sanic import json
 from sanic.request import Request
+from sqlalchemy import or_, cast, String, select
+from sqlalchemy.dialects.postgresql import ARRAY
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +65,60 @@ def apply_ecosystem_filter(stmt, model, eco_ids: list[uuid.UUID], include_shared
     if not eco_ids:
         return stmt
 
-    # Always filter by primary ecosystem_id - this is safe and works everywhere
-    return stmt.where(model.ecosystem_id.in_(eco_ids))
+    primary_match = model.ecosystem_id.in_(eco_ids)
+
+    if not include_shared or not hasattr(model, "shared_ecosystem_ids"):
+        return stmt.where(primary_match)
+
+    # Also match if any of eco_ids appear in the shared_ecosystem_ids JSON array.
+    # shared_ecosystem_ids is a JSON array of UUID strings, e.g. ["uuid1", "uuid2"].
+    # Use PostgreSQL overlap: cast JSON to text[] and check overlap with requested IDs.
+    str_ids = [str(eid) for eid in eco_ids]
+    shared_match = cast(
+        model.shared_ecosystem_ids, ARRAY(String)
+    ).overlap(str_ids)
+
+    return stmt.where(or_(primary_match, shared_match))
+
+
+def apply_ecosystem_name_filter(stmt, model, request: Request):
+    """Filter by ecosystem name (ILIKE contains match).
+
+    Joins the Ecosystem table and filters by name. Works with any model
+    that has an ecosystem_id FK and an 'ecosystem' relationship.
+    """
+    from neos_agent.db.models import Ecosystem
+
+    eco_name = request.args.get("ecosystem_name")
+    if not eco_name:
+        return stmt
+
+    pattern = f"%{_escape_like(eco_name)}%"
+    return stmt.where(model.ecosystem_id.in_(
+        select(Ecosystem.id).where(Ecosystem.name.ilike(pattern))
+    ))
+
+
+def build_search_filter(model, search: str, *extra_columns):
+    """Build an OR filter across model columns + ecosystem name.
+
+    Usage: stmt = stmt.where(build_search_filter(Agreement, search, Agreement.title, Agreement.agreement_id))
+    Automatically includes ecosystem name matching via a subquery.
+    """
+    from neos_agent.db.models import Ecosystem
+
+    pattern = f"%{_escape_like(search)}%"
+    conditions = [col.ilike(pattern) for col in extra_columns]
+    # Also match if the search term matches the ecosystem name
+    conditions.append(model.ecosystem_id.in_(
+        select(Ecosystem.id).where(Ecosystem.name.ilike(pattern))
+    ))
+    return or_(*conditions)
+
+
+def _escape_like(value: str) -> str:
+    """Escape SQL LIKE/ILIKE wildcard characters."""
+    return re.sub(r"([%_\\])", r"\\\1", value)
 
 
 def serialize_shared_ecosystem_ids(ids: list[uuid.UUID] | None) -> list[str] | None:

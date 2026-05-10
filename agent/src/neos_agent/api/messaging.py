@@ -13,12 +13,15 @@ import logging
 import uuid
 import datetime as _dt
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
 
+from neos_agent.api.schemas.messaging import (
+    ConversationDetailSchema, ConversationSummary, CreateConversationRequest,
+    MemberPickerItem, MessageSchema, ParticipantSummary,
+)
 from neos_agent.db.models import (
     Conversation,
     ConversationParticipant,
@@ -28,58 +31,6 @@ from neos_agent.db.models import (
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class ParticipantSummary(BaseModel):
-    id: uuid.UUID
-    display_name: str
-    role: str = "member"
-
-
-class ConversationSummary(BaseModel):
-    id: uuid.UUID
-    type: str
-    title: str | None = None
-    last_message: str | None = None
-    last_message_at: _dt.datetime | None = None
-    unread_count: int = 0
-    participants: list[ParticipantSummary] = []
-
-
-class MessageSchema(BaseModel):
-    id: uuid.UUID
-    sender_id: uuid.UUID
-    sender_name: str
-    content: str
-    message_type: str
-    created_at: _dt.datetime
-    edited_at: _dt.datetime | None = None
-
-
-class ConversationDetailSchema(BaseModel):
-    id: uuid.UUID
-    type: str
-    title: str | None = None
-    participants: list[ParticipantSummary] = []
-    messages: list[MessageSchema] = []
-    total_messages: int = 0
-
-
-class CreateConversationRequest(BaseModel):
-    type: str  # "dm" or "group"
-    title: str | None = None
-    participant_ids: list[uuid.UUID]
-
-
-class MemberPickerItem(BaseModel):
-    id: uuid.UUID
-    display_name: str
-    profile: str | None = None
 
 
 # ---------------------------------------------------------------------------

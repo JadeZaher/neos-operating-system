@@ -15,7 +15,6 @@ import uuid
 import datetime as _dt
 from typing import Optional
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, or_, select
@@ -27,72 +26,12 @@ from neos_agent.db.models import (
     DecisionRecord,
     DecisionSemanticTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
+from neos_agent.api.schemas.decisions import (
+    DecisionDetail, DecisionListItem, DissentRecordSchema, ParticipantSchema, SemanticTagSchema,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas
-# ---------------------------------------------------------------------------
-
-
-class DissentRecordSchema(BaseModel):
-    id: uuid.UUID
-    objector: str
-    objection: str | None = None
-    resolution: str | None = None
-    notes: str | None = None
-
-
-class ParticipantSchema(BaseModel):
-    id: uuid.UUID
-    name: str
-    role: str | None = None
-    position: str | None = None
-
-
-class SemanticTagSchema(BaseModel):
-    id: uuid.UUID
-    topic: dict | None = None
-    affected_parties: dict | None = None
-    ecosystem_scope: str | None = None
-    urgency_at_time: str | None = None
-    related_precedents: dict | None = None
-
-
-class DecisionListItem(BaseModel):
-    id: uuid.UUID
-    record_id: str
-    date: _dt.date | None = None
-    holding: str | None = None
-    source_skill: str | None = None
-    source_layer: int | None = None
-    domain: str | None = None
-    precedent_level: str | None = None
-    status: str
-    created_at: _dt.datetime
-
-
-class DecisionDetail(DecisionListItem):
-    ecosystem_id: uuid.UUID
-    ratio_decidendi: str | None = None
-    obiter_dicta: str | None = None
-    deliberation_summary: str | None = None
-    artifact_type: str | None = None
-    artifact_reference: str | None = None
-    overruled_by: str | None = None
-    superseded_by: str | None = None
-    related_records: dict | None = None
-    review_date: _dt.date | None = None
-    recorder: str | None = None
-    recorder_role: str | None = None
-    verification_by: str | None = None
-    verification_date: _dt.date | None = None
-    updated_at: _dt.datetime
-    dissent_records: list[DissentRecordSchema] = []
-    participants: list[ParticipantSchema] = []
-    semantic_tags: list[SemanticTagSchema] = []
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +154,7 @@ async def list_decisions(request: Request):
 
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, DecisionRecord, eco_ids)
+        stmt = apply_ecosystem_name_filter(stmt, DecisionRecord, request)
 
         status = request.args.get("status")
         if status:
@@ -234,13 +174,9 @@ async def list_decisions(request: Request):
 
         search = request.args.get("q")
         if search:
-            pattern = f"%{_escape_like(search)}%"
-            stmt = stmt.where(
-                or_(
-                    DecisionRecord.record_id.ilike(pattern),
-                    DecisionRecord.holding.ilike(pattern),
-                )
-            )
+            stmt = stmt.where(build_search_filter(
+                DecisionRecord, search, DecisionRecord.holding, DecisionRecord.record_id
+            ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0

@@ -13,10 +13,9 @@ import logging
 import uuid
 import datetime as _dt
 
-from pydantic import BaseModel
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
@@ -28,151 +27,23 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.schemas.proposals import (
+    AdviceEntryCreateRequest,
+    AdviceEntrySchema,
+    AdviceLogSchema,
+    ConsentParticipantSchema,
+    ConsentPositionRequest,
+    ConsentRecordSchema,
+    ProposalCreateRequest,
+    ProposalDetail,
+    ProposalListItem,
+    ProposalUpdateRequest,
+    TestReportSchema,
+    TestSuccessCriterionSchema,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Local Pydantic schemas (kept here to avoid merge conflicts with schemas.py)
-# ---------------------------------------------------------------------------
-
-
-class ProposalListItem(BaseModel):
-    id: uuid.UUID
-    proposal_id: str
-    type: str
-    decision_type: str | None = None
-    title: str
-    version: str
-    status: str
-    proposer: str | None = None
-    affected_domain: str | None = None
-    urgency: str | None = None
-    created_at: _dt.datetime
-
-
-class AdviceEntrySchema(BaseModel):
-    id: uuid.UUID
-    advisor: str
-    role: str | None = None
-    ethos: str | None = None
-    advice_type: str | None = None
-    content: str | None = None
-    concerns: str | None = None
-    date: _dt.date | None = None
-
-
-class AdviceLogSchema(BaseModel):
-    id: uuid.UUID
-    advice_window_start: _dt.date | None = None
-    advice_window_end: _dt.date | None = None
-    urgency: str | None = None
-    summary: str | None = None
-    proposer_modifications: str | None = None
-    entries: list[AdviceEntrySchema] = []
-
-
-class ConsentParticipantSchema(BaseModel):
-    id: uuid.UUID
-    member_name: str
-    position: str | None = None
-    objection_text: str | None = None
-    integration_attempted: bool | None = None
-    integration_outcome: str | None = None
-    date: _dt.date | None = None
-
-
-class ConsentRecordSchema(BaseModel):
-    id: uuid.UUID
-    consent_mode: str
-    weighting_model: str | None = None
-    facilitator: str | None = None
-    date: _dt.date | None = None
-    quorum_required: str | None = None
-    quorum_met: bool = False
-    outcome: str | None = None
-    escalation_level: str | None = None
-    participants: list[ConsentParticipantSchema] = []
-
-
-class TestSuccessCriterionSchema(BaseModel):
-    id: uuid.UUID
-    criterion: str | None = None
-    metric: str | None = None
-    baseline: str | None = None
-    target: str | None = None
-    actual: str | None = None
-    met: bool | None = None
-
-
-class TestReportSchema(BaseModel):
-    id: uuid.UUID
-    test_start_date: _dt.date | None = None
-    test_end_date: _dt.date | None = None
-    outcome: str | None = None
-    observations: str | None = None
-    midpoint_findings: str | None = None
-    modifications: str | None = None
-    next_action: str | None = None
-    success_criteria_summary: str | None = None
-    success_criteria: list[TestSuccessCriterionSchema] = []
-
-
-class ProposalDetail(ProposalListItem):
-    ecosystem_id: uuid.UUID
-    co_sponsors: list | dict | None = None
-    impacted_parties: list | dict | None = None
-    proposed_change: str | None = None
-    rationale: str | None = None
-    created_date: _dt.date | None = None
-    advice_deadline: _dt.date | None = None
-    consent_deadline: _dt.date | None = None
-    test_duration: str | None = None
-    updated_at: _dt.datetime
-    advice_logs: list[AdviceLogSchema] = []
-    consent_records: list[ConsentRecordSchema] = []
-    test_reports: list[TestReportSchema] = []
-
-
-class ProposalCreateRequest(BaseModel):
-    ecosystem_id: uuid.UUID
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    type: str
-    title: str
-    decision_type: str | None = None
-    proposer: str | None = None
-    affected_domain: str | None = None
-    urgency: str | None = None
-    proposed_change: str | None = None
-    rationale: str | None = None
-    advice_deadline: _dt.date | None = None
-
-
-class ProposalUpdateRequest(BaseModel):
-    title: str | None = None
-    proposed_change: str | None = None
-    rationale: str | None = None
-    affected_domain: str | None = None
-    urgency: str | None = None
-    shared_ecosystem_ids: list[uuid.UUID] | None = None
-    advice_deadline: _dt.date | None = None
-    consent_deadline: _dt.date | None = None
-
-
-class AdviceEntryCreateRequest(BaseModel):
-    advisor: str
-    role: str | None = None
-    ethos: str | None = None
-    advice_type: str | None = None
-    content: str | None = None
-    concerns: str | None = None
-
-
-class ConsentPositionRequest(BaseModel):
-    member_name: str
-    position: str
-    objection_text: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +77,7 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
     """Apply query-param filters to a Proposal select statement."""
     if eco_ids:
         stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
+    stmt = apply_ecosystem_name_filter(stmt, Proposal, request)
 
     phase = request.args.get("phase")
     if phase:
@@ -227,14 +99,9 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
 
     search = request.args.get("q")
     if search:
-        pattern = f"%{_escape_like(search)}%"
-        stmt = stmt.where(
-            or_(
-                Proposal.title.ilike(pattern),
-                Proposal.proposal_id.ilike(pattern),
-                Proposal.proposer.ilike(pattern),
-            )
-        )
+        stmt = stmt.where(build_search_filter(
+            Proposal, search, Proposal.title, Proposal.proposal_id
+        ))
 
     return stmt
 
