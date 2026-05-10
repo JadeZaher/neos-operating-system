@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 class MemberListItem(BaseModel):
     id: uuid.UUID
+    ecosystem_id: uuid.UUID
     member_id: str
     display_name: str
     current_status: str
@@ -30,7 +31,6 @@ class OnboardingSnapshot(BaseModel):
 
 
 class MemberDetail(MemberListItem):
-    ecosystem_id: uuid.UUID
     did: str | None = None
     skills_offered: list | dict | None = None
     skills_needed: list | dict | None = None

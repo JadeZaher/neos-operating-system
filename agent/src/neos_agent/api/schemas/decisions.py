@@ -32,6 +32,7 @@ class SemanticTagSchema(BaseModel):
 
 class DecisionListItem(BaseModel):
     id: uuid.UUID
+    ecosystem_id: uuid.UUID
     record_id: str
     date: _dt.date | None = None
     holding: str | None = None
@@ -44,7 +45,6 @@ class DecisionListItem(BaseModel):
 
 
 class DecisionDetail(DecisionListItem):
-    ecosystem_id: uuid.UUID
     ratio_decidendi: str | None = None
     obiter_dicta: str | None = None
     deliberation_summary: str | None = None

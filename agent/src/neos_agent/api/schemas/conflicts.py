@@ -24,6 +24,7 @@ class RepairAgreementSchema(BaseModel):
 
 class ConflictListItem(BaseModel):
     id: uuid.UUID
+    ecosystem_id: uuid.UUID
     case_id: str
     title: str
     status: str
@@ -37,7 +38,6 @@ class ConflictListItem(BaseModel):
 
 
 class ConflictDetail(ConflictListItem):
-    ecosystem_id: uuid.UUID
     description: str | None = None
     reporter_id: uuid.UUID | None = None
     root_cause_category: str | None = None

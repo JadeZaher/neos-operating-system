@@ -24,7 +24,7 @@ from neos_agent.db.models import (
     ConflictCase,
     RepairAgreementRecord,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.api.schemas.conflicts import (
     ConflictCreateRequest,
     ConflictDetail,
@@ -58,6 +58,7 @@ def _escape_like(value: str) -> str:
 def _conflict_to_list_item(c: ConflictCase) -> dict:
     return ConflictListItem(
         id=c.id,
+        ecosystem_id=c.ecosystem_id,
         case_id=c.case_id,
         title=c.title,
         status=c.status,
@@ -187,7 +188,7 @@ async def get_conflict(request: Request, conflict_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -281,7 +282,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(ConflictCase).where(ConflictCase.id == conflict_id)
@@ -332,7 +333,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify conflict exists and is accessible
@@ -379,7 +380,7 @@ async def update_repair_agreement(
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify conflict exists and is accessible

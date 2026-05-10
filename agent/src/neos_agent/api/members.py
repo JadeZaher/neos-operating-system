@@ -34,7 +34,7 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
     MemberDetail,
@@ -69,6 +69,7 @@ def _escape_like(value: str) -> str:
 def _member_to_list_item(m: Member, user: User | None = None) -> dict:
     return MemberListItem(
         id=m.id,
+        ecosystem_id=m.ecosystem_id,
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
@@ -221,7 +222,7 @@ async def get_member(request: Request, member_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -252,7 +253,7 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -453,7 +454,7 @@ async def update_member(request: Request, member_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
@@ -504,7 +505,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
@@ -544,7 +545,7 @@ async def get_member_onboarding(request: Request, member_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         # Verify member exists and is accessible

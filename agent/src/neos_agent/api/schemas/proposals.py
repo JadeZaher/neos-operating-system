@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 class ProposalListItem(BaseModel):
     id: uuid.UUID
+    ecosystem_id: uuid.UUID
     proposal_id: str
     type: str
     decision_type: str | None = None
@@ -95,7 +96,6 @@ class TestReportSchema(BaseModel):
 
 
 class ProposalDetail(ProposalListItem):
-    ecosystem_id: uuid.UUID
     co_sponsors: list | dict | None = None
     impacted_parties: list | dict | None = None
     proposed_change: str | None = None

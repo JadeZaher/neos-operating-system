@@ -21,6 +21,7 @@ class DomainMetricSchema(BaseModel):
 
 class DomainListItem(BaseModel):
     id: uuid.UUID
+    ecosystem_id: uuid.UUID
     domain_id: str
     version: str
     status: str
@@ -32,7 +33,6 @@ class DomainListItem(BaseModel):
 
 
 class DomainDetail(DomainListItem):
-    ecosystem_id: uuid.UUID
     steward_id: uuid.UUID | None = None
     created_by: str | None = None
     metric_definitions: str | dict | None = None

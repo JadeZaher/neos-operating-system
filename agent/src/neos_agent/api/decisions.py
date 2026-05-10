@@ -26,7 +26,7 @@ from neos_agent.db.models import (
     DecisionRecord,
     DecisionSemanticTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
 from neos_agent.api.schemas.decisions import (
     DecisionDetail, DecisionListItem, DissentRecordSchema, ParticipantSchema, SemanticTagSchema,
 )
@@ -54,6 +54,7 @@ def _escape_like(value: str) -> str:
 def _decision_to_list_item(d: DecisionRecord) -> dict:
     return DecisionListItem(
         id=d.id,
+        ecosystem_id=d.ecosystem_id,
         record_id=d.record_id,
         date=d.date,
         holding=d.holding,
@@ -203,7 +204,7 @@ async def get_decision(request: Request, decision_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (

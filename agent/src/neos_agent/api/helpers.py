@@ -30,6 +30,16 @@ def require_admin(request: Request):
     return member, None
 
 
+def get_authorized_ecosystem_ids(request: Request) -> list[uuid.UUID]:
+    """Return ALL authorized ecosystem IDs for the current user.
+
+    Use this for detail/single-resource endpoints where the user should be able
+    to access any resource they're authorized for, regardless of which ecosystems
+    are currently selected in the UI.
+    """
+    return getattr(request.ctx, "authorized_ecosystem_ids", [])
+
+
 def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
     """Return ecosystem IDs to filter by.
 

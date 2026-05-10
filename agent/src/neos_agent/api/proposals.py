@@ -27,7 +27,7 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
 from neos_agent.api.schemas.proposals import (
     AdviceEntryCreateRequest,
     AdviceEntrySchema,
@@ -112,6 +112,7 @@ def _proposal_to_list_item(p: Proposal) -> ProposalListItem:
     """Convert a Proposal ORM instance to a ProposalListItem schema."""
     return ProposalListItem(
         id=p.id,
+        ecosystem_id=p.ecosystem_id,
         proposal_id=p.proposal_id,
         type=p.type,
         decision_type=p.decision_type,
@@ -305,8 +306,8 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
             )
         )
 
-        # Scope to selected ecosystems
-        eco_ids = get_ecosystem_ids(request)
+        # Scope to authorized ecosystems
+        eco_ids = get_authorized_ecosystem_ids(request)
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
 
@@ -407,8 +408,8 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     async with request.app.ctx.db() as session:
-        # Scope to selected ecosystems
-        eco_ids = get_ecosystem_ids(request)
+        # Scope to authorized ecosystems
+        eco_ids = get_authorized_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
@@ -469,7 +470,7 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         return json({"error": "\"status\" field is required"}, status=400)
 
     async with request.app.ctx.db() as session:
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
@@ -537,7 +538,7 @@ async def get_advice(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
@@ -577,7 +578,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
@@ -646,7 +647,7 @@ async def get_consent(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
@@ -688,7 +689,7 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
@@ -755,7 +756,7 @@ async def get_test_reports(request: Request, proposal_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
-        eco_ids = get_ecosystem_ids(request)
+        eco_ids = get_authorized_ecosystem_ids(request)
         p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)

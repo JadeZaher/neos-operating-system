@@ -35,7 +35,7 @@ from neos_agent.db.models import (
     Member,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.services.fingerprint import generate_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,7 @@ def _escape_like(value: str) -> str:
 def _domain_to_list_item(d: Domain) -> dict:
     return DomainListItem(
         id=d.id,
+        ecosystem_id=d.ecosystem_id,
         domain_id=d.domain_id,
         version=d.version,
         status=d.status,
@@ -170,7 +171,7 @@ async def get_domain(request: Request, domain_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -267,7 +268,7 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(Domain).where(Domain.id == domain_id)

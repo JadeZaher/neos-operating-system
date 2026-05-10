@@ -26,7 +26,7 @@ from neos_agent.db.models import (
     ReviewRecord,
 )
 
-from .helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from .helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
     AgreementCreateRequest,
@@ -242,7 +242,7 @@ async def get_agreement(request: Request, agreement_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -341,7 +341,7 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -410,7 +410,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
     if not new_status:
         return json({"error": "\"status\" field is required"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         stmt = (
@@ -483,7 +483,7 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         # Verify agreement exists and is in scope
@@ -596,7 +596,7 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
     if member_status not in ("active", "steward", "co_creator"):
         return json({"error": "Insufficient permissions: rollback requires active/steward/co_creator status"}, status=403)
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
         # Load current agreement
