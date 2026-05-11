@@ -7,6 +7,9 @@ Usage:
 Creates:
   8 courses (2 per ecosystem: 1 ecosystem-wide, 1 domain-scoped)
   16 quizzes (2 per course: mix of standard, assessment, and onboarding)
+    - All quizzes have ecosystem_id set for ecosystem-level filtering
+    - Domain-level quizzes also have domain_id set
+    - One entry quiz per ecosystem (Onboarding Readiness, is_entry_quiz=True)
   33 quiz results (16 existing + 8 collab + 4 onboarding + 4 failed + 1 retake)
   4 quiz progress records (leads in-progress on onboarding readiness)
   8 user tags (2 per ecosystem lead)
@@ -423,6 +426,7 @@ async def seed(database_url: str) -> None:
             session.add(Quiz(
                 id=_uid(f"quiz.eco.{eco_short}.gov"),
                 course_id=eco_course_id,
+                ecosystem_id=eco_id,
                 title=f"{eco_name} Governance Knowledge Check",
                 description=f"Test your understanding of governance principles within {eco_name}.",
                 mode="standard",
@@ -434,10 +438,11 @@ async def seed(database_url: str) -> None:
             ))
             quiz_count += 1
 
-            # Quiz 2: Onboarding readiness (ecosystem-level)
+            # Quiz 2: Onboarding readiness (ecosystem-level, entry quiz)
             session.add(Quiz(
                 id=_uid(f"quiz.eco.{eco_short}.onboard"),
                 course_id=eco_course_id,
+                ecosystem_id=eco_id,
                 title=f"{eco_name} Onboarding Readiness",
                 description=f"Self-check before completing your {eco_name} onboarding ceremony.",
                 mode="standard",
@@ -446,6 +451,7 @@ async def seed(database_url: str) -> None:
                 created_by=member_id,
                 visibility="public",
                 allow_retakes=False,
+                is_entry_quiz=True,
             ))
             quiz_count += 1
 
@@ -466,6 +472,8 @@ async def seed(database_url: str) -> None:
             session.add(Quiz(
                 id=_uid(f"quiz.dom.{domain_short}.know"),
                 course_id=dom_course_id,
+                ecosystem_id=eco_id,
+                domain_id=domain_id,
                 title=f"{domain_name} Domain Knowledge",
                 description=f"Assess your understanding of {domain_name} practices and protocols.",
                 mode="standard",
@@ -481,6 +489,8 @@ async def seed(database_url: str) -> None:
             session.add(Quiz(
                 id=_uid(f"quiz.dom.{domain_short}.collab"),
                 course_id=dom_course_id,
+                ecosystem_id=eco_id,
+                domain_id=domain_id,
                 title=f"{domain_name} Collaboration Style",
                 description=f"Discover your collaboration style within {domain_name}. No right or wrong answers.",
                 mode="assessment",

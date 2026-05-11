@@ -6,6 +6,7 @@ Usage:
 
 Creates:
   8 journey maps (2 per ecosystem: Explorer + Ready to Join)
+    - 7 active, 1 inactive (Oasis Ready to Join) for include_inactive filter testing
   11 ethos_user_access records (all active members)
 """
 
@@ -812,7 +813,7 @@ async def seed(database_url: str) -> None:
                 "exit_package": _exit_package("Oasis", "oasis"),
                 "step_count": len(OASIS_READY_STEPS),
                 "is_default": False,
-                "is_active": True,
+                "is_active": False,  # Inactive: tests include_inactive filter
                 "sector_alignment": ["web4", "decentralized", "digital-sovereignty"],
                 "role_types": ["co_creator", "builder", "townhall"],
                 "min_alignment_score": None,
