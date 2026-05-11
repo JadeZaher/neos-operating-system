@@ -43,6 +43,7 @@ class QuizCreateRequest(BaseModel):
     allow_retakes: bool = True
     visibility: str = "public"
     is_published: bool = False
+    is_entry_quiz: bool = False
     created_by: Optional[uuid.UUID] = None
 
 
@@ -57,6 +58,7 @@ class QuizUpdateRequest(BaseModel):
     allow_retakes: Optional[bool] = None
     visibility: Optional[str] = None
     is_published: Optional[bool] = None
+    is_entry_quiz: Optional[bool] = None
 
 
 class QuizSubmitRequest(BaseModel):

@@ -574,6 +574,84 @@ async def seed(database_url: str) -> None:
             "q3": "wrong",  # 2/3 = 66%
         }
 
+        # Pre-built result_metadata for each result type
+        gov_meta_perfect = {
+            "totalQuestions": 5, "answeredQuestions": 5, "skippedQuestions": 0,
+            "correctCount": 5, "incorrectCount": 0, "gradableQuestions": 5,
+            "completionPercentage": 100, "correctnessPercentage": 100,
+            "isAssessment": False, "passingScore": 60,
+            "perQuestion": [
+                {"name": "q1", "title": "What is consent-based decision making?",
+                 "userAnswer": "No one has a principled objection",
+                 "correctAnswer": "No one has a principled objection", "isCorrect": True},
+                {"name": "q2", "title": "What is the role of a domain steward?",
+                 "userAnswer": "To facilitate governance within their domain",
+                 "correctAnswer": "To facilitate governance within their domain", "isCorrect": True},
+                {"name": "q3", "title": "Which phase of the ACT process comes first?",
+                 "userAnswer": "Advice", "correctAnswer": "Advice", "isCorrect": True},
+                {"name": "q4", "title": "What triggers an emergency circuit breaker?",
+                 "userAnswer": "Existential risk to the ecosystem",
+                 "correctAnswer": "Existential risk to the ecosystem", "isCorrect": True},
+                {"name": "q5", "title": "What is the purpose of a cooling-off period in onboarding?",
+                 "userAnswer": "To allow reflection before full commitment",
+                 "correctAnswer": "To allow reflection before full commitment", "isCorrect": True},
+            ],
+        }
+        gov_meta_good = {
+            "totalQuestions": 5, "answeredQuestions": 5, "skippedQuestions": 0,
+            "correctCount": 4, "incorrectCount": 1, "gradableQuestions": 5,
+            "completionPercentage": 100, "correctnessPercentage": 80,
+            "isAssessment": False, "passingScore": 60,
+            "perQuestion": [
+                {"name": "q1", "title": "What is consent-based decision making?",
+                 "userAnswer": "No one has a principled objection",
+                 "correctAnswer": "No one has a principled objection", "isCorrect": True},
+                {"name": "q2", "title": "What is the role of a domain steward?",
+                 "userAnswer": "To facilitate governance within their domain",
+                 "correctAnswer": "To facilitate governance within their domain", "isCorrect": True},
+                {"name": "q3", "title": "Which phase of the ACT process comes first?",
+                 "userAnswer": "Advice", "correctAnswer": "Advice", "isCorrect": True},
+                {"name": "q4", "title": "What triggers an emergency circuit breaker?",
+                 "userAnswer": "Existential risk to the ecosystem",
+                 "correctAnswer": "Existential risk to the ecosystem", "isCorrect": True},
+                {"name": "q5", "title": "What is the purpose of a cooling-off period in onboarding?",
+                 "userAnswer": "To delay membership",
+                 "correctAnswer": "To allow reflection before full commitment", "isCorrect": False},
+            ],
+        }
+        gov_meta_failed = {
+            "totalQuestions": 5, "answeredQuestions": 5, "skippedQuestions": 0,
+            "correctCount": 1, "incorrectCount": 4, "gradableQuestions": 5,
+            "completionPercentage": 100, "correctnessPercentage": 20,
+            "isAssessment": False, "passingScore": 60,
+            "perQuestion": [
+                {"name": "q1", "title": "What is consent-based decision making?",
+                 "userAnswer": "Everyone must agree enthusiastically",
+                 "correctAnswer": "No one has a principled objection", "isCorrect": False},
+                {"name": "q2", "title": "What is the role of a domain steward?",
+                 "userAnswer": "To make all decisions unilaterally",
+                 "correctAnswer": "To facilitate governance within their domain", "isCorrect": False},
+                {"name": "q3", "title": "Which phase of the ACT process comes first?",
+                 "userAnswer": "Consent", "correctAnswer": "Advice", "isCorrect": False},
+                {"name": "q4", "title": "What triggers an emergency circuit breaker?",
+                 "userAnswer": "Existential risk to the ecosystem",
+                 "correctAnswer": "Existential risk to the ecosystem", "isCorrect": True},
+                {"name": "q5", "title": "What is the purpose of a cooling-off period in onboarding?",
+                 "userAnswer": "To delay membership",
+                 "correctAnswer": "To allow reflection before full commitment", "isCorrect": False},
+            ],
+        }
+        collab_meta = {
+            "totalQuestions": 6, "answeredQuestions": 6, "skippedQuestions": 0,
+            "gradableQuestions": 0, "completionPercentage": 100,
+            "isAssessment": True,
+        }
+        onboarding_meta = {
+            "totalQuestions": 5, "answeredQuestions": 5, "skippedQuestions": 0,
+            "gradableQuestions": 0, "completionPercentage": 100,
+            "isAssessment": True,
+        }
+
         for eco_short, domain_short, lead_id, lead_short, second_id, second_short in result_specs:
             eco_gov_quiz_id = _uid(f"quiz.eco.{eco_short}.gov")
             domain_know_quiz_id = _uid(f"quiz.dom.{domain_short}.know")
@@ -587,6 +665,7 @@ async def seed(database_url: str) -> None:
                 score=100.0,
                 is_passed=True,
                 time_spent=180000,
+                result_metadata=gov_meta_perfect,
                 completed_at=datetime.utcnow() - timedelta(days=7),
             ))
             result_count += 1
@@ -600,6 +679,7 @@ async def seed(database_url: str) -> None:
                 score=80.0,
                 is_passed=True,
                 time_spent=240000,
+                result_metadata=gov_meta_good,
                 completed_at=datetime.utcnow() - timedelta(days=6),
             ))
             result_count += 1
@@ -613,6 +693,12 @@ async def seed(database_url: str) -> None:
                 score=100.0,
                 is_passed=True,
                 time_spent=150000,
+                result_metadata={
+                    "totalQuestions": 3, "answeredQuestions": 3, "skippedQuestions": 0,
+                    "correctCount": 3, "incorrectCount": 0, "gradableQuestions": 3,
+                    "completionPercentage": 100, "correctnessPercentage": 100,
+                    "isAssessment": False, "passingScore": 66,
+                },
                 completed_at=datetime.utcnow() - timedelta(days=5),
             ))
             result_count += 1
@@ -626,6 +712,12 @@ async def seed(database_url: str) -> None:
                 score=66.0,
                 is_passed=True,
                 time_spent=200000,
+                result_metadata={
+                    "totalQuestions": 3, "answeredQuestions": 3, "skippedQuestions": 0,
+                    "correctCount": 2, "incorrectCount": 1, "gradableQuestions": 3,
+                    "completionPercentage": 100, "correctnessPercentage": 66,
+                    "isAssessment": False, "passingScore": 66,
+                },
                 completed_at=datetime.utcnow() - timedelta(days=4),
             ))
             result_count += 1
@@ -636,9 +728,10 @@ async def seed(database_url: str) -> None:
                 quiz_id=_uid(f"quiz.dom.{domain_short}.collab"),
                 member_id=lead_id,
                 survey_results=collab_answers_lead,
-                score=None,
+                score=100,
                 is_passed=None,
                 time_spent=120000,
+                result_metadata=collab_meta,
                 completed_at=datetime.utcnow() - timedelta(days=5),
             ))
             result_count += 1
@@ -649,9 +742,10 @@ async def seed(database_url: str) -> None:
                 quiz_id=_uid(f"quiz.dom.{domain_short}.collab"),
                 member_id=second_id,
                 survey_results=collab_answers_second,
-                score=None,
+                score=100,
                 is_passed=None,
                 time_spent=130000,
+                result_metadata=collab_meta,
                 completed_at=datetime.utcnow() - timedelta(days=4),
             ))
             result_count += 1
@@ -662,9 +756,10 @@ async def seed(database_url: str) -> None:
                 quiz_id=_uid(f"quiz.eco.{eco_short}.onboard"),
                 member_id=second_id,
                 survey_results=onboarding_answers_complete,
-                score=None,
+                score=100,
                 is_passed=True,
                 time_spent=180000,
+                result_metadata=onboarding_meta,
                 completed_at=datetime.utcnow() - timedelta(days=6),
             ))
             result_count += 1
@@ -678,6 +773,7 @@ async def seed(database_url: str) -> None:
                 score=20.0,
                 is_passed=False,
                 time_spent=210000,
+                result_metadata=gov_meta_failed,
                 completed_at=datetime.utcnow() - timedelta(days=10),
             ))
             result_count += 1
@@ -691,6 +787,12 @@ async def seed(database_url: str) -> None:
             score=100.0,
             is_passed=True,
             time_spent=140000,
+            result_metadata={
+                "totalQuestions": 3, "answeredQuestions": 3, "skippedQuestions": 0,
+                "correctCount": 3, "incorrectCount": 0, "gradableQuestions": 3,
+                "completionPercentage": 100, "correctnessPercentage": 100,
+                "isAssessment": False, "passingScore": 66,
+            },
             completed_at=datetime.utcnow() - timedelta(days=2),
         ))
         result_count += 1

@@ -261,6 +261,7 @@ async def create_quiz(request: Request):
         allow_retakes=body.allow_retakes,
         visibility=body.visibility,
         is_published=body.is_published,
+        is_entry_quiz=body.is_entry_quiz,
         created_by=body.created_by,
     )
 
@@ -316,6 +317,8 @@ async def update_quiz(request: Request, quiz_id: str):
             quiz.visibility = body.visibility
         if body.is_published is not None:
             quiz.is_published = body.is_published
+        if body.is_entry_quiz is not None:
+            quiz.is_entry_quiz = body.is_entry_quiz
 
         await session.commit()
         await session.refresh(quiz)
