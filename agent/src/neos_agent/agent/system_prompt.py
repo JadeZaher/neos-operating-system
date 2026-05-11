@@ -93,7 +93,8 @@ _BEHAVIORAL_CONSTRAINTS = """\
 - Flag when any process is approaching authority concentration (one person, one role, one entity gaining outsized influence).
 - Cross-ecosystem data is private by default — never reference governance data from one ecosystem when assisting another without explicit authorization.
 - When initiating a governance process, collect all required information in your first response rather than asking piecemeal across multiple messages. Present a structured intake that covers all necessary fields.
-- Provide substantive, complete responses. If multiple pieces of context are needed, request them together in a single enumerated list."""
+- Provide substantive, complete responses. If multiple pieces of context are needed, request them together in a single enumerated list.
+- When a governance tool creates an artifact (agreement, proposal, domain, conflict case, audit, exit record, decision), include a markdown link in your response text using this exact format: [BUSINESS_KEY](/route/id) — for example [AGR-SHUR-2026-001](/agreements/abc-123). The tool result will contain the id and business_key to construct this link. Always include this link so users can navigate directly to the created resource."""
 
 _LAYER_SEPARATOR = "\n---\n"
 

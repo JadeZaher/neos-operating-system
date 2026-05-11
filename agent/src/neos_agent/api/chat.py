@@ -44,6 +44,70 @@ _MAX_CONVERSATION_MESSAGES = 20
 # Shared router instance
 _skill_router = SkillRouter()
 
+# Human-friendly labels for tool execution thinking events
+_TOOL_DISPLAY_NAMES = {
+    "create_agreement_draft": "Creating agreement draft",
+    "update_agreement_status": "Updating agreement status",
+    "search_agreements": "Searching agreements",
+    "get_agreement": "Looking up agreement",
+    "create_proposal": "Creating proposal",
+    "search_proposals": "Searching proposals",
+    "record_advice": "Recording advice",
+    "record_consent_position": "Recording consent position",
+    "check_quorum": "Checking quorum",
+    "create_decision_record": "Creating decision record",
+    "search_precedents": "Searching precedents",
+    "check_authority": "Checking authority boundaries",
+    "get_member_roles": "Looking up member roles",
+    "get_domain": "Looking up domain",
+    "create_domain_draft": "Creating domain draft",
+    "get_active_members": "Looking up active members",
+    "list_ecosystems": "Listing ecosystems",
+    "get_ecosystem": "Looking up ecosystem",
+    "create_conflict_case": "Creating conflict case",
+    "triage_conflict": "Triaging conflict",
+    "get_emergency_state": "Checking emergency state",
+    "declare_emergency": "Declaring emergency",
+    "create_exit_record": "Creating exit record",
+    "create_safeguard_audit": "Creating safeguard audit",
+    "create_repair_agreement": "Creating repair agreement",
+}
+
+
+def _get_artifact_info(tool_name: str, result_data: dict | None) -> dict | None:
+    """Extract artifact routing info from a successful tool result."""
+    if not result_data:
+        return None
+
+    ROUTE_MAP = {
+        "create_agreement_draft": ("agreement", lambda d: (d.get("id"), d.get("agreement_id"), f"/agreements/{d.get('id')}")),
+        "create_proposal": ("proposal", lambda d: (d.get("id"), d.get("proposal_id"), f"/proposals/{d.get('id')}")),
+        "create_domain_draft": ("domain", lambda d: (d.get("id"), d.get("domain_id"), f"/domains/{d.get('id')}")),
+        "create_conflict_case": ("conflict", lambda d: (d.get("id"), d.get("case_id"), f"/conflicts/{d.get('id')}")),
+        "create_exit_record": ("exit", lambda d: (d.get("id"), None, f"/exit/{d.get('id')}")),
+        "create_safeguard_audit": ("audit", lambda d: (d.get("id"), d.get("audit_id"), f"/safeguards/audits/{d.get('id')}")),
+        "create_repair_agreement": ("agreement", lambda d: (d.get("id"), None, f"/agreements/{d.get('id')}")),
+        "create_decision_record": ("decision", lambda d: (d.get("id"), None, f"/decisions/{d.get('id')}")),
+    }
+
+    if tool_name not in ROUTE_MAP:
+        return None
+
+    artifact_type, extractor = ROUTE_MAP[tool_name]
+    try:
+        uid, biz_key, route = extractor(result_data)
+        if not uid:
+            return None
+        return {
+            "type": artifact_type,
+            "id": uid,
+            "business_key": biz_key,
+            "route": route,
+            "label": biz_key or f"{artifact_type.title()} {uid[:8]}",
+        }
+    except Exception:
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -380,7 +444,9 @@ async def send_message(request: Request):
             messages = history + [{"role": "user", "content": message}]
             total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-            for _ in range(_MAX_TOOL_ROUNDS):
+            await response.write(_sse_event("thinking", json.dumps({"step": "Analyzing your request..."})))
+
+            for _round in range(_MAX_TOOL_ROUNDS):
                 resp = await acompletion(
                     messages=messages,
                     system=system_prompt,
@@ -427,6 +493,14 @@ async def send_message(request: Request):
                     except json.JSONDecodeError:
                         tool_args = {}
 
+                    display_name = _TOOL_DISPLAY_NAMES.get(
+                        tool_name, tool_name.replace("_", " ").title(),
+                    )
+                    await response.write(_sse_event("thinking", json.dumps({
+                        "step": display_name + "...",
+                        "tool": tool_name,
+                    })))
+
                     await response.write(_sse_event("tool_start", json.dumps({
                         "name": tool_name,
                         "args": tool_args,
@@ -443,11 +517,16 @@ async def send_message(request: Request):
                         logger.exception("Tool execution failed: %s", tool_name)
                         result = {"success": False, "error": str(e)}
 
+                    artifact = None
+                    if result.get("success"):
+                        artifact = _get_artifact_info(tool_name, result.get("data"))
+
                     await response.write(_sse_event("tool_result", json.dumps({
                         "name": tool_name,
                         "success": result.get("success", False),
                         "data": result.get("data") if result.get("success") else None,
                         "error": result.get("error") if not result.get("success") else None,
+                        **({"artifact": artifact} if artifact else {}),
                     })))
 
                     messages.append({
@@ -455,6 +534,8 @@ async def send_message(request: Request):
                         "tool_call_id": tc.id,
                         "content": json.dumps(result),
                     })
+
+                await response.write(_sse_event("thinking", json.dumps({"step": "Processing results..."})))
 
                 # --- Skill transition detection via router ---
                 if current_skill:
@@ -475,6 +556,9 @@ async def send_message(request: Request):
                         current_skill, round_tool_calls, "",
                     )
                     if new_skill is not None and new_skill != current_skill:
+                        await response.write(_sse_event("thinking", json.dumps({
+                            "step": f"Transitioning to {new_skill}...",
+                        })))
                         current_skill = new_skill
                         await response.write(_sse_event("skill_transition", json.dumps({
                             "from": active_skill,
