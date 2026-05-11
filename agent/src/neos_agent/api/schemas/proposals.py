@@ -148,3 +148,18 @@ class ConsentPositionRequest(BaseModel):
     member_name: str
     position: str
     objection_text: str | None = None
+
+
+class TestCriterionInput(BaseModel):
+    criterion: str
+    metric: str | None = None
+    target: str | None = None
+    actual: str | None = None
+    met: bool = False
+    evidence: str | None = None
+
+
+class TestReportCreateRequest(BaseModel):
+    observations: str
+    outcome: str  # passed, failed, modified
+    success_criteria: list[TestCriterionInput] = []

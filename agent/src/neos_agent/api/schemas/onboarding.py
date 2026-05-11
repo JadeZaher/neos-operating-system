@@ -32,3 +32,5 @@ class CeremonyState(BaseModel):
 class SectionConsentRequest(BaseModel):
     section: str
     consented: bool
+    position: str | None = None  # consent, stand_aside, object
+    objection_text: str | None = None

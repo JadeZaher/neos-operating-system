@@ -39,6 +39,7 @@ from neos_agent.api.schemas.proposals import (
     ProposalDetail,
     ProposalListItem,
     ProposalUpdateRequest,
+    TestReportCreateRequest,
     TestReportSchema,
     TestSuccessCriterionSchema,
 )
@@ -774,3 +775,64 @@ async def get_test_reports(request: Request, proposal_id: uuid.UUID):
 
     schemas = [_test_report_to_schema(tr).model_dump(mode="json") for tr in reports]
     return json({"test_reports": schemas})
+
+
+@proposals_api_bp.post("/<proposal_id:uuid>/test")
+async def submit_test_report(request: Request, proposal_id: uuid.UUID):
+    """POST /api/v1/proposals/:id/test -- Submit a test report.
+
+    Accepts JSON: TestReportCreateRequest
+    Returns JSON: TestReportSchema with 201 status.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    try:
+        create_req = TestReportCreateRequest(**body)
+    except Exception as e:
+        return json({"error": f"Invalid request: {e}"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        # Verify proposal exists and is accessible
+        eco_ids = get_authorized_ecosystem_ids(request)
+        p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
+        if eco_ids:
+            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
+        if await session.scalar(p_stmt) is None:
+            return json({"error": "Proposal not found"}, status=404)
+
+        report = TestReport(
+            id=uuid.uuid4(),
+            proposal_id=proposal_id,
+            test_start_date=_dt.date.today(),
+            observations=create_req.observations,
+            outcome=create_req.outcome,
+        )
+        session.add(report)
+        await session.flush()
+
+        # Add success criteria
+        for sc in create_req.success_criteria:
+            criterion = TestSuccessCriterion(
+                id=uuid.uuid4(),
+                test_report_id=report.id,
+                criterion=sc.criterion,
+                met=sc.met,
+                evidence=sc.evidence,
+            )
+            session.add(criterion)
+
+        await session.commit()
+
+        # Reload with criteria
+        stmt = (
+            select(TestReport)
+            .where(TestReport.id == report.id)
+            .options(selectinload(TestReport.success_criteria))
+        )
+        result = await session.execute(stmt)
+        report = result.scalar_one()
+
+    return json(_test_report_to_schema(report).model_dump(mode="json"), status=201)

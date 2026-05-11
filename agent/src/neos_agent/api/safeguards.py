@@ -38,16 +38,33 @@ safeguards_api_bp = Blueprint("safeguards_api", url_prefix="/api/v1/safeguards")
 # ---------------------------------------------------------------------------
 
 
+def _health_score_to_label(score: int | None) -> str | None:
+    """Map numeric health score to string enum."""
+    if score is None:
+        return None
+    if score >= 80:
+        return "healthy"
+    if score >= 50:
+        return "mixed"
+    if score >= 25:
+        return "degrading"
+    return "critical"
+
 
 def _audit_to_list_item(a: GovernanceHealthAudit) -> dict:
     return AuditListItem(
         id=a.id,
         audit_id=a.audit_id,
+        ecosystem_id=a.ecosystem_id,
         audit_date=a.audit_date,
         auditor=a.auditor,
         overall_health_score=a.overall_health_score,
         status=a.status,
         created_at=a.created_at,
+        completed_at=getattr(a, 'updated_at', None) if a.status == 'completed' else None,
+        overall_health=getattr(a, 'overall_health', None) or _health_score_to_label(a.overall_health_score),
+        audit_scope=getattr(a, 'audit_scope', None),
+        trigger_type=getattr(a, 'trigger_type', None),
     ).model_dump(mode="json")
 
 
@@ -55,17 +72,27 @@ def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
     return AuditDetail(
         id=a.id,
         audit_id=a.audit_id,
+        ecosystem_id=a.ecosystem_id,
         audit_date=a.audit_date,
         auditor=a.auditor,
         overall_health_score=a.overall_health_score,
         status=a.status,
         created_at=a.created_at,
-        ecosystem_id=a.ecosystem_id,
+        completed_at=getattr(a, 'updated_at', None) if a.status == 'completed' else None,
+        overall_health=getattr(a, 'overall_health', None) or _health_score_to_label(a.overall_health_score),
+        audit_scope=getattr(a, 'audit_scope', None),
+        trigger_type=getattr(a, 'trigger_type', None),
         capture_risk_indicators=a.capture_risk_indicators,
         findings=a.findings,
         recommendations=a.recommendations,
-        next_audit_date=a.next_audit_date,
+        next_audit_due=getattr(a, 'next_audit_due', None) or a.next_audit_date,
         updated_at=a.updated_at,
+        audit_period_start=getattr(a, 'audit_period_start', None),
+        audit_period_end=getattr(a, 'audit_period_end', None),
+        auditor_ids=getattr(a, 'auditor_ids', None),
+        indicator_scores=getattr(a, 'indicator_scores', None),
+        triggered_safeguards=getattr(a, 'triggered_safeguards', None),
+        structured_recommendations=getattr(a, 'structured_recommendations', None),
     ).model_dump(mode="json")
 
 
@@ -76,11 +103,7 @@ def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
 
 @safeguards_api_bp.get("/")
 async def health_summary(request: Request):
-    """GET /api/v1/safeguards -- latest audit + health metrics summary.
-
-    Returns the most recent audit details and aggregate counts
-    across all selected ecosystems.
-    """
+    """GET /api/v1/safeguards -- latest audit + health metrics summary."""
     member, err = require_auth(request)
     if err:
         return err
@@ -94,19 +117,23 @@ async def health_summary(request: Request):
         if eco_ids:
             base_stmt = apply_ecosystem_filter(base_stmt, GovernanceHealthAudit, eco_ids)
 
-        # Latest audit
-        latest_stmt = base_stmt.limit(1)
-        latest_result = await session.execute(latest_stmt)
-        latest_audit = latest_result.scalar_one_or_none()
+        # Fetch recent audits (up to 10)
+        recent_stmt = base_stmt.limit(10)
+        recent_result = await session.execute(recent_stmt)
+        recent_audits = recent_result.scalars().all()
 
-        # Total count across all selected ecosystems
-        count_base = select(func.count()).select_from(base_stmt.subquery())
-        total = await session.scalar(count_base) or 0
+        latest_audit = recent_audits[0] if recent_audits else None
+
+    # Extract indicator scores from latest audit if available
+    latest_indicators = getattr(latest_audit, 'indicator_scores', None) if latest_audit else None
+    latest_safeguards = getattr(latest_audit, 'triggered_safeguards', None) if latest_audit else None
 
     summary = HealthSummary(
         latest_audit=_audit_to_detail(latest_audit) if latest_audit else None,
-        total_audits=total,
-        latest_health_score=latest_audit.overall_health_score if latest_audit else None,
+        recent_audits=[_audit_to_list_item(a) for a in recent_audits],
+        health_score=latest_audit.overall_health_score if latest_audit else None,
+        indicator_scores=latest_indicators,
+        triggered_safeguards=latest_safeguards,
     )
 
     return json(summary.model_dump(mode="json"))
@@ -116,7 +143,7 @@ async def health_summary(request: Request):
 async def list_audits(request: Request):
     """GET /api/v1/safeguards/audits -- paginated audit list.
 
-    Query params: status, q, page (default 1), per_page (default 25, max 100).
+    Query params: status, overall_health, q, page (default 1), per_page (default 25, max 100).
     Lists audits across all selected ecosystems.
     """
     member, err = require_auth(request)
@@ -140,6 +167,22 @@ async def list_audits(request: Request):
         status = request.args.get("status")
         if status:
             stmt = stmt.where(GovernanceHealthAudit.status == status)
+
+        overall_health_param = request.args.get("overall_health")
+        if overall_health_param:
+            # Filter by computed overall_health from score
+            health_ranges = {
+                "healthy": (80, 999),
+                "mixed": (50, 79),
+                "degrading": (25, 49),
+                "critical": (0, 24),
+            }
+            if overall_health_param in health_ranges:
+                low, high = health_ranges[overall_health_param]
+                stmt = stmt.where(
+                    GovernanceHealthAudit.overall_health_score >= low,
+                    GovernanceHealthAudit.overall_health_score <= high,
+                )
 
         search = request.args.get("q")
         if search:

@@ -87,8 +87,11 @@ class ConflictUpdateRequest(BaseModel):
 
 class RepairCreateRequest(BaseModel):
     title: str
-    commitments: dict | None = None
+    commitments: list | dict | None = None  # Accept both formats
     responsible_party: str | None = None
+    parties: list[str] | None = None  # NEW: list of party names
+    review_date: _dt.date | None = None  # NEW
+    facilitator_notes: str | None = None  # NEW
     checkin_30_date: _dt.date | None = None
     checkin_60_date: _dt.date | None = None
     checkin_90_date: _dt.date | None = None

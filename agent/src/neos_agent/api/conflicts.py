@@ -343,11 +343,30 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
         if await session.scalar(c_stmt) is None:
             return json({"error": "Conflict case not found"}, status=404)
 
+        # Build commitments data including parties and metadata
+        commitments_data = create_req.commitments
+        if isinstance(commitments_data, list):
+            # Frontend sends array format — wrap with metadata
+            commitments_data = {
+                "items": commitments_data,
+                "parties": create_req.parties,
+                "review_date": str(create_req.review_date) if create_req.review_date else None,
+                "facilitator_notes": create_req.facilitator_notes,
+            }
+        elif isinstance(commitments_data, dict):
+            # Legacy dict format — add new fields
+            if create_req.parties:
+                commitments_data["parties"] = create_req.parties
+            if create_req.review_date:
+                commitments_data["review_date"] = str(create_req.review_date)
+            if create_req.facilitator_notes:
+                commitments_data["facilitator_notes"] = create_req.facilitator_notes
+
         repair = RepairAgreementRecord(
             id=uuid.uuid4(),
             conflict_case_id=conflict_id,
             title=create_req.title,
-            commitments=create_req.commitments,
+            commitments=commitments_data,
             responsible_party=create_req.responsible_party,
             status="active",
             checkin_30_date=create_req.checkin_30_date,

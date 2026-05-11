@@ -55,13 +55,20 @@ onboarding_api_bp = Blueprint("onboarding_api", url_prefix="/api/v1/onboarding")
 
 
 def _calc_completion(section_consents: dict | None) -> int:
-    """Calculate completion percentage based on consented sections out of 6."""
+    """Calculate completion percentage from section consents."""
     if not section_consents:
         return 0
-    consented = sum(
-        1 for s in _CONSENT_SECTIONS if section_consents.get(s) is True
-    )
-    return int((consented / len(_CONSENT_SECTIONS)) * 100)
+    total = len(_CONSENT_SECTIONS)
+    if total == 0:
+        return 0
+    completed = 0
+    for section in _CONSENT_SECTIONS:
+        val = section_consents.get(section)
+        if val is True:
+            completed += 1
+        elif isinstance(val, dict) and val.get("consented"):
+            completed += 1
+    return round((completed / total) * 100)
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +237,15 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
 
         # Update section consent
         consents = dict(ob.section_consents) if ob.section_consents else {}
-        consents[req.section] = req.consented
+        # Store section consent with optional position data
+        if req.position and req.position != "consent":
+            consents[req.section] = {
+                "consented": req.consented,
+                "position": req.position,
+                "objection_text": req.objection_text,
+            }
+        else:
+            consents[req.section] = req.consented
         ob.section_consents = consents
 
         # Recalculate completion percentage
