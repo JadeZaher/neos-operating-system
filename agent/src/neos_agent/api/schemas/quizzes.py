@@ -32,6 +32,8 @@ class QuizDetail(QuizListItem):
 
 class QuizCreateRequest(BaseModel):
     course_id: Optional[uuid.UUID] = None
+    ecosystem_id: Optional[uuid.UUID] = None
+    domain_id: Optional[uuid.UUID] = None
     title: str
     description: Optional[str] = None
     mode: str = "standard"

@@ -443,29 +443,67 @@ async def admin_list_shares_needs(request: Request):
     })
 
 
+async def _require_auth_for_shares_needs(request: Request, session, sn_uuid: uuid.UUID):
+    """Authorise access to a SharesNeeds record.
+
+    Returns (member, record, None) on success or (None, None, error_response).
+    Admins (co_creator / builder) can access any record.  Regular authenticated
+    users can access records that belong to an ecosystem they are a member of.
+    """
+    member, err = require_auth(request)
+    if err:
+        return None, None, err
+
+    record = await session.get(SharesNeeds, sn_uuid)
+    if not record:
+        return None, None, json({"error": "Share/Need not found"}, status=404)
+
+    # Admins can always proceed
+    if member.profile in ("co_creator", "builder"):
+        return member, record, None
+
+    # Regular members: must belong to the record's ecosystem
+    membership = await session.execute(
+        select(Member).where(
+            Member.ecosystem_id == record.ecosystem_id,
+            Member.user_id == member.user_id,
+        )
+    )
+    if not membership.scalars().first():
+        return None, None, json({"error": "You are not a member of this ecosystem"}, status=403)
+
+    return member, record, None
+
+
 @discover_api_bp.put("/shares-needs/<sn_id:str>")
 async def update_share_need(request: Request, sn_id: str):
-    """PUT /api/v1/discover/shares-needs/<id> -- Update a share or need (admin)."""
-    member, err = require_admin(request)
-    if err:
-        return err
+    """PUT /api/v1/discover/shares-needs/<id> -- Update a share or need.
 
+    Accessible by admins (co_creator/builder) and ecosystem members.
+    """
     try:
         sn_uuid = uuid.UUID(sn_id)
     except ValueError:
         return json({"error": "Invalid ID"}, status=400)
 
     body = request.json or {}
-    allowed_fields = {"title", "description", "category", "capacity", "tags", "visibility", "domain_id", "ecosystem_id"}
+    # Regular members may not reassign ecosystem_id or domain_id
+    member, err = require_auth(request)
+    if err:
+        return err
+    is_admin = member.profile in ("co_creator", "builder")
+    allowed_fields = {"title", "description", "category", "capacity", "tags", "visibility"}
+    if is_admin:
+        allowed_fields |= {"domain_id", "ecosystem_id"}
     update_data = {k: v for k, v in body.items() if k in allowed_fields}
 
     if not update_data:
         return json({"error": "No valid fields to update"}, status=400)
 
     async with request.app.ctx.db() as session:
-        record = await session.get(SharesNeeds, sn_uuid)
-        if not record:
-            return json({"error": "Share/Need not found"}, status=404)
+        member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
+        if auth_err:
+            return auth_err
 
         for key, value in update_data.items():
             setattr(record, key, value)
@@ -491,11 +529,10 @@ async def update_share_need(request: Request, sn_id: str):
 
 @discover_api_bp.post("/shares-needs/<sn_id:str>/status")
 async def update_share_need_status(request: Request, sn_id: str):
-    """POST /api/v1/discover/shares-needs/<id>/status -- Change status (admin)."""
-    member, err = require_admin(request)
-    if err:
-        return err
+    """POST /api/v1/discover/shares-needs/<id>/status -- Change status.
 
+    Accessible by admins (co_creator/builder) and ecosystem members.
+    """
     try:
         sn_uuid = uuid.UUID(sn_id)
     except ValueError:
@@ -507,9 +544,9 @@ async def update_share_need_status(request: Request, sn_id: str):
         return json({"error": "Status must be 'active', 'fulfilled', or 'withdrawn'"}, status=400)
 
     async with request.app.ctx.db() as session:
-        record = await session.get(SharesNeeds, sn_uuid)
-        if not record:
-            return json({"error": "Share/Need not found"}, status=404)
+        member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
+        if auth_err:
+            return auth_err
 
         old_status = record.status
         record.status = new_status
@@ -527,20 +564,19 @@ async def update_share_need_status(request: Request, sn_id: str):
 
 @discover_api_bp.delete("/shares-needs/<sn_id:str>")
 async def delete_share_need(request: Request, sn_id: str):
-    """DELETE /api/v1/discover/shares-needs/<id> -- Delete a share or need (admin)."""
-    member, err = require_admin(request)
-    if err:
-        return err
+    """DELETE /api/v1/discover/shares-needs/<id> -- Delete a share or need.
 
+    Accessible by admins (co_creator/builder) and ecosystem members.
+    """
     try:
         sn_uuid = uuid.UUID(sn_id)
     except ValueError:
         return json({"error": "Invalid ID"}, status=400)
 
     async with request.app.ctx.db() as session:
-        record = await session.get(SharesNeeds, sn_uuid)
-        if not record:
-            return json({"error": "Share/Need not found"}, status=404)
+        member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
+        if auth_err:
+            return auth_err
 
         await session.delete(record)
         await session.commit()

@@ -15,10 +15,11 @@ from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, select
 
-from neos_agent.db.models import Domain, Ecosystem, Member, User
+from neos_agent.db.models import Domain, Ecosystem, Member, SharesNeeds, User
 from neos_agent.db.course_models import Quiz, QuizResult
+from neos_agent.services.fingerprint import generate_fingerprint
 
-from .helpers import require_auth
+from .helpers import _escape_like, require_auth
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
@@ -107,8 +108,11 @@ async def list_ecosystems(request: Request):
 
     status_filter = request.args.get("status")
     search_query = request.args.get("q")
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        per_page = min(100, max(1, int(request.args.get("per_page", 25))))
+    except (ValueError, TypeError):
+        return json({"error": "Invalid pagination parameters"}, status=400)
     offset = (page - 1) * per_page
 
     async with request.app.ctx.db() as db:
@@ -122,7 +126,7 @@ async def list_ecosystems(request: Request):
             base_query = base_query.where(Ecosystem.status == status_filter)
 
         if search_query:
-            pattern = f"%{search_query}%"
+            pattern = f"%{_escape_like(search_query)}%"
             base_query = base_query.where(
                 Ecosystem.name.ilike(pattern) | Ecosystem.description.ilike(pattern)
             )
@@ -199,7 +203,7 @@ async def create_ecosystem(request: Request):
     if website and not website.startswith("https://"):
         if website.startswith("http://"):
             website = "https://" + website[7:]
-        elif not website.startswith("https://"):
+        else:
             website = "https://" + website
 
     async with request.app.ctx.db() as db:
@@ -220,7 +224,7 @@ async def create_ecosystem(request: Request):
         db.add(eco)
         await db.flush()
 
-        # Add the creating member to this ecosystem
+        # Add the creating member to this ecosystem as steward
         user = getattr(request.ctx, "user", None)
         mid = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
@@ -229,8 +233,28 @@ async def create_ecosystem(request: Request):
             member_id=mid,
             display_name=member.display_name,
             current_status="active",
+            profile="co_creator",
         )
         db.add(new_member)
+        await db.flush()
+
+        # Create a default governance domain with the creator as steward
+        short_id = uuid.uuid4().hex[:8].upper()
+        default_domain = Domain(
+            id=uuid.uuid4(),
+            ecosystem_id=eco.id,
+            domain_id=f"DOM-{short_id}",
+            version="1.0",
+            status="active",
+            purpose=f"Core governance domain for {eco.name}",
+            current_steward=new_member.display_name,
+            steward_id=new_member.id,
+            created_by=new_member.display_name,
+        )
+        default_domain.version_fingerprint = generate_fingerprint(
+            default_domain.domain_id, default_domain.purpose or "", default_domain.version, default_domain.status
+        )
+        db.add(default_domain)
         await db.commit()
 
         detail = _ecosystem_to_detail(eco, 1)
@@ -356,9 +380,11 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
         db.add(new_member)
         await db.commit()
 
+        eco_name = eco.name
+
     return json({
         "status": "joined",
-        "message": f"Welcome to {eco.name}! You are now an active member.",
+        "message": f"Welcome to {eco_name}! You are now an active member.",
     }, status=201)
 
 
@@ -464,6 +490,47 @@ async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     })
 
 
+@ecosystems_api_bp.post("/<ecosystem_id:uuid>/quizzes/unassign")
+async def unassign_quiz_from_ecosystem(request: Request, ecosystem_id: uuid.UUID):
+    """Unassign a quiz from an ecosystem.
+
+    Accepts JSON: {"quiz_id": "..."}
+    Clears the quiz's ecosystem_id and is_entry_quiz flag.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    quiz_id_str = body.get("quiz_id")
+    if not quiz_id_str:
+        return json({"error": "quiz_id is required"}, status=400)
+
+    try:
+        quiz_id = uuid.UUID(quiz_id_str)
+    except ValueError:
+        return json({"error": "Invalid quiz_id"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        eco = await db.get(Ecosystem, ecosystem_id)
+        if eco is None:
+            return json({"error": "Ecosystem not found"}, status=404)
+
+        eco_ids = await _get_member_ecosystem_ids(db, member)
+        if ecosystem_id not in eco_ids:
+            return json({"error": "Access denied"}, status=403)
+
+        quiz = await db.get(Quiz, quiz_id)
+        if quiz is None or quiz.ecosystem_id != ecosystem_id:
+            return json({"error": "Quiz not found in this ecosystem"}, status=404)
+
+        quiz.ecosystem_id = None
+        quiz.is_entry_quiz = False
+        await db.commit()
+
+    return json({"status": "unassigned", "quiz_id": str(quiz_id)})
+
+
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/quiz-results")
 async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
     """View quiz results for all quizzes assigned to this ecosystem.
@@ -530,3 +597,78 @@ async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
             for r in results
         ]
     })
+
+
+# ---------------------------------------------------------------------------
+# Shares & Needs — Ecosystem-scoped
+# ---------------------------------------------------------------------------
+
+
+@ecosystems_api_bp.get("/<ecosystem_id:uuid>/shares-needs")
+async def list_ecosystem_shares_needs(request: Request, ecosystem_id: uuid.UUID):
+    """GET /api/v1/ecosystems/:id/shares-needs -- List shares & needs for this ecosystem.
+
+    Returns all items (not just public/active) so members can manage them.
+    Query params: type, category, status
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as db:
+        eco = await db.get(Ecosystem, ecosystem_id)
+        if eco is None:
+            return json({"error": "Ecosystem not found"}, status=404)
+
+        eco_ids = await _get_member_ecosystem_ids(db, member)
+        if ecosystem_id not in eco_ids:
+            return json({"error": "Access denied"}, status=403)
+
+        filters = [SharesNeeds.ecosystem_id == ecosystem_id]
+        type_filter = request.args.get("type")
+        if type_filter:
+            filters.append(SharesNeeds.type == type_filter)
+        category_filter = request.args.get("category")
+        if category_filter:
+            filters.append(SharesNeeds.category == category_filter)
+        status_filter = request.args.get("status")
+        if status_filter:
+            filters.append(SharesNeeds.status == status_filter)
+
+        stmt = (
+            select(SharesNeeds)
+            .where(*filters)
+            .order_by(SharesNeeds.created_at.desc())
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+
+        # Bulk-load domain names
+        domain_ids = list({r.domain_id for r in rows if r.domain_id})
+        domain_names: dict[uuid.UUID, str] = {}
+        if domain_ids:
+            d_rows = await db.execute(
+                select(Domain.id, Domain.domain_id).where(Domain.id.in_(domain_ids))
+            )
+            for d in d_rows.all():
+                domain_names[d.id] = d.domain_id
+
+        items = [
+            {
+                "id": str(r.id),
+                "ecosystem_id": str(r.ecosystem_id),
+                "domain_id": str(r.domain_id),
+                "domain_name": domain_names.get(r.domain_id),
+                "type": r.type,
+                "title": r.title,
+                "description": r.description,
+                "category": r.category,
+                "capacity": r.capacity,
+                "tags": r.tags if isinstance(r.tags, list) else [],
+                "visibility": r.visibility,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+    return json({"items": items})

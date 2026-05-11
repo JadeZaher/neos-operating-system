@@ -33,6 +33,7 @@ from neos_agent.db.models import (
     DomainElement,
     DomainMetric,
     Member,
+    SharesNeeds,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
@@ -393,6 +394,42 @@ async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
     return json({"success": True, "quiz_id": str(quiz_id), "domain_id": str(domain_id_a)})
 
 
+@domains_api_bp.post("/<domain_id_u:uuid>/quizzes/unassign")
+async def unassign_quiz_from_domain(request: Request, domain_id_u: uuid.UUID):
+    """POST /api/v1/domains/:id/quizzes/unassign -- Unassign a quiz from this domain.
+
+    Accepts JSON: {"quiz_id": "..."}
+    """
+    auth_member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    quiz_id_str = body.get("quiz_id")
+    if not quiz_id_str:
+        return json({"error": "quiz_id is required"}, status=400)
+
+    try:
+        quiz_id = uuid.UUID(quiz_id_str)
+    except ValueError:
+        return json({"error": "Invalid quiz_id"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        domain = await session.get(Domain, domain_id_u)
+        if domain is None:
+            return json({"error": "Domain not found"}, status=404)
+
+        quiz = await session.get(Quiz, quiz_id)
+        if quiz is None or quiz.domain_id != domain_id_u:
+            return json({"error": "Quiz not found in this domain"}, status=404)
+
+        quiz.domain_id = None
+        quiz.is_entry_quiz = False
+        await session.commit()
+
+    return json({"success": True, "quiz_id": str(quiz_id)})
+
+
 @domains_api_bp.get("/<domain_id_r:uuid>/quiz-results")
 async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
     """GET /api/v1/domains/:id/quiz-results -- View quiz results for domain quizzes."""
@@ -438,3 +475,74 @@ async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
             })
 
     return json({"items": items, "total": len(items)})
+
+
+# ---------------------------------------------------------------------------
+# Shares & Needs — Domain-scoped
+# ---------------------------------------------------------------------------
+
+
+@domains_api_bp.get("/<domain_id_sn:uuid>/shares-needs")
+async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
+    """GET /api/v1/domains/:id/shares-needs -- List shares & needs for this domain.
+
+    Query params: type, category, status
+    """
+    auth_member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        domain = await session.get(Domain, domain_id_sn)
+        if domain is None:
+            return json({"error": "Domain not found"}, status=404)
+
+        # Verify the requester is a member of this domain's ecosystem
+        is_admin = auth_member.profile in ("co_creator", "builder")
+        if not is_admin:
+            membership = await session.execute(
+                select(Member).where(
+                    Member.ecosystem_id == domain.ecosystem_id,
+                    Member.user_id == auth_member.user_id,
+                )
+            )
+            if not membership.scalars().first():
+                return json({"error": "You are not a member of this domain's ecosystem"}, status=403)
+
+        filters = [SharesNeeds.domain_id == domain_id_sn]
+        type_filter = request.args.get("type")
+        if type_filter:
+            filters.append(SharesNeeds.type == type_filter)
+        category_filter = request.args.get("category")
+        if category_filter:
+            filters.append(SharesNeeds.category == category_filter)
+        status_filter = request.args.get("status")
+        if status_filter:
+            filters.append(SharesNeeds.status == status_filter)
+
+        stmt = (
+            select(SharesNeeds)
+            .where(*filters)
+            .order_by(SharesNeeds.created_at.desc())
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+
+        items = [
+            {
+                "id": str(r.id),
+                "ecosystem_id": str(r.ecosystem_id),
+                "domain_id": str(r.domain_id),
+                "type": r.type,
+                "title": r.title,
+                "description": r.description,
+                "category": r.category,
+                "capacity": r.capacity,
+                "tags": r.tags if isinstance(r.tags, list) else [],
+                "visibility": r.visibility,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+    return json({"items": items})

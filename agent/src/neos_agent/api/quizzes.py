@@ -14,7 +14,7 @@ import uuid
 import datetime as _dt
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.api.schemas.quizzes import (
@@ -74,11 +74,14 @@ def _quiz_to_detail(q: Quiz) -> dict:
     return QuizDetail(
         id=q.id,
         course_id=q.course_id,
+        ecosystem_id=q.ecosystem_id,
+        domain_id=q.domain_id,
         title=q.title,
         description=q.description,
         mode=q.mode,
         visibility=q.visibility,
         is_published=q.is_published,
+        is_entry_quiz=q.is_entry_quiz,
         time_limit=q.time_limit,
         passing_score=q.passing_score,
         allow_retakes=q.allow_retakes,
@@ -159,6 +162,21 @@ async def list_quizzes(request: Request):
             except ValueError:
                 return json({"error": "Invalid course_id"}, status=400)
 
+        # Ecosystem/domain scoping
+        eco_id_str = request.args.get("ecosystem_id")
+        if eco_id_str:
+            try:
+                filters.append(Quiz.ecosystem_id == uuid.UUID(eco_id_str))
+            except ValueError:
+                return json({"error": "Invalid ecosystem_id"}, status=400)
+
+        domain_id_str = request.args.get("domain_id")
+        if domain_id_str:
+            try:
+                filters.append(Quiz.domain_id == uuid.UUID(domain_id_str))
+            except ValueError:
+                return json({"error": "Invalid domain_id"}, status=400)
+
         visibility = request.args.get("visibility")
         if visibility:
             filters.append(Quiz.visibility == visibility)
@@ -230,6 +248,8 @@ async def create_quiz(request: Request):
     quiz = Quiz(
         id=uuid.uuid4(),
         course_id=body.course_id,
+        ecosystem_id=body.ecosystem_id,
+        domain_id=body.domain_id,
         title=body.title,
         description=body.description,
         mode=body.mode,
@@ -379,6 +399,33 @@ async def get_quiz_results(request: Request, quiz_id: str):
         "page": page,
         "per_page": per_page,
     })
+
+
+@quizzes_api_bp.delete("/quizzes/<quiz_id:str>")
+async def delete_quiz(request: Request, quiz_id: str):
+    """DELETE /api/v1/quizzes/:id -- Delete a quiz."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    try:
+        qid = uuid.UUID(quiz_id)
+    except ValueError:
+        return json({"error": "Invalid quiz ID"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        result = await session.execute(select(Quiz).where(Quiz.id == qid))
+        quiz = result.scalar_one_or_none()
+
+        if quiz is None:
+            return json({"error": "Quiz not found"}, status=404)
+
+        # Delete associated results first
+        await session.execute(sa_delete(QuizResult).where(QuizResult.quiz_id == qid))
+        await session.delete(quiz)
+        await session.commit()
+
+    return json({"ok": True, "message": "Quiz deleted"})
 
 
 @quizzes_api_bp.get("/quizzes/<quiz_id:str>/results/all")

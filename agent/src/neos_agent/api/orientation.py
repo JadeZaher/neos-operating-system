@@ -9,12 +9,13 @@ Returns JSON responses only.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete as sa_delete, func, select
 
 from neos_agent.db.models import (
     Ecosystem,
@@ -75,15 +76,16 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
     if err:
         return err
 
+    include_inactive = request.args.get("include_inactive", "").lower() in ("true", "1")
+
     async with request.app.ctx.db() as db:
+        filters = [JourneyMap.ecosystem_id == ecosystem_id]
+        if not include_inactive:
+            filters.append(JourneyMap.is_active == True)  # noqa: E712
+
         stmt = (
             select(JourneyMap)
-            .where(
-                and_(
-                    JourneyMap.ecosystem_id == ecosystem_id,
-                    JourneyMap.is_active == True,  # noqa: E712
-                )
-            )
+            .where(and_(*filters))
             .order_by(JourneyMap.is_default.desc(), JourneyMap.created_at)
         )
 
@@ -96,6 +98,7 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
                 "slug": m.slug,
                 "title": m.title,
                 "description": m.description,
+                "ecosystem_id": str(m.ecosystem_id) if m.ecosystem_id else None,
                 "step_count": m.step_count or len(m.content_sequence or []),
                 "content_sequence": m.content_sequence or [],
                 "exit_package": m.exit_package or {},
@@ -105,6 +108,56 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
             }
             for m in maps
         ])
+
+
+@orientation_api_bp.get("/journey-maps")
+async def list_all_journey_maps(request: Request):
+    """List all journey maps across ecosystems (admin / management view).
+
+    Query params:
+      - ethos_id: optional ecosystem UUID to filter by
+      - is_active: optional "true"/"false" filter
+    Returns JSON: { maps: [...] }
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as db:
+        filters = []
+        ethos_id = request.args.get("ethos_id")
+        if ethos_id:
+            filters.append(JourneyMap.ecosystem_id == ethos_id)
+        is_active_param = request.args.get("is_active")
+        if is_active_param is not None:
+            filters.append(JourneyMap.is_active == (is_active_param.lower() in ("true", "1")))
+
+        stmt = (
+            select(JourneyMap)
+            .where(and_(*filters) if filters else True)
+            .order_by(JourneyMap.created_at.desc())
+        )
+        result = await db.execute(stmt)
+        maps = result.scalars().all()
+
+        return json({
+            "maps": [
+                {
+                    "id": str(m.id),
+                    "slug": m.slug,
+                    "title": m.title,
+                    "description": m.description,
+                    "ecosystem_id": str(m.ecosystem_id) if m.ecosystem_id else None,
+                    "step_count": m.step_count or len(m.content_sequence or []),
+                    "content_sequence": m.content_sequence or [],
+                    "exit_package": m.exit_package or {},
+                    "is_default": m.is_default,
+                    "is_active": m.is_active,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in maps
+            ]
+        })
 
 
 @orientation_api_bp.get("/journey-maps/<journey_map_id:uuid>")
@@ -135,6 +188,148 @@ async def get_journey_map(request: Request, journey_map_id: uuid.UUID):
             "is_active": jm.is_active,
             "created_at": jm.created_at.isoformat() if jm.created_at else None,
         })
+
+
+@orientation_api_bp.post("/ethos/<ecosystem_id:uuid>/journey-maps")
+async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
+    """POST -- Create a new journey map for an ecosystem."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return json({"error": "title is required"}, status=400)
+
+    raw_slug = body.get("slug") or title
+    slug = re.sub(r"[^a-z0-9]+", "-", raw_slug.lower()).strip("-")[:200]
+    content_sequence = body.get("content_sequence", [])
+    if not isinstance(content_sequence, list):
+        return json({"error": "content_sequence must be a list"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        eco = await db.get(Ecosystem, ecosystem_id)
+        if eco is None:
+            return json({"error": "Ecosystem not found"}, status=404)
+
+        jm = JourneyMap(
+            id=uuid.uuid4(),
+            slug=slug,
+            title=title,
+            description=body.get("description"),
+            ecosystem_id=ecosystem_id,
+            content_sequence=content_sequence,
+            exit_package=body.get("exit_package", {}),
+            step_count=len(content_sequence),
+            is_default=body.get("is_default", False),
+            is_active=body.get("is_active", True),
+        )
+        db.add(jm)
+        await db.commit()
+
+        return json({
+            "id": str(jm.id),
+            "slug": jm.slug,
+            "title": jm.title,
+            "description": jm.description,
+            "ecosystem_id": str(jm.ecosystem_id),
+            "step_count": jm.step_count,
+            "content_sequence": jm.content_sequence,
+            "exit_package": jm.exit_package or {},
+            "is_default": jm.is_default,
+            "is_active": jm.is_active,
+            "created_at": jm.created_at.isoformat() if jm.created_at else None,
+        }, status=201)
+
+
+@orientation_api_bp.put("/journey-maps/<journey_map_id:uuid>")
+async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
+    """PUT -- Update an existing journey map."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+
+    async with request.app.ctx.db() as db:
+        jm = await db.get(JourneyMap, journey_map_id)
+        if jm is None:
+            return json({"error": "Journey map not found"}, status=404)
+
+        if "title" in body:
+            jm.title = body["title"]
+        if "description" in body:
+            jm.description = body["description"]
+        if "slug" in body:
+            jm.slug = body["slug"]
+        if "content_sequence" in body:
+            jm.content_sequence = body["content_sequence"]
+            jm.step_count = len(body["content_sequence"])
+        if "exit_package" in body:
+            jm.exit_package = body["exit_package"]
+        if "is_default" in body:
+            jm.is_default = body["is_default"]
+        if "is_active" in body:
+            jm.is_active = body["is_active"]
+
+        await db.commit()
+
+        return json({
+            "id": str(jm.id),
+            "slug": jm.slug,
+            "title": jm.title,
+            "description": jm.description,
+            "ecosystem_id": str(jm.ecosystem_id) if jm.ecosystem_id else None,
+            "step_count": jm.step_count,
+            "content_sequence": jm.content_sequence or [],
+            "exit_package": jm.exit_package or {},
+            "is_default": jm.is_default,
+            "is_active": jm.is_active,
+            "created_at": jm.created_at.isoformat() if jm.created_at else None,
+        })
+
+
+@orientation_api_bp.delete("/journey-maps/<journey_map_id:uuid>")
+async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
+    """DELETE -- Delete a journey map."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as db:
+        jm = await db.get(JourneyMap, journey_map_id)
+        if jm is None:
+            return json({"error": "Journey map not found"}, status=404)
+
+        # Delete associated progress records first
+        await db.execute(
+            sa_delete(UserJourneyProgress).where(
+                UserJourneyProgress.journey_map_id == journey_map_id
+            )
+        )
+        await db.delete(jm)
+        await db.commit()
+
+    return json({"ok": True, "message": "Journey map deleted"})
+
+
+@orientation_api_bp.post("/journey-maps/<journey_map_id:uuid>/deactivate")
+async def deactivate_journey_map(request: Request, journey_map_id: uuid.UUID):
+    """POST -- Soft-delete a journey map by setting is_active=False."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as db:
+        jm = await db.get(JourneyMap, journey_map_id)
+        if jm is None:
+            return json({"error": "Journey map not found"}, status=404)
+
+        jm.is_active = False
+        await db.commit()
+
+    return json({"ok": True, "message": "Journey map deactivated"})
 
 
 @orientation_api_bp.get("/ethos/<ecosystem_id:uuid>/progress")
