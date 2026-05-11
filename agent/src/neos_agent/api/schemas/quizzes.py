@@ -74,6 +74,8 @@ class QuizResultItem(BaseModel):
     score: Optional[float] = None
     is_passed: Optional[bool] = None
     time_spent: Optional[int] = None
+    survey_results: Optional[dict] = None
+    result_metadata: Optional[dict] = None
     completed_at: Optional[_dt.datetime] = None
 
 

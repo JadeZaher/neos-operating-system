@@ -100,6 +100,8 @@ def _result_to_item(r: QuizResult) -> dict:
         score=r.score,
         is_passed=r.is_passed,
         time_spent=r.time_spent,
+        survey_results=r.survey_results,
+        result_metadata=r.result_metadata,
         completed_at=r.completed_at,
     ).model_dump(mode="json")
 
@@ -321,9 +323,93 @@ async def update_quiz(request: Request, quiz_id: str):
     return json(_quiz_to_list_item(quiz))
 
 
+def _grade_quiz(quiz: Quiz, survey_results: dict | None) -> dict:
+    """Grade a quiz submission against correctAnswer fields in survey_json.
+
+    Returns dict with keys: score, is_passed, result_metadata.
+    """
+    answers = survey_results or {}
+    survey_def = quiz.survey_json or {}
+    pages = survey_def.get("pages", [])
+
+    all_questions: list[dict] = []
+    for page in pages:
+        for el in page.get("elements", []):
+            all_questions.append(el)
+
+    gradable = [q for q in all_questions if q.get("correctAnswer") is not None]
+    total_questions = len(all_questions)
+    answered = sum(1 for q in all_questions if q["name"] in answers and answers[q["name"]] is not None)
+    skipped = total_questions - answered
+
+    if not gradable:
+        # Non-graded assessment -- just track completion
+        completion_pct = round((answered / total_questions) * 100) if total_questions else 100
+        return {
+            "score": completion_pct,
+            "is_passed": None,
+            "result_metadata": {
+                "totalQuestions": total_questions,
+                "answeredQuestions": answered,
+                "skippedQuestions": skipped,
+                "gradableQuestions": 0,
+                "completionPercentage": completion_pct,
+                "isAssessment": True,
+            },
+        }
+
+    correct_count = 0
+    per_question: list[dict] = []
+    for q in gradable:
+        user_answer = answers.get(q["name"])
+        correct_answer = q["correctAnswer"]
+        is_correct = (
+            str(user_answer).strip().lower() == str(correct_answer).strip().lower()
+            if user_answer is not None
+            else False
+        )
+        if is_correct:
+            correct_count += 1
+        per_question.append({
+            "name": q["name"],
+            "title": q.get("title", q["name"]),
+            "userAnswer": user_answer,
+            "correctAnswer": correct_answer,
+            "isCorrect": is_correct,
+        })
+
+    gradable_count = len(gradable)
+    score_pct = round((correct_count / gradable_count) * 100) if gradable_count else 0
+    passing_score = quiz.passing_score or 70
+    is_passed = score_pct >= passing_score
+    completion_pct = round((answered / total_questions) * 100) if total_questions else 100
+
+    return {
+        "score": score_pct,
+        "is_passed": is_passed,
+        "result_metadata": {
+            "totalQuestions": total_questions,
+            "answeredQuestions": answered,
+            "skippedQuestions": skipped,
+            "correctCount": correct_count,
+            "incorrectCount": gradable_count - correct_count,
+            "gradableQuestions": gradable_count,
+            "completionPercentage": completion_pct,
+            "correctnessPercentage": score_pct,
+            "isAssessment": False,
+            "passingScore": passing_score,
+            "perQuestion": per_question,
+        },
+    }
+
+
 @quizzes_api_bp.post("/quizzes/<quiz_id:str>/submit")
 async def submit_quiz(request: Request, quiz_id: str):
-    """POST /api/v1/quizzes/:id/submit -- Submit a quiz result."""
+    """POST /api/v1/quizzes/:id/submit -- Submit a quiz result.
+
+    Server-side grading: compares answers against correctAnswer fields
+    in the quiz survey_json to compute score, is_passed, and result_metadata.
+    """
     member, err = require_auth(request)
     if err:
         return err
@@ -339,27 +425,31 @@ async def submit_quiz(request: Request, quiz_id: str):
         return json({"error": str(e)}, status=400)
 
     async with request.app.ctx.db() as session:
-        quiz_result_check = await session.execute(
-            select(Quiz.id).where(Quiz.id == qid)
-        )
-        if quiz_result_check.scalar_one_or_none() is None:
+        quiz_row = await session.execute(select(Quiz).where(Quiz.id == qid))
+        quiz = quiz_row.scalar_one_or_none()
+        if quiz is None:
             return json({"error": "Quiz not found"}, status=404)
+
+        grading = _grade_quiz(quiz, body.survey_results)
 
         quiz_result = QuizResult(
             id=uuid.uuid4(),
             quiz_id=qid,
             member_id=member.id,
             survey_results=body.survey_results,
-            score=body.score,
-            is_passed=body.is_passed,
+            score=grading["score"],
+            is_passed=grading["is_passed"],
             time_spent=body.time_spent,
-            result_metadata=body.result_metadata,
+            result_metadata=grading["result_metadata"],
         )
         session.add(quiz_result)
         await session.commit()
         await session.refresh(quiz_result)
 
-    return json(_result_to_item(quiz_result), status=201)
+    return json({
+        "result": _result_to_item(quiz_result),
+        "grading": grading,
+    }, status=201)
 
 
 @quizzes_api_bp.get("/quizzes/<quiz_id:str>/results")
@@ -500,7 +590,7 @@ async def get_quiz_results_admin(request: Request, quiz_id: str):
 
 @quizzes_api_bp.get("/members/<member_id:str>/quiz-history")
 async def get_member_quiz_history(request: Request, member_id: str):
-    """GET /api/v1/members/:member_id/quiz-history -- Member's quiz results."""
+    """GET /api/v1/members/:member_id/quiz-history -- Member's quiz results with quiz info."""
     member, err = require_auth(request)
     if err:
         return err
@@ -523,14 +613,24 @@ async def get_member_quiz_history(request: Request, member_id: str):
         result = await session.execute(
             select(QuizResult)
             .where(QuizResult.member_id == mid)
+            .options(selectinload(QuizResult.quiz))
             .order_by(QuizResult.completed_at.desc())
             .offset(offset)
             .limit(per_page)
         )
         results = result.scalars().all()
 
+    items = []
+    for r in results:
+        item = _result_to_item(r)
+        if r.quiz:
+            item["quiz"] = {"title": r.quiz.title, "description": r.quiz.description}
+        else:
+            item["quiz"] = None
+        items.append(item)
+
     return json({
-        "items": [_result_to_item(r) for r in results],
+        "results": items,
         "total": total,
         "page": page,
         "per_page": per_page,

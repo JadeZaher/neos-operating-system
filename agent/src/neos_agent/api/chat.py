@@ -146,7 +146,7 @@ def _sanitize_history(raw_history: list[dict]) -> list[dict]:
 
 
 def _page_to_context(page_context: dict | None) -> str | None:
-    """Extract a page context hint from the frontend's page_context object."""
+    """Extract a page context hint keyword from the frontend path."""
     if not page_context:
         return None
     path = page_context.get("path", "")
@@ -155,6 +155,37 @@ def _page_to_context(page_context: dict | None) -> str | None:
         if segment in path:
             return segment
     return None
+
+
+def _build_session_context(page_context: dict | None) -> str:
+    """Build a rich session context string from frontend page_context."""
+    if not page_context:
+        return ""
+    parts: list[str] = []
+    path = page_context.get("path", "")
+    if path:
+        parts.append(f"Current page: {path}")
+    search = page_context.get("search", "")
+    if search:
+        parts.append(f"URL params: {search}")
+    active_view = page_context.get("active_view", "")
+    if active_view:
+        parts.append(f"Page state: {active_view}")
+    member_name = page_context.get("member_name")
+    member_id = page_context.get("member_id")
+    if member_name:
+        parts.append(f"Current user: {member_name} (ID: {member_id})")
+    eco_name = page_context.get("ecosystem_name")
+    if eco_name:
+        parts.append(f"Active ecosystem: {eco_name}")
+    # Extract item ID from path (e.g. /agreements/abc-123)
+    segments = [s for s in path.split("/") if s]
+    if len(segments) >= 2:
+        # If second segment looks like an ID (UUID or business key), note it
+        candidate = segments[-1]
+        if len(candidate) > 8 and candidate not in ("new", "edit"):
+            parts.append(f"Viewing item: {candidate}")
+    return "\n".join(parts)
 
 
 def _generate_title(messages: list[dict]) -> str | None:
@@ -433,6 +464,11 @@ async def send_message(request: Request):
                 selected_ecosystem_ids=validated_eco_ids or None,
             )
 
+            # Append rich session context (user, page, URL params)
+            session_ctx = _build_session_context(page_context)
+            if session_ctx:
+                system_prompt += f"\n\n## Session Context\n{session_ctx}"
+
             if current_skill:
                 await response.write(_sse_event("skill", current_skill))
 
@@ -511,6 +547,8 @@ async def send_message(request: Request):
                         if db_factory:
                             async with db_factory() as db:
                                 result = await execute_tool(tool_name, tool_args, db, ecosystem_ids=validated_eco_ids or None)
+                                if result.get("success"):
+                                    await db.commit()
                         else:
                             result = {"success": False, "error": "Database unavailable"}
                     except Exception as e:
