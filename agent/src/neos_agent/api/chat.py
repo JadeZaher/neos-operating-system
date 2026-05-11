@@ -529,10 +529,17 @@ async def send_message(request: Request):
                         **({"artifact": artifact} if artifact else {}),
                     })))
 
+                    # Inject a ready-made markdown link into the tool content
+                    # so the LLM can copy it verbatim into its response.
+                    tool_content = dict(result)
+                    if artifact:
+                        link = f"[{artifact['label']}]({artifact['route']})"
+                        tool_content["_link"] = link
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(result),
+                        "content": json.dumps(tool_content),
                     })
 
                 await response.write(_sse_event("thinking", json.dumps({"step": "Processing results..."})))
