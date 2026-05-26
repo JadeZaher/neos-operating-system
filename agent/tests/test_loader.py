@@ -295,6 +295,53 @@ def test_parse_skill_file_missing_required_fields(tmp_path):
         parse_skill_file(skill_file)
 
 
+def test_loader_accepts_missing_sections_a_b(tmp_path):
+    """Sections A and B are now optional — they live in sibling RATIONALE.md.
+
+    The loader must still parse the SKILL.md file successfully and return
+    ``None`` for the absent A and B section entries.
+    """
+    no_ab_content = (
+        "---\n"
+        "name: a-b-less-skill\n"
+        "description: \"A skill without A or B sections\"\n"
+        "layer: 1\n"
+        "version: 0.1.0\n"
+        "depends_on: []\n"
+        "---\n\n"
+        "# a-b-less-skill\n\n"
+        # Sections A and B intentionally omitted.
+        "## C. Trigger Conditions\n\nFire when invoked.\n\n"
+        "## D. Required Inputs\n\nAn input.\n\n"
+        "## E. Step-by-Step Process\n\n1. Step one.\n\n"
+        "## F. Output Artifact\n\nA record.\n\n"
+        "## G. Authority Boundary Check\n\nNo authority needed.\n\n"
+        "## H. Capture Resistance Check\n\nLogged immutably.\n\n"
+        "## I. Failure Containment Logic\n\nQuarantine on failure.\n\n"
+        "## J. Expiry / Review Condition\n\nAnnual review.\n\n"
+        "## K. Exit Compatibility Check\n\nPortable artifacts.\n\n"
+        "## L. Cross-Unit Interoperability Impact\n\nWorks anywhere.\n"
+    )
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(no_ab_content, encoding="utf-8")
+
+    result = parse_skill_file(skill_file)
+
+    # Loader did not raise: A and B absent is fine.
+    assert isinstance(result, ParsedSkill)
+    assert result.meta.name == "a-b-less-skill"
+
+    # Absent sections come back as None.
+    assert result.content.sections["A"] is None
+    assert result.content.sections["B"] is None
+
+    # All mandatory sections (C-L) still parse to non-None content.
+    for letter in "CDEFGHIJKL":
+        assert result.content.sections[letter] is not None, (
+            f"Mandatory section {letter} should be parsed"
+        )
+
+
 def test_parse_skill_file_invalid_layer(tmp_path):
     bad_layer = (
         "---\n"

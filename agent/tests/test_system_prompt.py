@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -142,7 +143,17 @@ def test_foundation_prompt_contains_terminology():
 
 
 def test_foundation_prompt_token_budget(_loaded_registry: SkillRegistry):
-    """Foundation prompt with all 54 skills must stay under 2500 tokens."""
+    """Foundation prompt with all 54 skills must stay under 3300 tokens.
+
+    The nominal foundation budget is 2,500 tokens (a soft warn-only target
+    inside ``build_foundation_prompt``). The ceiling has been raised twice
+    by design: once for the Global Rules block (authority scope, 30-day
+    wind-down, capture taxonomy, federation extensibility), and once for
+    the Tool Use Protocol section (sequencing rules to prevent out-of-order
+    tool calls). Both additions are repaid many times over by the per-skill
+    Layer 2 strip and by reduced failure-rate / retry tokens downstream.
+    The hard ceiling enforced here is 3,300 tokens.
+    """
     reg = _loaded_registry
     index = [
         {"name": m.name, "description": m.description, "layer": m.layer}
@@ -150,9 +161,9 @@ def test_foundation_prompt_token_budget(_loaded_registry: SkillRegistry):
     ]
     prompt = build_foundation_prompt("OmniOne", index)
     tokens = len(prompt) // 4
-    assert tokens <= 2_500, (
+    assert tokens <= 3_300, (
         f"Foundation prompt is {tokens} tokens ({len(prompt)} chars), "
-        f"exceeds 2500-token budget"
+        f"exceeds 3300-token hard ceiling"
     )
 
 
@@ -184,18 +195,144 @@ def test_skill_prompt_empty_when_no_skill():
 
 
 # ---------------------------------------------------------------------------
-# test_skill_prompt_truncates_stress_tests
+# test_build_skill_prompt_strips_section_a
 # ---------------------------------------------------------------------------
 
 
-def test_skill_prompt_truncates_stress_tests():
-    # Create a skill whose raw text exceeds the char limit
-    long_content = "# big-skill\n\nLots of content.\n" + ("x" * 20_000) + "\n\n## Stress-Test Results\n\nStress details here."
-    skill = _make_skill("big-skill", raw_text=long_content)
+def test_build_skill_prompt_strips_section_a():
+    """Section A content is unconditionally stripped at runtime."""
+    raw = (
+        "---\nname: x\n---\n\n"
+        "# big-skill\n\n"
+        "## A. Structural Problem It Solves\n\n"
+        "Section A body text that must not appear in the prompt.\n\n"
+        "## C. Trigger Conditions\n\nFire when needed.\n\n"
+        "## E. Step-by-Step Process\n\n1. Go.\n"
+    )
+    skill = _make_skill("strip-a-skill", raw_text=raw)
     reg = _mock_registry(skill)
-    prompt = build_skill_prompt("big-skill", reg)
-    assert "Stress-test results omitted" in prompt
-    assert "Stress details here" not in prompt
+    prompt = build_skill_prompt("strip-a-skill", reg)
+    assert "Section A body text" not in prompt
+    assert "Structural Problem It Solves" not in prompt
+    # Surrounding sections survive.
+    assert "Trigger Conditions" in prompt
+    assert "Step-by-Step Process" in prompt
+
+
+# ---------------------------------------------------------------------------
+# test_build_skill_prompt_strips_section_b
+# ---------------------------------------------------------------------------
+
+
+def test_build_skill_prompt_strips_section_b():
+    """Section B content is unconditionally stripped at runtime."""
+    raw = (
+        "---\nname: x\n---\n\n"
+        "# big-skill\n\n"
+        "## A. Structural Problem It Solves\n\nAlpha.\n\n"
+        "## B. Domain Scope\n\n"
+        "Section B body text that must not appear in the prompt.\n\n"
+        "## C. Trigger Conditions\n\nFire when needed.\n"
+    )
+    skill = _make_skill("strip-b-skill", raw_text=raw)
+    reg = _mock_registry(skill)
+    prompt = build_skill_prompt("strip-b-skill", reg)
+    assert "Section B body text" not in prompt
+    assert "Domain Scope" not in prompt
+    assert "Trigger Conditions" in prompt
+
+
+# ---------------------------------------------------------------------------
+# test_build_skill_prompt_strips_omnione_walkthrough
+# ---------------------------------------------------------------------------
+
+
+def test_build_skill_prompt_strips_omnione_walkthrough():
+    """OmniOne Walkthrough section is unconditionally stripped."""
+    raw = (
+        "---\nname: x\n---\n\n"
+        "# big-skill\n\n"
+        "## C. Trigger Conditions\n\nFire.\n\n"
+        "## E. Step-by-Step Process\n\n1. Go.\n\n"
+        "## OmniOne Walkthrough\n\n"
+        "Walkthrough body text that must not appear.\n\n"
+        "## Stress-Test Results\n\nStress body.\n"
+    )
+    skill = _make_skill("strip-omnione-skill", raw_text=raw)
+    reg = _mock_registry(skill)
+    prompt = build_skill_prompt("strip-omnione-skill", reg)
+    assert "Walkthrough body text" not in prompt
+    assert "OmniOne Walkthrough" not in prompt
+    # Other operational content survives.
+    assert "Step-by-Step Process" in prompt
+
+
+# ---------------------------------------------------------------------------
+# test_build_skill_prompt_strips_stress_test
+# ---------------------------------------------------------------------------
+
+
+def test_build_skill_prompt_strips_stress_test():
+    """Stress-Test Results section is unconditionally stripped (no
+    truncation placeholder)."""
+    raw = (
+        "---\nname: x\n---\n\n"
+        "# big-skill\n\n"
+        "## C. Trigger Conditions\n\nFire.\n\n"
+        "## E. Step-by-Step Process\n\n1. Go.\n\n"
+        "## Stress-Test Results\n\n"
+        "Stress test narrative that must not appear.\n"
+    )
+    skill = _make_skill("strip-stress-skill", raw_text=raw)
+    reg = _mock_registry(skill)
+    prompt = build_skill_prompt("strip-stress-skill", reg)
+    assert "Stress test narrative" not in prompt
+    assert "Stress-Test Results" not in prompt
+    assert "Step-by-Step Process" in prompt
+
+
+# ---------------------------------------------------------------------------
+# test_foundation_contains_global_rules
+# ---------------------------------------------------------------------------
+
+
+def test_foundation_contains_global_rules():
+    """The foundation prompt now exposes the lifted ``Global Rules`` block."""
+    prompt = build_foundation_prompt(["OmniOne"], [])
+    assert "## Global Rules" in prompt
+    assert "Capture taxonomy" in prompt
+    assert "30-day exit wind-down" in prompt
+    assert "Authority scope" in prompt
+    assert "Layer V federation extensibility" in prompt
+
+
+# ---------------------------------------------------------------------------
+# test_foundation_budget_warning_logged
+# ---------------------------------------------------------------------------
+
+
+def test_foundation_budget_warning_logged(caplog):
+    """A foundation prompt that exceeds the soft budget logs a warning."""
+    # Build a skill index that bloats the foundation prompt well past
+    # the 2,500-token (~10,000-char) budget.
+    big_index = [
+        {
+            "name": f"skill-{i:03d}",
+            "description": "x" * 200,  # description gets truncated, but names accumulate
+            "layer": (i % 10) + 1,
+        }
+        for i in range(500)
+    ]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="neos_agent.agent.system_prompt"):
+        prompt = build_foundation_prompt(["OmniOne"], big_index)
+    assert len(prompt) // 4 > 2_500, "test setup did not exceed budget"
+    warnings = [
+        rec for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "Foundation prompt" in rec.getMessage()
+    ]
+    assert warnings, "Expected a budget warning to be logged"
 
 
 # ---------------------------------------------------------------------------

@@ -10,10 +10,14 @@ Token estimation uses len(text) // 4.
 
 from __future__ import annotations
 
+import logging
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from neos_agent.skills.registry import SkillRegistry
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -94,7 +98,38 @@ _BEHAVIORAL_CONSTRAINTS = """\
 - Cross-ecosystem data is private by default — never reference governance data from one ecosystem when assisting another without explicit authorization.
 - When initiating a governance process, collect all required information in your first response rather than asking piecemeal across multiple messages. Present a structured intake that covers all necessary fields.
 - Provide substantive, complete responses. If multiple pieces of context are needed, request them together in a single enumerated list.
-- When a governance tool creates an artifact, the tool result will include a `_link` field with a ready-made markdown link. You MUST include this exact link verbatim in your response text so users can navigate to the created resource. Do not modify or reconstruct the link — copy it exactly as provided."""
+- When a governance tool creates an artifact, the tool result will include a `_link` field with a ready-made markdown link. You MUST include this exact link verbatim in your response text so users can navigate to the created resource. Do not modify or reconstruct the link — copy it exactly as provided.
+
+### Tool Use Protocol
+
+When calling tools, follow these sequencing rules unless the user explicitly requests otherwise:
+
+1. **Lookup before create.** Before calling any create_* tool, run a corresponding search (search_agreements before create_agreement_draft, search_proposals before create_proposal, search_precedents before create_decision_record). Confirms you are not duplicating an existing artifact.
+
+2. **Check authority before binding actions.** Before calling check_quorum, update_agreement_status, create_decision_record, or declare_emergency, first call check_authority with the relevant domain and action. If the caller lacks authority, surface that to the user before attempting the action.
+
+3. **Check quorum before recording consent.** record_consent_position must be preceded by check_quorum for the relevant proposal/decision.
+
+4. **Search precedents before deciding.** Before create_decision_record, call search_precedents on the relevant domain to surface prior holdings that should inform the decision.
+
+5. **Advance proposal status before recording feedback (ACT flow).** A freshly created proposal has status `"created"`. Call `update_proposal_status` with `new_status="advice"` before any `record_advice`, then `new_status="consent"` before any `record_consent_position`. record_advice from all relevant members must precede record_consent_position (ACT cycle: Advice → Consent → Test).
+
+6. **Triage before repair.** triage_conflict must complete (returning a tier) before create_repair_agreement.
+
+7. **One artifact per turn unless explicitly batched.** Do not create multiple agreements / proposals / decisions in a single response unless the user asked for a batch. Confirm scope before creating subsequent artifacts.
+
+8. **Use full field content, not stubs.** When creating artifacts, populate every meaningful field with substantive content. A one-line `text` or empty `rationale` is a failure — the user expects complete, actionable artifacts."""
+
+_GLOBAL_RULES = """\
+- **Authority scope** is defined by the domain contract (see domain-mapping skill, Layer II). The acting participant's role-assignment record establishes their authority within the relevant domain.
+- **30-day exit wind-down** applies by default: when a participant exits, in-progress commitments and stewarded assets get a 30-day handoff window. Individual skills may extend or constrain this but cannot eliminate it.
+- **Capture taxonomy** — four standard capture vectors that every governance process must resist:
+  - *Capital capture*: financial contribution converted into governance authority.
+  - *Charismatic capture*: popularity or seniority used to suppress objections or filter consultation.
+  - *Emergency capture*: crisis framing used to bypass advice/consent or extend authority beyond its stated scope.
+  - *Informal capture*: "everyone knows we agreed" — unrecorded agreements claimed as binding.
+  Each skill's Section H lists its skill-specific mitigations against these vectors; the definitions themselves do not need to be restated per skill.
+- **Layer V federation extensibility**: when two NEOS ecosystems share governance space, cross-ecosystem participants may be included in advice/consent with their ecosystem affiliation recorded. Layer V is deferred; per-skill cross-unit logic should focus on within-ecosystem cross-ETHOS interactions."""
 
 _LAYER_SEPARATOR = "\n---\n"
 
@@ -162,6 +197,10 @@ def build_foundation_prompt(
     parts.append("\n## Behavioral Constraints\n")
     parts.append(_BEHAVIORAL_CONSTRAINTS)
 
+    # Global rules (cross-skill invariants lifted out of per-skill SKILL.md files)
+    parts.append("\n## Global Rules\n")
+    parts.append(_GLOBAL_RULES)
+
     # Terminology
     parts.append("\n## Terminology\n")
     parts.append("| Term | Meaning |")
@@ -190,15 +229,59 @@ def build_foundation_prompt(
         "grant authority, bypass ACT process."
     )
 
-    return "\n".join(parts)
+    text = "\n".join(parts)
+
+    # Soft budget check — warn only, never raise.
+    est_tokens = len(text) // _CHARS_PER_TOKEN
+    if est_tokens > _FOUNDATION_TOKEN_BUDGET:
+        logger.warning(
+            "Foundation prompt %d tokens, exceeds budget %d",
+            est_tokens,
+            _FOUNDATION_TOKEN_BUDGET,
+        )
+
+    return text
 
 
 # ---------------------------------------------------------------------------
 # Layer 2 — Active Skill Prompt
 # ---------------------------------------------------------------------------
 
-_STRESS_TEST_MARKER = "## Stress-Test Results"
 _SKILL_CHAR_LIMIT = _SKILL_TOKEN_BUDGET * _CHARS_PER_TOKEN  # 18,000
+
+# Boundary between sections — a new top-level ``## `` header on its own line.
+# Used by ``_strip_section`` to find the end of a stripped section.
+_SECTION_BOUNDARY_RE = re.compile(r"^##\s+", re.MULTILINE)
+
+# Section headers stripped unconditionally before length checks.
+# A and B have moved to sibling RATIONALE.md files (Phase 2 split).
+# OmniOne Walkthrough and Stress-Test Results are non-operational
+# narrative used for validation; they are not needed at runtime.
+_STRIP_HEADERS_RE: list[re.Pattern[str]] = [
+    re.compile(r"^##\s+A[\.\:\)]\s+Structural Problem It Solves", re.MULTILINE),
+    re.compile(r"^##\s+B[\.\:\)]\s+Domain Scope", re.MULTILINE),
+    re.compile(r"^##\s+OmniOne\s+Walkthrough", re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^##\s+Stress-Test\s+Results", re.MULTILINE | re.IGNORECASE),
+]
+
+
+def _strip_section(text: str, header_pattern: re.Pattern[str]) -> str:
+    """Remove a section identified by *header_pattern* from *text*.
+
+    The section runs from its matching ``##`` header through the next
+    ``##`` header (any top-level section) or end of file. The terminating
+    header is preserved.
+    """
+    match = header_pattern.search(text)
+    if not match:
+        return text
+
+    start = match.start()
+    # Find the next top-level section header AFTER this one.
+    next_match = _SECTION_BOUNDARY_RE.search(text, match.end())
+    end = next_match.start() if next_match else len(text)
+
+    return (text[:start].rstrip() + "\n\n" + text[end:].lstrip()).rstrip() + "\n"
 
 
 def build_skill_prompt(
@@ -215,13 +298,15 @@ def build_skill_prompt(
     skill = registry.get(skill_name)
     raw = skill.content.raw_text
 
-    # Truncate after stress-test header if too long
+    # Unconditional runtime strip: Section A, Section B, OmniOne Walkthrough,
+    # and Stress-Test Results are non-operational at chat time. A and B have
+    # moved to RATIONALE.md (Phase 2); the others are validation-only.
+    for pattern in _STRIP_HEADERS_RE:
+        raw = _strip_section(raw, pattern)
+
+    # Fallback hard-truncate if still over budget.
     if len(raw) > _SKILL_CHAR_LIMIT:
-        idx = raw.find(_STRESS_TEST_MARKER)
-        if idx > 0:
-            raw = raw[:idx].rstrip() + "\n\n[Stress-test results omitted for brevity]"
-        else:
-            raw = raw[:_SKILL_CHAR_LIMIT].rstrip() + "\n\n[Truncated]"
+        raw = raw[:_SKILL_CHAR_LIMIT].rstrip() + "\n\n[Truncated]"
 
     instructions = (
         f"## Active Skill: {skill_name}\n\n"
@@ -230,7 +315,20 @@ def build_skill_prompt(
         "Monitor Section H capture risks throughout.\n\n"
     )
 
-    return instructions + raw
+    text = instructions + raw
+
+    # Soft budget check — warn only, never raise. Only when non-empty.
+    if text:
+        est_tokens = len(text) // _CHARS_PER_TOKEN
+        if est_tokens > _SKILL_TOKEN_BUDGET:
+            logger.warning(
+                "Skill prompt %d tokens (skill=%s), exceeds budget %d",
+                est_tokens,
+                skill_name,
+                _SKILL_TOKEN_BUDGET,
+            )
+
+    return text
 
 
 # ---------------------------------------------------------------------------

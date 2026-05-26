@@ -41,7 +41,13 @@ class ParsedSkill:
     content: SkillContent
 
 
-# 12 required sections
+# 12 parseable sections. The loader still recognises all 12 letters so that
+# legacy SKILL.md files (where A and B are still inline) keep working. New
+# files are expected to keep only the mandatory 10 below; sections A and B
+# (Structural Problem, Domain Scope) live in a sibling RATIONALE.md file
+# after the Phase 2 split. ``parse_sections`` returns ``None`` for any
+# section that is absent — that is the supported way for a SKILL.md to
+# omit A and B going forward.
 REQUIRED_SECTIONS: list[tuple[str, str]] = [
     ("A", "Structural Problem It Solves"),
     ("B", "Domain Scope"),
@@ -56,6 +62,10 @@ REQUIRED_SECTIONS: list[tuple[str, str]] = [
     ("K", "Exit Compatibility Check"),
     ("L", "Cross-Unit Interoperability Impact"),
 ]
+
+# Sections that MUST be present at runtime. A and B are now optional in
+# SKILL.md (they live in sibling RATIONALE.md after the Phase 2 split).
+MANDATORY_SECTIONS: list[str] = ["C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
 
 _SECTION_STOP_RE = re.compile(
     r"^#{1,3}\s+(?:[A-L][\.\:\)]|OmniOne|Stress)", re.IGNORECASE

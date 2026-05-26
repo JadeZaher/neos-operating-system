@@ -4,7 +4,7 @@ Blueprint: chat_api_bp, url_prefix="/api/v1/chat"
 
 Provides an agentic SSE streaming chat with:
 - Full governance system prompt (skills, principles, page context)
-- 23 governance tools via tool_use
+- 29 governance tools via tool_use
 - Persistent sessions saved to AgentSession DB
 - Conversation history (up to 20 user messages per session)
 - Skill transitions via SkillRouter transition patterns
@@ -71,6 +71,10 @@ _TOOL_DISPLAY_NAMES = {
     "create_exit_record": "Creating exit record",
     "create_safeguard_audit": "Creating safeguard audit",
     "create_repair_agreement": "Creating repair agreement",
+    "create_ecosystem": "Creating ecosystem",
+    "get_proposal": "Looking up proposal",
+    "update_proposal_status": "Updating proposal status",
+    "list_domains": "Listing domains",
 }
 
 
@@ -86,7 +90,7 @@ def _get_artifact_info(tool_name: str, result_data: dict | None) -> dict | None:
         "create_conflict_case": ("conflict", lambda d: (d.get("id"), d.get("case_id"), f"/conflicts/{d.get('id')}")),
         "create_exit_record": ("exit", lambda d: (d.get("id"), None, f"/exit/{d.get('id')}")),
         "create_safeguard_audit": ("audit", lambda d: (d.get("id"), d.get("audit_id"), f"/safeguards/audits/{d.get('id')}")),
-        "create_repair_agreement": ("agreement", lambda d: (d.get("id"), None, f"/agreements/{d.get('id')}")),
+        "create_repair_agreement": ("repair", lambda d: (d.get("id"), d.get("case_id"), f"/conflicts")),
         "create_decision_record": ("decision", lambda d: (d.get("id"), None, f"/decisions/{d.get('id')}")),
     }
 
@@ -474,15 +478,48 @@ async def send_message(request: Request):
 
             # --- Prepare tool definitions ---
             tool_defs = get_tool_definitions()
-            tools_for_api = [{"type": "function", "function": t} for t in tool_defs] if tool_defs else None
+            tools_for_api = [
+                {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
+                for t in tool_defs
+            ] if tool_defs else None
 
             # --- Agentic loop ---
             messages = history + [{"role": "user", "content": message}]
             total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            # Index marking the boundary between session history and loop-appended messages.
+            # Used for safe old-turn pruning in A6(b).
+            history_end_idx = len(messages)
 
             await response.write(_sse_event("thinking", json.dumps({"step": "Analyzing your request..."})))
 
             for _round in range(_MAX_TOOL_ROUNDS):
+                # (A6-b) From round 3 onward, drop the oldest tool-turn pair
+                # (assistant-with-tool_calls + its tool results) appended during
+                # this request to keep the context window bounded.
+                if _round >= 3:
+                    # Walk forward from history_end_idx and find the first assistant
+                    # message that has tool_calls, plus all immediately following
+                    # tool-role messages — then drop that group.
+                    loop_messages = messages[history_end_idx:]
+                    new_loop: list[dict] = []
+                    i = 0
+                    dropped = False
+                    while i < len(loop_messages):
+                        msg = loop_messages[i]
+                        if (
+                            not dropped
+                            and msg.get("role") == "assistant"
+                            and isinstance(msg.get("tool_calls"), list)
+                        ):
+                            # Skip this assistant message and all following tool messages
+                            i += 1
+                            while i < len(loop_messages) and loop_messages[i].get("role") == "tool":
+                                i += 1
+                            dropped = True
+                            continue
+                        new_loop.append(msg)
+                        i += 1
+                    messages = messages[:history_end_idx] + new_loop
                 resp = await acompletion(
                     messages=messages,
                     system=system_prompt,
@@ -574,6 +611,18 @@ async def send_message(request: Request):
                         link = f"[{artifact['label']}]({artifact['route']})"
                         tool_content["_link"] = link
 
+                    # (A6-a) Cap oversized tool results to prevent context bloat.
+                    serialized = json.dumps(tool_content)
+                    if len(serialized) > 2000:
+                        tool_content = {
+                            "success": tool_content.get("success"),
+                            "summary": (
+                                f"Result truncated ({len(serialized)} chars). "
+                                f"Key fields: {', '.join(list(tool_content.keys())[:8])}"
+                            ),
+                            "_link": tool_content.get("_link"),
+                        }
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -609,6 +658,17 @@ async def send_message(request: Request):
                             "from": active_skill,
                             "to": new_skill,
                         })))
+                        # Rebuild system prompt for the new skill so the next
+                        # acompletion call uses the updated persona/context.
+                        system_prompt = assemble_system_prompt(
+                            active_skill=current_skill,
+                            skill_registry=registry,
+                            page_context=page_hint,
+                            ecosystem_names=ecosystem_names or None,
+                            selected_ecosystem_ids=validated_eco_ids or None,
+                        )
+                        if session_ctx:
+                            system_prompt += f"\n\n## Session Context\n{session_ctx}"
 
             # --- Persist session ---
             session_id = await _save_session(

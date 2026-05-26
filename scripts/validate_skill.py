@@ -53,6 +53,12 @@ REQUIRED_SECTIONS = [
     ("L", "Cross-Unit Interoperability Impact"),
 ]
 
+# Sections that MUST be present in SKILL.md. After the Phase 2 split,
+# Section A (Structural Problem) and Section B (Domain Scope) live in a
+# sibling RATIONALE.md file alongside SKILL.md, so they are no longer
+# required in the SKILL.md itself.
+MANDATORY_SECTIONS = {"C", "D", "E", "F", "G", "H", "I", "J", "K", "L"}
+
 STRESS_TEST_SCENARIOS = [
     "Capital Influx",
     "Emergency Crisis",
@@ -209,7 +215,12 @@ def find_sections(content):
 
 
 def validate_sections(content):
-    """Validate all 12 sections (A-L) exist with substantive content.
+    """Validate mandatory sections (C-L) exist with substantive content.
+
+    Sections A (Structural Problem) and B (Domain Scope) are optional in
+    SKILL.md after the Phase 2 split — they belong in a sibling
+    RATIONALE.md file. They are still parsed when present, but their
+    absence is not an error.
 
     Substantive = at least 3 non-empty, non-comment lines OR 30+ words.
     Returns a list of error strings that name the missing/empty section.
@@ -219,6 +230,9 @@ def validate_sections(content):
 
     for letter, title in REQUIRED_SECTIONS:
         if sections.get(letter) is None:
+            # A and B are optional in SKILL.md — they live in RATIONALE.md.
+            if letter not in MANDATORY_SECTIONS:
+                continue
             errors.append(
                 f"Missing section '{letter}. {title}' -- add a header like '## {letter}. {title}' with content"
             )
@@ -232,6 +246,10 @@ def validate_sections(content):
         total_words = sum(len(ln.split()) for ln in substantive)
 
         if len(substantive) < 3 and total_words < 30:
+            # Insufficient-content errors only apply to mandatory sections.
+            # A and B can be empty stubs without being a validation failure.
+            if letter not in MANDATORY_SECTIONS:
+                continue
             errors.append(
                 f"Section '{letter}. {title}' has insufficient content "
                 f"({len(substantive)} substantive lines, {total_words} words) -- "
