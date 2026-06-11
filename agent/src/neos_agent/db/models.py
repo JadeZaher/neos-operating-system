@@ -32,6 +32,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -740,9 +741,24 @@ class GovernanceHealthAudit(TimestampMixin, Base):
 # ========================
 
 class EmergencyState(TimestampMixin, Base):
-    """Circuit breaker state tracking for an ecosystem (Layer VIII)."""
+    """Circuit breaker state tracking for an ecosystem (Layer VIII).
+
+    State machine:  closed -> open -> half_open -> closed
+    - open: emergency declared, authority active
+    - half_open: Recovery state (mandatory, cannot be skipped). 30-day window
+      for post-emergency review and decision ratification per SKILL.md
+      section E step 3.  closed_at must be NULL; half_open_entered_at set.
+    - closed: normal governance fully restored.  Must have been in half_open
+      prior (no direct open->closed path allowed).
+    """
     __tablename__ = "emergency_states"
-    __table_args__ = (Index("ix_emergency_states_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_emergency_states_ecosystem_id", "ecosystem_id"),
+        CheckConstraint(
+            "state IN ('open', 'half_open', 'closed')",
+            name="ck_emergency_states_valid_state",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
@@ -751,6 +767,7 @@ class EmergencyState(TimestampMixin, Base):
     declared_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     criteria_met: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     auto_revert_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    half_open_entered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     recovery_entered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     pre_authorized_roles: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

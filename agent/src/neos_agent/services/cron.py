@@ -16,6 +16,7 @@ async def run_cron_loop(app):
             await _check_deadlines(app)
             await _cleanup_expired_sessions(app)
             await _check_compliance_regen(app)
+            await _auto_revert_emergencies(app)
         except asyncio.CancelledError:
             logger.info("Cron service stopping")
             break
@@ -111,3 +112,65 @@ async def _check_compliance_regen(app):
                     # For now, just log — the compliance endpoint handles generation
     except Exception:
         logger.exception("Compliance regen check failed")
+
+
+async def _auto_revert_emergencies(app):
+    """Auto-revert open emergencies whose auto_revert_at timer has expired.
+
+    Per emergency-reversion SKILL.md section C: when the auto-reversion timer
+    expires, the emergency MUST transition to half_open (Recovery) regardless
+    of whether exit criteria have been met.  This satisfies NEOS Principle 4:
+    'Emergency authority automatically expires.'
+
+    Transitions each expired open emergency to half_open, records the trigger
+    as 'auto_revert_timer' in the actions_log, and sets half_open_entered_at.
+    """
+    from sqlalchemy import select, update
+    from neos_agent.db.models import EmergencyState
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    try:
+        async with app.ctx.db() as session:
+            stmt = select(EmergencyState).where(
+                EmergencyState.state == "open",
+                EmergencyState.auto_revert_at.is_not(None),
+                EmergencyState.auto_revert_at < now,
+            )
+            result = await session.execute(stmt)
+            expired = result.scalars().all()
+
+            for emergency in expired:
+                old_revert_at = emergency.auto_revert_at
+                emergency.state = "half_open"
+                emergency.half_open_entered_at = now
+                # Recovery window: 30 days per SKILL.md section E step 3.
+                emergency.auto_revert_at = now + timedelta(days=30)
+
+                # Append auto-trigger audit note
+                log = emergency.actions_log or []
+                if isinstance(log, dict):
+                    log = []
+                log.append({
+                    "action": "half_open_transition",
+                    "timestamp": now.isoformat(),
+                    "trigger": "auto_revert_timer",
+                    "note": (
+                        f"Auto-reversion timer expired (was {old_revert_at.isoformat()}). "
+                        "Emergency authority automatically ceased. Recovery state entered. "
+                        "30-day ratification window started."
+                    ),
+                })
+                emergency.actions_log = log
+
+                logger.info(
+                    "Emergency %s auto-reverted open→half_open (timer expired at %s)",
+                    emergency.id,
+                    old_revert_at,
+                )
+
+            if expired:
+                await session.commit()
+                logger.info("Auto-reverted %d expired emergencies to half_open", len(expired))
+    except Exception:
+        logger.exception("Emergency auto-revert check failed")

@@ -141,9 +141,20 @@ async def _resolve_member(
 async def _get_first_ecosystem_id(
     db: AsyncSession, ecosystem_ids: list | None = None
 ) -> uuid.UUID | None:
-    """Return the first ecosystem ID from the given list, or None."""
+    """Return the first ecosystem ID from the caller's scope.
+
+    If no scope is provided (single-ecosystem deployments, internal/test
+    callers), fall back to looking up the lone active ecosystem in the DB.
+    Returns None only when no scope is given AND the DB doesn't contain
+    exactly one ecosystem — callers must handle that as an error.
+    """
     if ecosystem_ids:
         return ecosystem_ids[0]
+    stmt = select(Ecosystem.id).limit(2)
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    if len(rows) == 1:
+        return rows[0]
     return None
 
 

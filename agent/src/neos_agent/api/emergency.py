@@ -46,6 +46,7 @@ class EmergencyListItem(BaseModel):
 class EmergencyDetail(EmergencyListItem):
     ecosystem_id: uuid.UUID
     criteria_met: dict | list | None = None
+    half_open_entered_at: _dt.datetime | None = None
     recovery_entered_at: _dt.datetime | None = None
     pre_authorized_roles: dict | list | None = None
     actions_log: dict | list | None = None
@@ -98,6 +99,7 @@ def _emergency_to_detail(e: EmergencyState) -> dict:
         created_at=e.created_at,
         ecosystem_id=e.ecosystem_id,
         criteria_met=e.criteria_met,
+        half_open_entered_at=e.half_open_entered_at,
         recovery_entered_at=e.recovery_entered_at,
         pre_authorized_roles=e.pre_authorized_roles,
         actions_log=e.actions_log,
@@ -230,9 +232,17 @@ async def declare_emergency(request: Request):
 
 @emergency_api_bp.post("/<emergency_id:uuid>/resolve")
 async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
-    """POST /api/v1/emergency/:id/resolve -- resolve (close) an emergency.
+    """POST /api/v1/emergency/:id/resolve — begin Recovery (open → half_open).
 
-    Returns JSON: EmergencyDetail
+    Transitions the emergency from 'open' to 'half_open' (NOT to 'closed').
+    The half_open Recovery state is mandatory per NEOS Principle 4 and
+    emergency-reversion SKILL.md section E step 3.  During Recovery:
+    - Emergency authority ceases immediately.
+    - Crisis decisions must be ratified through normal ACT process within 30 days.
+    - Post-emergency review must be scheduled within 14 days.
+    - Use POST /complete-recovery to finalize (half_open → closed).
+
+    Returns 409 if the emergency is not in 'open' state.
     """
     member, err = require_auth(request)
     if err:
@@ -251,12 +261,108 @@ async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
         if state is None:
             return json({"error": "Emergency record not found"}, status=404)
 
-        state.state = "closed"
-        state.closed_at = _dt.datetime.now(timezone.utc).replace(tzinfo=None)
+        if state.state != "open":
+            return json(
+                {"error": f"Cannot resolve: emergency is in '{state.state}' state, must be 'open'"},
+                status=409,
+            )
+
+        now = _dt.datetime.now(timezone.utc).replace(tzinfo=None)
+        state.state = "half_open"
+        state.half_open_entered_at = now
+        # Recovery window: 30 days per SKILL.md section E step 3.
+        # auto_revert_at is repurposed as the recovery deadline for
+        # decision ratification.
+        state.auto_revert_at = now + timedelta(days=30)
+
+        # Append reversion audit note to actions_log
+        log = state.actions_log or []
+        if isinstance(log, dict):
+            log = []
+        log.append({
+            "action": "half_open_transition",
+            "timestamp": now.isoformat(),
+            "trigger": "manual_resolve",
+            "actor": member.member_id if hasattr(member, "member_id") else str(member.id),
+            "note": (
+                "Emergency authority ceased. Recovery state entered. "
+                "30-day ratification window started. "
+                "Post-emergency review must be scheduled within 14 days."
+            ),
+        })
+        state.actions_log = log
 
         await session.commit()
         await session.refresh(state)
 
-        logger.info("Emergency %s resolved", emergency_id)
+        logger.info(
+            "Emergency %s transitioned open→half_open (Recovery started, deadline %s)",
+            emergency_id,
+            state.auto_revert_at,
+        )
+
+    return json(_emergency_to_detail(state))
+
+
+@emergency_api_bp.post("/<emergency_id:uuid>/complete-recovery")
+async def complete_recovery(request: Request, emergency_id: uuid.UUID):
+    """POST /api/v1/emergency/:id/complete-recovery — finalize recovery (half_open → closed).
+
+    Requires that a post-emergency review has been recorded (post_review_status
+    must be 'complete') per emergency-reversion SKILL.md section E steps 8-10.
+    Returns 409 if the emergency is not in 'half_open' state, or if the required
+    post-emergency review has not been completed.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    eco_ids = get_ecosystem_ids(request)
+
+    async with request.app.ctx.db() as session:
+        stmt = select(EmergencyState).where(EmergencyState.id == emergency_id)
+        if eco_ids:
+            stmt = stmt.where(EmergencyState.ecosystem_id.in_(eco_ids))
+
+        result = await session.execute(stmt)
+        state = result.scalar_one_or_none()
+
+        if state is None:
+            return json({"error": "Emergency record not found"}, status=404)
+
+        if state.state != "half_open":
+            return json(
+                {"error": f"Cannot complete recovery: emergency is in '{state.state}' state, must be 'half_open'"},
+                status=409,
+            )
+
+        # The post-emergency review is MANDATORY per SKILL.md section E step 8.
+        # It must be Complete before we allow half_open→closed.
+        if state.post_review_status != "complete":
+            return json(
+                {"error": "Post-emergency review must be complete before closing recovery. Set post_review_status='complete' first."},
+                status=409,
+            )
+
+        now = _dt.datetime.now(timezone.utc).replace(tzinfo=None)
+        state.state = "closed"
+        state.closed_at = now
+
+        # Append closure audit note
+        log = state.actions_log or []
+        if isinstance(log, dict):
+            log = []
+        log.append({
+            "action": "recovery_completed",
+            "timestamp": now.isoformat(),
+            "actor": member.member_id if hasattr(member, "member_id") else str(member.id),
+            "note": "Recovery completed. Circuit breaker returned to closed state. Normal governance fully restored.",
+        })
+        state.actions_log = log
+
+        await session.commit()
+        await session.refresh(state)
+
+        logger.info("Emergency %s recovery completed (half_open→closed)", emergency_id)
 
     return json(_emergency_to_detail(state))

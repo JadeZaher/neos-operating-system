@@ -1,0 +1,663 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\atooz\Programming\NEOS\neos-operating-system\agent\scratch\codegen\__main__.py", line 471, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "C:\Users\atooz\Programming\NEOS\neos-operating-system\agent\scratch\codegen\__main__.py", line 454, in main
+    return cmd_drift(skill_root, tool_file)
+  File "C:\Users\atooz\Programming\NEOS\neos-operating-system\agent\scratch\codegen\__main__.py", line 284, in cmd_drift
+    print(format_drift_report(report, verbose=True))
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 1191: character maps to <undefined>
+Existing tools found: 29
+Skills discovered:     54
+
+Aliases configured:    54
+
+Skills with drift: 54/54
+
+DRIFT agreement-amendment -> update_agreement_status  (match: 0%)
+  [WARN] [param_mismatch] Input 'affected_parties' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'affected_parties': all parties currently bound by the agreement plus any new parties affected by the amendment
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'amendment_proposer' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'amendment_proposer': identity, role, and authority scope
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'amendment_type' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'amendment_type': minor_clarification, substantive_change, scope_expansion, or scope_reduction
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'parent_agreement_id' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'parent_agreement_id': the specific agreement being amended, with its current version number
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_changes' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_changes': in diff format — what the text currently says and what it will say after amendment
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'rationale' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'rationale': why the change is needed, what problem it addresses, what happens if the agreement remains as-is
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'agreement_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     The agreement business key.
+  [INFO] [param_mismatch] Parameter 'new_status' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Target status.
+  [WARN] [field_mismatch] Input 'affected_parties' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'amendment_proposer' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'amendment_type' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'parent_agreement_id' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_changes' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'rationale' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'agreement_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'new_status' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (12%) between SKILL.md and tool definition.
+      SKILL.md: Modify an existing agreement through proper process -- classifying the amendment type, routing through the appropriate ACT level, and producing a vers
+      Tool:     Transition an agreement's status along its lifecycle (draft -> advice -> consent -> test/active -> under_review -> sunset -> archived). Enforces valid
+
+DRIFT agreement-creation -> create_agreement_draft  (match: 0%)
+  [WARN] [param_mismatch] Input 'agreement_type' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'agreement_type': space, access, organizational, or UAF (determines routing and consent threshold)
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_scope' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_scope': the boundary within which the agreement operates
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_review_date' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_review_date': when the agreement will be reviewed (defaults apply per Section J)
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_text' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_text': the draft agreement content, using the agreement-template.yaml structure
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposer_identity' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposer_identity': who is proposing, their role, and their authority scope
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'rationale' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'rationale': why this agreement is needed, what problem it solves
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'domain' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Domain this agreement applies to.
+  [INFO] [param_mismatch] Parameter 'hierarchy_level' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Hierarchy level (default: domain).
+  [INFO] [param_mismatch] Parameter 'parent_agreement_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     If this amends or supersedes an existing agreement, its business key (e.g. AGR-XXXX-2026-001).
+  [INFO] [param_mismatch] Parameter 'proposer' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Name or member_id of the proposer (must be active member).
+  [INFO] [param_mismatch] Parameter 'shared_ecosystem_ids' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Other ecosystems this agreement applies to (list of ecosystem UUID strings).
+  [INFO] [param_mismatch] Parameter 'sunset_date' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     When this agreement expires unless renewed (ISO date, YYYY-MM-DD).
+  [INFO] [param_mismatch] Parameter 'text' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Full agreement body, 200-2000 words. Must include: purpose, scope, parties, terms, exceptions, sunse
+  [INFO] [param_mismatch] Parameter 'title' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Concise, action-oriented title (5-15 words) describing what this agreement establishes.
+  [INFO] [param_mismatch] Parameter 'type' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Agreement type. Valid values: space (workspace/resource agreements), access (access-control agreemen
+  [WARN] [field_mismatch] Input 'affected_parties' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'agreement_type' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_scope' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_review_date' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_text' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposer_identity' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'rationale' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'domain' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'proposer' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'text' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'title' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'type' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (23%) between SKILL.md and tool definition.
+      SKILL.md: Create a new binding agreement -- space agreement, access agreement, agreement field, or UAF -- through a structured, consent-based process that preve
+      Tool:     Create a new governance agreement in draft status. Generates a unique ID, validates proposer and affected parties as active members, and sets default 
+
+DRIFT agreement-registry -> search_agreements  (match: 30%)
+  [INFO] [param_mismatch] Parameter 'affected_party' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Name of an affected party.
+  [INFO] [param_mismatch] Parameter 'date_from' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Start date (YYYY-MM-DD).
+  [INFO] [param_mismatch] Parameter 'date_to' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     End date (YYYY-MM-DD).
+  [INFO] [param_mismatch] Parameter 'domain' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Partial domain name match.
+  [INFO] [param_mismatch] Parameter 'status' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Agreement status filter.
+  [INFO] [param_mismatch] Parameter 'type' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Agreement type filter (space, access, organizational, uaf, culture_code).
+  [WARN] [param_mismatch] Low description overlap (12%) between SKILL.md and tool definition.
+      SKILL.md: Maintain and query the single source of truth for all active agreements -- handling writes from agreement-creation, amendment, and review, and providi
+      Tool:     Search governance agreements by type, domain, status, affected party, or date range. Returns up to 20 results ordered by status priority (active first
+
+DRIFT agreement-review -> get_agreement  (match: 10%)
+  [WARN] [param_mismatch] Input 'conflict_or_issue_log' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'conflict_or_issue_log': any formally documented conflicts, complaints, or issues arising from the agreement's provisions
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'current_participant_feedback' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'current_participant_feedback': input from affected parties about whether the agreement is working as intended
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'registry_data' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'registry_data': the agreement's amendment history, linked agreements, and usage patterns
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'agreement_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     The agreement business key.
+  [WARN] [field_mismatch] Input 'conflict_or_issue_log' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'current_participant_feedback' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'registry_data' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'agreement_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (10%) between SKILL.md and tool definition.
+      SKILL.md: Run the periodic review cycle for any agreement -- evaluating current relevance, checking for staleness or conflict, and producing a review outcome: r
+      Tool:     Get the full details of a governance agreement by its business ID (e.g. AGR-SHUR-2026-001), including ratification records.
+
+DRIFT universal-agreement-field -> get_universal_field  (match: 0%)
+  [ERR] [missing_tool] No tool found for skill 'universal-agreement-field'. Aliased name: 'get_universal_field' not found in governance_tools.py.
+
+DRIFT authority-boundary-negotiation -> check_authority  (match: 0%)
+  [WARN] [param_mismatch] Input 'context_that_surfaced_the_dispute' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'context_that_surfaced_the_dispute': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_contracts_of_all_involved_domains' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_contracts_of_all_involved_domains': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'precedent_from_prior_boundary_resolutions' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'precedent_from_prior_boundary_resolutions': optional
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'specific_overlap_description' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'specific_overlap_description': mandatory
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'action' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     The action to check authorization for.
+  [INFO] [param_mismatch] Parameter 'domain' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Domain ID or name.
+  [INFO] [param_mismatch] Parameter 'member' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Member name or member_id.
+  [WARN] [field_mismatch] Input 'context_that_surfaced_the_dispute' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_contracts_of_all_involved_domains' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'specific_overlap_description' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'domain' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'member' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (8%) between SKILL.md and tool definition.
+      SKILL.md: Resolve overlapping or ambiguous domain boundaries between roles or circles through structured integrative discussion -- so that authority disputes ar
+      Tool:     Check whether a member has authority to perform a specific action in a given domain. Returns authorization status, reason, and role source.
+
+DRIFT domain-mapping -> create_domain_draft  (match: 0%)
+  [INFO] [param_mismatch] Parameter 'created_by' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Who created this domain.
+  [INFO] [param_mismatch] Parameter 'domain_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Unique domain identifier (business key, e.g. 'operations', 'governance').
+  [INFO] [param_mismatch] Parameter 'elements' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     S3 domain definition. Required keys: drivers (list of strings — what motivates work in this domain),
+  [INFO] [param_mismatch] Parameter 'metric_definitions' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Dict mapping metric name to definition: {metric_name: {description: str, unit: str, target: number|n
+  [INFO] [param_mismatch] Parameter 'parent_domain_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Parent domain business key (for nested domains).
+  [INFO] [param_mismatch] Parameter 'purpose' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Purpose statement for the domain.
+  [INFO] [param_mismatch] Parameter 'steward' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Name or member_id of the domain steward (must be active member).
+  [INFO] [field_mismatch] Parameter 'domain_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'purpose' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (12%) between SKILL.md and tool definition.
+      SKILL.md: Define or refine a governance domain using the 11-element contract -- purpose, responsibilities, customers, deliverables, dependencies, constraints, c
+      Tool:     Create a new domain contract in draft status. Validates steward as active member and checks for duplicate domain IDs.
+
+DRIFT domain-review -> get_domain  (match: 0%)
+  [WARN] [param_mismatch] Input 'audit_or_compliance_observations' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'audit_or_compliance_observations': any external or internal observations relevant to the domain's operation
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'boundary_resolution_records' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'boundary_resolution_records': any authority-boundary-negotiation records involving this domain since the last review
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'customer_and_dependent_domain_feedback' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'customer_and_dependent_domain_feedback': qualitative and quantitative input from the parties the domain serves and the domains that depend on
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_contract' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_contract': the current active version with all 11 elements
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'steward_performance_data' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'steward_performance_data': records of metric performance against the targets specified in element 11 of the domain contract (e.
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'domain_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Domain business key or partial name.
+  [WARN] [field_mismatch] Input 'audit_or_compliance_observations' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'boundary_resolution_records' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'customer_and_dependent_domain_feedback' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_contract' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'steward_performance_data' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'domain_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (21%) between SKILL.md and tool definition.
+      SKILL.md: Evaluate an existing governance domain through scheduled review -- assessing each of the 11 contract elements, steward effectiveness, and domain healt
+      Tool:     Get the full domain contract including all S3 elements, domain elements, metric definitions, and current steward.
+
+DRIFT member-lifecycle -> get_active_members  (match: 80%)
+  [INFO] [param_mismatch] Parameter 'profile' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Filter by member profile.
+  [WARN] [param_mismatch] Low description overlap (7%) between SKILL.md and tool definition.
+      SKILL.md: Track and manage ecosystem participant status transitions -- onboarding consent ceremony, active participation, inactivity detection, reactivation, an
+      Tool:     Get all active ecosystem members. Supports optional profile filter (co_creator, builder, townhall).
+
+DRIFT role-assignment -> get_member_roles  (match: 0%)
+  [WARN] [param_mismatch] Input 'assigning_body_identity' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'assigning_body_identity': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'candidate_person' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'candidate_person': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'competency_evidence' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'competency_evidence': optional
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'conflictofinterest_disclosure' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'conflictofinterest_disclosure': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_contract' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_contract': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_assignment_duration' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_assignment_duration': mandatory
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'member' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Member name or member_id.
+  [WARN] [field_mismatch] Input 'assigning_body_identity' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'candidate_person' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'conflictofinterest_disclosure' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_contract' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_assignment_duration' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'member' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (14%) between SKILL.md and tool definition.
+      SKILL.md: Assign a person to a defined governance domain with scoped authority -- verifying competency, checking conflicts of interest, recording consent, and e
+      Tool:     Get all active role assignments for a member, including domain stewardships and ecosystem profile roles.
+
+DRIFT role-sunset -> get_member_roles  (match: 0%)
+  [WARN] [param_mismatch] Input 'active_agreements_list' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'active_agreements_list': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'current_steward' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'current_steward': if assigned
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'dependent_domains_list' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'dependent_domains_list': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_contract' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_contract': mandatory
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domainreview_record' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domainreview_record': if sunset follows a review
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_disposition_plan' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_disposition_plan': mandatory
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'member' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Member name or member_id.
+  [WARN] [field_mismatch] Input 'active_agreements_list' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'current_steward' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'dependent_domains_list' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_contract' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domainreview_record' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_disposition_plan' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'member' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (15%) between SKILL.md and tool definition.
+      SKILL.md: Dissolve a governance domain that has served its purpose -- inventorying all responsibilities and agreements, executing a disposition plan, archiving 
+      Tool:     Get all active role assignments for a member, including domain stewardships and ecosystem profile roles.
+
+DRIFT role-transfer -> get_member_roles  (match: 0%)
+  [WARN] [param_mismatch] Input 'active_agreements_held' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'active_agreements_held': any agreements where this role is listed as steward, party, or responsible party
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'domain_contract' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'domain_contract': the current version including all 11 elements — especially pending metrics, active constraints, and 
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'incoming_steward_identity' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'incoming_steward_identity': identified through the role-assignment process; must be in active lifecycle status
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'outgoing_steward_identity' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'outgoing_steward_identity': the current steward and their active assignment record
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'pending_commitments_inventory' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'pending_commitments_inventory': open commitments, in-progress deliverables, scheduled decisions, and unresolved escalations
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'relationship_map' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'relationship_map': list of adjacent and dependent domains with named contacts
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'member' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Member name or member_id.
+  [WARN] [field_mismatch] Input 'active_agreements_held' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'domain_contract' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'incoming_steward_identity' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'outgoing_steward_identity' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'pending_commitments_inventory' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'relationship_map' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'member' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (10%) between SKILL.md and tool definition.
+      SKILL.md: Hand off a governance role from one steward to another without losing institutional knowledge or continuity -- structured handover with overlap period
+      Tool:     Get all active role assignments for a member, including domain stewardships and ecosystem profile roles.
+
+DRIFT act-advice-phase -> record_advice  (match: 40%)
+  [INFO] [param_mismatch] Parameter 'advice_text' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     The advice content.
+  [INFO] [param_mismatch] Parameter 'advisor' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Advisor name or member_id.
+  [INFO] [param_mismatch] Parameter 'proposal_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposal business key.
+  [INFO] [field_mismatch] Parameter 'advisor' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'proposal_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (17%) between SKILL.md and tool definition.
+      SKILL.md: Run the Advice phase of the ACT process -- gather input from all impacted parties, document each piece of advice, and produce an advice log showing ho
+      Tool:     Record an advice entry for a proposal in the advice phase. Validates advisor standing and creates an AdviceLog if needed.
+
+DRIFT act-consent-phase -> record_consent_position  (match: 20%)
+  [INFO] [param_mismatch] Parameter 'participant' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Participant name.
+  [INFO] [param_mismatch] Parameter 'position' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Position: consent, stand_aside, or objection.
+  [INFO] [param_mismatch] Parameter 'proposal_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposal business key.
+  [INFO] [param_mismatch] Parameter 'reason' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Reason (required for stand_aside and objection).
+  [INFO] [param_mismatch] Parameter 'round' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Consent round number (default: 1).
+  [INFO] [field_mismatch] Parameter 'participant' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'position' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'proposal_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+
+DRIFT act-test-phase -> get_proposal  (match: 0%)
+  [WARN] [param_mismatch] Input 'revert_procedure' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'revert_procedure': what specific actions restore the pre-test state if the change is reverted
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'review_body' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'review_body': who evaluates the test at its conclusion (typically the same body that consented)
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'success_criteria' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'success_criteria': measurable conditions that determine whether the change achieves its intended purpose (must be defin
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'test_duration' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'test_duration': how long the change will be tested (proposed in the original proposal, confirmed during consent)
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'proposal_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     The proposal business key (e.g. PROP-2026-001).
+  [WARN] [field_mismatch] Input 'revert_procedure' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'review_body' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'success_criteria' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'test_duration' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'proposal_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (18%) between SKILL.md and tool definition.
+      SKILL.md: Run the Test phase of the ACT process -- implement the consented proposal on a reversible, time-limited basis with defined success criteria, midpoint 
+      Tool:     Get full proposal details by its business ID (e.g. PROP-2026-001), including title, type, status, decision type, rationale, proposed change, advice lo
+
+DRIFT consensus-check -> check_quorum  (match: 30%)
+  [WARN] [param_mismatch] Input 'quorum_requirements' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'quorum_requirements': minimum participation threshold (default: 2/3 for consent mode, 100% for consensus mode)
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'the_mode' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'the_mode': consent (no reasoned objection) or consensus (all actively agree)
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'proposal_id' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposal business key.
+  [WARN] [field_mismatch] Input 'quorum_requirements' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'the_mode' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'proposal_id' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (15%) between SKILL.md and tool definition.
+      SKILL.md: Verify whether consent or consensus exists among affected parties -- the reusable procedure for determining group agreement, handling quorum, absent m
+      Tool:     Check if quorum is met for a proposal's consent round. Consent mode: 2/3 threshold. Consensus mode: 100%. Emergency: 50%.
+
+DRIFT proposal-creation -> create_proposal  (match: 0%)
+  [WARN] [param_mismatch] Input 'desired_timeline' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'desired_timeline': when the proposer hopes to see the change implemented
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposal_type' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposal_type': ecoplan, genplan, amendment, resource_request, or policy_change
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposed_change_text' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposed_change_text': what specifically will change, written clearly enough for any participant to understand
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'proposer_identity' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'proposer_identity': who is proposing, their role, and their authority scope
+      Tool:     (not present in tool)
+  [WARN] [param_mismatch] Input 'urgency_level' defined in SKILL.md section D but missing from tool parameters.
+      SKILL.md: Input 'urgency_level': normal (standard timelines), elevated (compressed but not emergency), or emergency (maximum compress
+      Tool:     (not present in tool)
+  [INFO] [param_mismatch] Parameter 'advice_deadline' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     When advice-gathering closes (ISO date, YYYY-MM-DD).
+  [INFO] [param_mismatch] Parameter 'co_sponsors' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Member names co-sponsoring this proposal.
+  [INFO] [param_mismatch] Parameter 'consent_deadline' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     When consent voting closes (ISO date, YYYY-MM-DD).
+  [INFO] [param_mismatch] Parameter 'proposed_change' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     3-10 sentences describing exactly what changes (policy, allocation, structure). Concrete and actiona
+  [INFO] [param_mismatch] Parameter 'proposer' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposer name or member_id.
+  [INFO] [param_mismatch] Parameter 'scope' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Decision scope (used for consent-mode auto-detection).
+  [INFO] [param_mismatch] Parameter 'title' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposal title.
+  [INFO] [param_mismatch] Parameter 'type' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Proposal type.
+  [INFO] [param_mismatch] Parameter 'urgency' exists in tool but is not listed in SKILL.md section D.
+      SKILL.md: (not listed in SKILL.md)
+      Tool:     Urgency level (normal, urgent, emergency).
+  [WARN] [field_mismatch] Input 'affected_domain' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'decision_type' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'desired_timeline' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'impacted_parties' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposal_type' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposed_change_text' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'proposer_identity' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [WARN] [field_mismatch] Input 'urgency_level' is required in SKILL.md but optional in tool.
+      SKILL.md: required
+      Tool:     optional
+  [INFO] [field_mismatch] Parameter 'proposed_change' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'proposer' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'title' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [INFO] [field_mismatch] Parameter 'type' is required in tool but optional in SKILL.md.
+      SKILL.md: (not listed as required)
+      Tool:     required
+  [WARN] [param_mismatch] Low description overlap (19%) between SKILL.md and tool definition.
+      SKILL.md: Create and submit a formal proposal to change agreements, processes, resources, or structure -- routing it through the appropriate ACT decision level 
+      Tool:     Create a new ACT (Advice-Consent-Test) proposal. Auto-sets consent mode to consensus for OSC/UAF scope, consent otherwise.
+

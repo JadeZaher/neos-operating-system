@@ -1,0 +1,787 @@
+# NEOS Governance Tool Manifest
+# Generated: 2026-06-10T18:03:25
+# Skill count: 54
+
+[manifest]
+version = "1.0"
+generated_at = "2026-06-10T18:03:25"
+
+# Maps kebab-case skill IDs (from SKILL.md names) to
+# snake_case tool names (from governance_tools.py ToolDef entries).
+[aliases]
+access-economy-transition = "create_ecosystem"
+act-advice-phase = "record_advice"
+act-consent-phase = "record_consent_position"
+act-test-phase = "get_proposal"
+agreement-amendment = "update_agreement_status"
+agreement-creation = "create_agreement_draft"
+agreement-registry = "search_agreements"
+agreement-review = "get_agreement"
+agreement-versioning = "update_agreement_status"
+authority-boundary-negotiation = "check_authority"
+capture-pattern-recognition = "create_safeguard_audit"
+coaching-intervention = "create_conflict_case"
+commitment-unwinding = "update_agreement_status"
+commons-monitoring = "get_ecosystem"
+community-impact-assessment = "create_conflict_case"
+consensus-check = "check_quorum"
+crisis-coordination = "declare_emergency"
+cross-ethos-request = "create_proposal"
+decision-record = "create_decision_record"
+domain-mapping = "create_domain_draft"
+domain-review = "get_domain"
+emergency-criteria-design = "declare_emergency"
+emergency-reversion = "get_emergency_state"
+escalation-triage = "triage_conflict"
+ethos-dissolution = "get_ecosystem"
+federation-agreement = "create_agreement_draft"
+funding-pool-stewardship = "create_ecosystem"
+governance-health-audit = "create_safeguard_audit"
+harm-circle = "create_conflict_case"
+independent-monitoring = "create_safeguard_audit"
+inter-unit-liaison = "get_member_roles"
+member-lifecycle = "get_active_members"
+nvc-dialogue = "create_conflict_case"
+participatory-allocation = "create_ecosystem"
+polycentric-conflict-navigation = "triage_conflict"
+portable-record = "create_exit_record"
+post-emergency-review = "get_emergency_state"
+pre-authorization-protocol = "declare_emergency"
+precedent-challenge = "search_precedents"
+precedent-search = "search_precedents"
+proposal-creation = "create_proposal"
+proposal-resolution = "update_proposal_status"
+re-entry-integration = "get_active_members"
+repair-agreement = "create_repair_agreement"
+resource-request = "create_proposal"
+role-assignment = "get_member_roles"
+role-sunset = "get_member_roles"
+role-transfer = "get_member_roles"
+safeguard-trigger-design = "create_safeguard_audit"
+semantic-tagging = "search_agreements"
+shared-resource-stewardship = "create_domain_draft"
+structural-diversity-maintenance = "create_safeguard_audit"
+universal-agreement-field = "get_universal_field"
+voluntary-exit = "create_exit_record"
+
+# ---- Layer 1 ----
+
+[[skills]]
+skill_id = "agreement-amendment"
+skill_name = "Agreement Amendment"
+layer = 1
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-01-agreement\agreement-amendment\SKILL.md"
+source_hash = "0d6769aff1830105"
+tool_file = "generated/agreement_amendment.py"
+schema_file = "generated/agreement_amendment_schema.py"
+aliased_tool = "update_agreement_status"
+dependencies = ['agreement-creation', 'act-advice-phase', 'act-consent-phase', 'act-test-phase', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "agreement-creation"
+skill_name = "Agreement Creation"
+layer = 1
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-01-agreement\agreement-creation\SKILL.md"
+source_hash = "e26750085511e23c"
+tool_file = "generated/agreement_creation.py"
+schema_file = "generated/agreement_creation_schema.py"
+aliased_tool = "create_agreement_draft"
+dependencies = ['domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "agreement-registry"
+skill_name = "Agreement Registry"
+layer = 1
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-01-agreement\agreement-registry\SKILL.md"
+source_hash = "eee5d5f032fcdbb2"
+tool_file = "generated/agreement_registry.py"
+schema_file = "generated/agreement_registry_schema.py"
+aliased_tool = "search_agreements"
+dependencies = ['agreement-creation', 'agreement-amendment', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "agreement-review"
+skill_name = "Agreement Review"
+layer = 1
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-01-agreement\agreement-review\SKILL.md"
+source_hash = "a1862d38b5572ec8"
+tool_file = "generated/agreement_review.py"
+schema_file = "generated/agreement_review_schema.py"
+aliased_tool = "get_agreement"
+dependencies = ['agreement-creation', 'agreement-amendment', 'agreement-registry', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "universal-agreement-field"
+skill_name = "Universal Agreement Field"
+layer = 1
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-01-agreement\universal-agreement-field\SKILL.md"
+source_hash = "d0366f0c17a9576e"
+tool_file = "generated/universal_agreement_field.py"
+schema_file = "generated/universal_agreement_field_schema.py"
+aliased_tool = "get_universal_field"
+dependencies = ['agreement-creation', 'consensus-check', 'domain-mapping']
+rollout_status = "stub"
+
+# ---- Layer 2 ----
+
+[[skills]]
+skill_id = "authority-boundary-negotiation"
+skill_name = "Authority Boundary Negotiation"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\authority-boundary-negotiation\SKILL.md"
+source_hash = "22c33486407ff998"
+tool_file = "generated/authority_boundary_negotiation.py"
+schema_file = "generated/authority_boundary_negotiation_schema.py"
+aliased_tool = "check_authority"
+dependencies = ['domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "domain-mapping"
+skill_name = "Domain Mapping"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\domain-mapping\SKILL.md"
+source_hash = "8bad90db0c6c514f"
+tool_file = "generated/domain_mapping.py"
+schema_file = "generated/domain_mapping_schema.py"
+aliased_tool = "create_domain_draft"
+dependencies = []
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "domain-review"
+skill_name = "Domain Review"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\domain-review\SKILL.md"
+source_hash = "1964e6209fd236d1"
+tool_file = "generated/domain_review.py"
+schema_file = "generated/domain_review_schema.py"
+aliased_tool = "get_domain"
+dependencies = ['domain-mapping', 'role-assignment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "member-lifecycle"
+skill_name = "Member Lifecycle"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\member-lifecycle\SKILL.md"
+source_hash = "f9a1e83a6ffea379"
+tool_file = "generated/member_lifecycle.py"
+schema_file = "generated/member_lifecycle_schema.py"
+aliased_tool = "get_active_members"
+dependencies = ['universal-agreement-field']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "role-assignment"
+skill_name = "Role Assignment"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\role-assignment\SKILL.md"
+source_hash = "5ba38be0b0652ba7"
+tool_file = "generated/role_assignment.py"
+schema_file = "generated/role_assignment_schema.py"
+aliased_tool = "get_member_roles"
+dependencies = ['domain-mapping', 'member-lifecycle']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "role-sunset"
+skill_name = "Role Sunset"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\role-sunset\SKILL.md"
+source_hash = "f924fb4de707feae"
+tool_file = "generated/role_sunset.py"
+schema_file = "generated/role_sunset_schema.py"
+aliased_tool = "get_member_roles"
+dependencies = ['domain-mapping', 'domain-review', 'role-transfer']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "role-transfer"
+skill_name = "Role Transfer"
+layer = 2
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-02-authority\role-transfer\SKILL.md"
+source_hash = "8af4d22846d50822"
+tool_file = "generated/role_transfer.py"
+schema_file = "generated/role_transfer_schema.py"
+aliased_tool = "get_member_roles"
+dependencies = ['domain-mapping', 'role-assignment']
+rollout_status = "stub"
+
+# ---- Layer 3 ----
+
+[[skills]]
+skill_id = "act-advice-phase"
+skill_name = "Act Advice Phase"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\act-advice-phase\SKILL.md"
+source_hash = "51b2dbfa89c69bfb"
+tool_file = "generated/act_advice_phase.py"
+schema_file = "generated/act_advice_phase_schema.py"
+aliased_tool = "record_advice"
+dependencies = ['proposal-creation', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "act-consent-phase"
+skill_name = "Act Consent Phase"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\act-consent-phase\SKILL.md"
+source_hash = "21cddc971b0b28b0"
+tool_file = "generated/act_consent_phase.py"
+schema_file = "generated/act_consent_phase_schema.py"
+aliased_tool = "record_consent_position"
+dependencies = ['act-advice-phase', 'proposal-creation', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "act-test-phase"
+skill_name = "Act Test Phase"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\act-test-phase\SKILL.md"
+source_hash = "7e6033c86c3dbfb5"
+tool_file = "generated/act_test_phase.py"
+schema_file = "generated/act_test_phase_schema.py"
+aliased_tool = "get_proposal"
+dependencies = ['act-consent-phase', 'proposal-creation', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "consensus-check"
+skill_name = "Consensus Check"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\consensus-check\SKILL.md"
+source_hash = "f9d2a158343a933b"
+tool_file = "generated/consensus_check.py"
+schema_file = "generated/consensus_check_schema.py"
+aliased_tool = "check_quorum"
+dependencies = ['proposal-creation', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "proposal-creation"
+skill_name = "Proposal Creation"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\proposal-creation\SKILL.md"
+source_hash = "796a51c9fcfbaa41"
+tool_file = "generated/proposal_creation.py"
+schema_file = "generated/proposal_creation_schema.py"
+aliased_tool = "create_proposal"
+dependencies = ['domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "proposal-resolution"
+skill_name = "Proposal Resolution"
+layer = 3
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-03-act-engine\proposal-resolution\SKILL.md"
+source_hash = "2bfa63ac868c4124"
+tool_file = "generated/proposal_resolution.py"
+schema_file = "generated/proposal_resolution_schema.py"
+aliased_tool = "update_proposal_status"
+dependencies = ['proposal-creation', 'act-advice-phase', 'act-consent-phase', 'act-test-phase', 'consensus-check', 'domain-mapping']
+rollout_status = "stub"
+
+# ---- Layer 4 ----
+
+[[skills]]
+skill_id = "access-economy-transition"
+skill_name = "Access Economy Transition"
+layer = 4
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-04-economic\access-economy-transition\SKILL.md"
+source_hash = "d7582f7e43dee6ee"
+tool_file = "generated/access_economy_transition.py"
+schema_file = "generated/access_economy_transition_schema.py"
+aliased_tool = "create_ecosystem"
+dependencies = ['resource-request', 'funding-pool-stewardship', 'commons-monitoring', 'act-consent-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "commons-monitoring"
+skill_name = "Commons Monitoring"
+layer = 4
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-04-economic\commons-monitoring\SKILL.md"
+source_hash = "0c1edfc16fbf6a23"
+tool_file = "generated/commons_monitoring.py"
+schema_file = "generated/commons_monitoring_schema.py"
+aliased_tool = "get_ecosystem"
+dependencies = ['funding-pool-stewardship', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "funding-pool-stewardship"
+skill_name = "Funding Pool Stewardship"
+layer = 4
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-04-economic\funding-pool-stewardship\SKILL.md"
+source_hash = "fff28e0504f06e94"
+tool_file = "generated/funding_pool_stewardship.py"
+schema_file = "generated/funding_pool_stewardship_schema.py"
+aliased_tool = "create_ecosystem"
+dependencies = ['agreement-creation', 'role-assignment', 'agreement-review']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "participatory-allocation"
+skill_name = "Participatory Allocation"
+layer = 4
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-04-economic\participatory-allocation\SKILL.md"
+source_hash = "c98c2537671f4e9d"
+tool_file = "generated/participatory_allocation.py"
+schema_file = "generated/participatory_allocation_schema.py"
+aliased_tool = "create_ecosystem"
+dependencies = ['resource-request', 'funding-pool-stewardship', 'act-consent-phase', 'consensus-check']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "resource-request"
+skill_name = "Resource Request"
+layer = 4
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-04-economic\resource-request\SKILL.md"
+source_hash = "1390f9231b153aee"
+tool_file = "generated/resource_request.py"
+schema_file = "generated/resource_request_schema.py"
+aliased_tool = "create_proposal"
+dependencies = ['agreement-creation', 'act-consent-phase', 'domain-mapping']
+rollout_status = "stub"
+
+# ---- Layer 5 ----
+
+[[skills]]
+skill_id = "cross-ethos-request"
+skill_name = "Cross Ethos Request"
+layer = 5
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-05-inter-unit\cross-ethos-request\SKILL.md"
+source_hash = "375689cfd183be3c"
+tool_file = "generated/cross_ethos_request.py"
+schema_file = "generated/cross_ethos_request_schema.py"
+aliased_tool = "create_proposal"
+dependencies = ['agreement-creation', 'act-consent-phase', 'role-assignment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "federation-agreement"
+skill_name = "Federation Agreement"
+layer = 5
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-05-inter-unit\federation-agreement\SKILL.md"
+source_hash = "1c0ed8f7ab012c71"
+tool_file = "generated/federation_agreement.py"
+schema_file = "generated/federation_agreement_schema.py"
+aliased_tool = "create_agreement_draft"
+dependencies = ['cross-ethos-request', 'agreement-creation', 'act-consent-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "inter-unit-liaison"
+skill_name = "Inter Unit Liaison"
+layer = 5
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-05-inter-unit\inter-unit-liaison\SKILL.md"
+source_hash = "69ad3269ff68c036"
+tool_file = "generated/inter_unit_liaison.py"
+schema_file = "generated/inter_unit_liaison_schema.py"
+aliased_tool = "get_member_roles"
+dependencies = ['cross-ethos-request', 'federation-agreement', 'role-assignment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "polycentric-conflict-navigation"
+skill_name = "Polycentric Conflict Navigation"
+layer = 5
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-05-inter-unit\polycentric-conflict-navigation\SKILL.md"
+source_hash = "2455c6573a2cbcab"
+tool_file = "generated/polycentric_conflict_navigation.py"
+schema_file = "generated/polycentric_conflict_navigation_schema.py"
+aliased_tool = "triage_conflict"
+dependencies = ['cross-ethos-request', 'federation-agreement', 'inter-unit-liaison', 'act-consent-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "shared-resource-stewardship"
+skill_name = "Shared Resource Stewardship"
+layer = 5
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-05-inter-unit\shared-resource-stewardship\SKILL.md"
+source_hash = "94fc31dc4a64e7bc"
+tool_file = "generated/shared_resource_stewardship.py"
+schema_file = "generated/shared_resource_stewardship_schema.py"
+aliased_tool = "create_domain_draft"
+dependencies = ['cross-ethos-request', 'agreement-creation', 'funding-pool-stewardship', 'role-assignment']
+rollout_status = "stub"
+
+# ---- Layer 6 ----
+
+[[skills]]
+skill_id = "coaching-intervention"
+skill_name = "Coaching Intervention"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\coaching-intervention\SKILL.md"
+source_hash = "485711da37eb1d8b"
+tool_file = "generated/coaching_intervention.py"
+schema_file = "generated/coaching_intervention_schema.py"
+aliased_tool = "create_conflict_case"
+dependencies = ['role-assignment', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "community-impact-assessment"
+skill_name = "Community Impact Assessment"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\community-impact-assessment\SKILL.md"
+source_hash = "850bad3fb5e5fa43"
+tool_file = "generated/community_impact_assessment.py"
+schema_file = "generated/community_impact_assessment_schema.py"
+aliased_tool = "create_conflict_case"
+dependencies = ['harm-circle', 'proposal-creation', 'act-consent-phase', 'agreement-amendment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "escalation-triage"
+skill_name = "Escalation Triage"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\escalation-triage\SKILL.md"
+source_hash = "5a4d7a759b7f5581"
+tool_file = "generated/escalation_triage.py"
+schema_file = "generated/escalation_triage_schema.py"
+aliased_tool = "triage_conflict"
+dependencies = ['harm-circle', 'nvc-dialogue', 'coaching-intervention', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "harm-circle"
+skill_name = "Harm Circle"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\harm-circle\SKILL.md"
+source_hash = "2c078d572714ab24"
+tool_file = "generated/harm_circle.py"
+schema_file = "generated/harm_circle_schema.py"
+aliased_tool = "create_conflict_case"
+dependencies = ['agreement-creation', 'act-consent-phase', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "nvc-dialogue"
+skill_name = "Nvc Dialogue"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\nvc-dialogue\SKILL.md"
+source_hash = "7c12d6824f15daab"
+tool_file = "generated/nvc_dialogue.py"
+schema_file = "generated/nvc_dialogue_schema.py"
+aliased_tool = "create_conflict_case"
+dependencies = ['domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "repair-agreement"
+skill_name = "Repair Agreement"
+layer = 6
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-06-conflict\repair-agreement\SKILL.md"
+source_hash = "7fa7419052de18c6"
+tool_file = "generated/repair_agreement.py"
+schema_file = "generated/repair_agreement_schema.py"
+aliased_tool = "create_repair_agreement"
+dependencies = ['agreement-creation', 'agreement-registry', 'harm-circle']
+rollout_status = "stub"
+
+# ---- Layer 7 ----
+
+[[skills]]
+skill_id = "capture-pattern-recognition"
+skill_name = "Capture Pattern Recognition"
+layer = 7
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-07-safeguard\capture-pattern-recognition\SKILL.md"
+source_hash = "f108dbc85509c820"
+tool_file = "generated/capture_pattern_recognition.py"
+schema_file = "generated/capture_pattern_recognition_schema.py"
+aliased_tool = "create_safeguard_audit"
+dependencies = ['governance-health-audit', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "governance-health-audit"
+skill_name = "Governance Health Audit"
+layer = 7
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-07-safeguard\governance-health-audit\SKILL.md"
+source_hash = "bb1114a34e0ace6d"
+tool_file = "generated/governance_health_audit.py"
+schema_file = "generated/governance_health_audit_schema.py"
+aliased_tool = "create_safeguard_audit"
+dependencies = ['agreement-registry', 'domain-mapping', 'role-assignment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "independent-monitoring"
+skill_name = "Independent Monitoring"
+layer = 7
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-07-safeguard\independent-monitoring\SKILL.md"
+source_hash = "4fbb6b6f8c8dc575"
+tool_file = "generated/independent_monitoring.py"
+schema_file = "generated/independent_monitoring_schema.py"
+aliased_tool = "create_safeguard_audit"
+dependencies = ['governance-health-audit', 'role-assignment', 'domain-mapping']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "safeguard-trigger-design"
+skill_name = "Safeguard Trigger Design"
+layer = 7
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-07-safeguard\safeguard-trigger-design\SKILL.md"
+source_hash = "f242dad4741f9d23"
+tool_file = "generated/safeguard_trigger_design.py"
+schema_file = "generated/safeguard_trigger_design_schema.py"
+aliased_tool = "create_safeguard_audit"
+dependencies = ['capture-pattern-recognition', 'act-consent-phase', 'agreement-creation']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "structural-diversity-maintenance"
+skill_name = "Structural Diversity Maintenance"
+layer = 7
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-07-safeguard\structural-diversity-maintenance\SKILL.md"
+source_hash = "d103fa99c66a614f"
+tool_file = "generated/structural_diversity_maintenance.py"
+schema_file = "generated/structural_diversity_maintenance_schema.py"
+aliased_tool = "create_safeguard_audit"
+dependencies = ['governance-health-audit', 'capture-pattern-recognition', 'domain-mapping']
+rollout_status = "stub"
+
+# ---- Layer 8 ----
+
+[[skills]]
+skill_id = "crisis-coordination"
+skill_name = "Crisis Coordination"
+layer = 8
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-08-emergency\crisis-coordination\SKILL.md"
+source_hash = "5a8649932a0e6ccb"
+tool_file = "generated/crisis_coordination.py"
+schema_file = "generated/crisis_coordination_schema.py"
+aliased_tool = "declare_emergency"
+dependencies = ['pre-authorization-protocol', 'act-advice-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "emergency-criteria-design"
+skill_name = "Emergency Criteria Design"
+layer = 8
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-08-emergency\emergency-criteria-design\SKILL.md"
+source_hash = "c25438b7c5f77f8e"
+tool_file = "generated/emergency_criteria_design.py"
+schema_file = "generated/emergency_criteria_design_schema.py"
+aliased_tool = "declare_emergency"
+dependencies = ['agreement-creation', 'act-consent-phase', 'safeguard-trigger-design']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "emergency-reversion"
+skill_name = "Emergency Reversion"
+layer = 8
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-08-emergency\emergency-reversion\SKILL.md"
+source_hash = "13dce5965857ac93"
+tool_file = "generated/emergency_reversion.py"
+schema_file = "generated/emergency_reversion_schema.py"
+aliased_tool = "get_emergency_state"
+dependencies = ['crisis-coordination', 'emergency-criteria-design']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "post-emergency-review"
+skill_name = "Post Emergency Review"
+layer = 8
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-08-emergency\post-emergency-review\SKILL.md"
+source_hash = "534808872bf623f1"
+tool_file = "generated/post_emergency_review.py"
+schema_file = "generated/post_emergency_review_schema.py"
+aliased_tool = "get_emergency_state"
+dependencies = ['emergency-reversion', 'governance-health-audit']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "pre-authorization-protocol"
+skill_name = "Pre Authorization Protocol"
+layer = 8
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-08-emergency\pre-authorization-protocol\SKILL.md"
+source_hash = "e2f5cd086af6d326"
+tool_file = "generated/pre_authorization_protocol.py"
+schema_file = "generated/pre_authorization_protocol_schema.py"
+aliased_tool = "declare_emergency"
+dependencies = ['emergency-criteria-design', 'role-assignment', 'authority-boundary-negotiation']
+rollout_status = "stub"
+
+# ---- Layer 9 ----
+
+[[skills]]
+skill_id = "agreement-versioning"
+skill_name = "Agreement Versioning"
+layer = 9
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-09-memory\agreement-versioning\SKILL.md"
+source_hash = "7a28e3348bbc4963"
+tool_file = "generated/agreement_versioning.py"
+schema_file = "generated/agreement_versioning_schema.py"
+aliased_tool = "update_agreement_status"
+dependencies = ['agreement-registry', 'agreement-amendment', 'agreement-review']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "decision-record"
+skill_name = "Decision Record"
+layer = 9
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-09-memory\decision-record\SKILL.md"
+source_hash = "cc680c9b10e5a6a1"
+tool_file = "generated/decision_record.py"
+schema_file = "generated/decision_record_schema.py"
+aliased_tool = "create_decision_record"
+dependencies = ['agreement-registry', 'domain-mapping', 'act-consent-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "precedent-challenge"
+skill_name = "Precedent Challenge"
+layer = 9
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-09-memory\precedent-challenge\SKILL.md"
+source_hash = "c1aa2e73b7331295"
+tool_file = "generated/precedent_challenge.py"
+schema_file = "generated/precedent_challenge_schema.py"
+aliased_tool = "search_precedents"
+dependencies = ['precedent-search', 'decision-record', 'act-consent-phase']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "precedent-search"
+skill_name = "Precedent Search"
+layer = 9
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-09-memory\precedent-search\SKILL.md"
+source_hash = "9d2ab16b83ea2788"
+tool_file = "generated/precedent_search.py"
+schema_file = "generated/precedent_search_schema.py"
+aliased_tool = "search_precedents"
+dependencies = ['decision-record', 'semantic-tagging']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "semantic-tagging"
+skill_name = "Semantic Tagging"
+layer = 9
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-09-memory\semantic-tagging\SKILL.md"
+source_hash = "ccb1afd64623ef66"
+tool_file = "generated/semantic_tagging.py"
+schema_file = "generated/semantic_tagging_schema.py"
+aliased_tool = "search_agreements"
+dependencies = ['decision-record', 'domain-mapping']
+rollout_status = "stub"
+
+# ---- Layer 10 ----
+
+[[skills]]
+skill_id = "commitment-unwinding"
+skill_name = "Commitment Unwinding"
+layer = 10
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-10-exit\commitment-unwinding\SKILL.md"
+source_hash = "4dc14930558d3a17"
+tool_file = "generated/commitment_unwinding.py"
+schema_file = "generated/commitment_unwinding_schema.py"
+aliased_tool = "update_agreement_status"
+dependencies = ['agreement-creation', 'role-assignment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "ethos-dissolution"
+skill_name = "Ethos Dissolution"
+layer = 10
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-10-exit\ethos-dissolution\SKILL.md"
+source_hash = "aee1d62f7a7488b3"
+tool_file = "generated/ethos_dissolution.py"
+schema_file = "generated/ethos_dissolution_schema.py"
+aliased_tool = "get_ecosystem"
+dependencies = ['voluntary-exit', 'commitment-unwinding', 'agreement-amendment']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "portable-record"
+skill_name = "Portable Record"
+layer = 10
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-10-exit\portable-record\SKILL.md"
+source_hash = "0d79eb7bcb7a1ceb"
+tool_file = "generated/portable_record.py"
+schema_file = "generated/portable_record_schema.py"
+aliased_tool = "create_exit_record"
+dependencies = ['decision-record', 'semantic-tagging', 'voluntary-exit']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "re-entry-integration"
+skill_name = "Re Entry Integration"
+layer = 10
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-10-exit\re-entry-integration\SKILL.md"
+source_hash = "a968fdcccf4e6a2a"
+tool_file = "generated/re_entry_integration.py"
+schema_file = "generated/re_entry_integration_schema.py"
+aliased_tool = "get_active_members"
+dependencies = ['voluntary-exit', 'portable-record', 'member-lifecycle']
+rollout_status = "stub"
+
+[[skills]]
+skill_id = "voluntary-exit"
+skill_name = "Voluntary Exit"
+layer = 10
+version = "0.1.0"
+source_path = "C:\Users\atooz\Programming\NEOS\neos-operating-system\neos-core\layer-10-exit\voluntary-exit\SKILL.md"
+source_hash = "7837251de2c7d3e9"
+tool_file = "generated/voluntary_exit.py"
+schema_file = "generated/voluntary_exit_schema.py"
+aliased_tool = "create_exit_record"
+dependencies = ['agreement-registry', 'role-assignment', 'commitment-unwinding']
+rollout_status = "stub"
