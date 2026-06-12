@@ -8,6 +8,7 @@ Run from the scratch directory::
 
 from __future__ import annotations
 
+import os
 import shutil
 import textwrap
 
@@ -453,3 +454,71 @@ async def test_exec_result_is_serializable(default_policy):
     assert "stdout" in d
     assert "stderr" in d
     assert "duration_ms" in d
+
+
+# ---------------------------------------------------------------------------
+# 9. exec()/eval() bypass prevention and env-stripping verification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_blocked_exec_builtin(default_policy):
+    """A script using exec() to import os is rejected by policy."""
+    result = await exec_script(
+        language="python",
+        source='exec("import os; print(os.getcwd())")',
+        policy=default_policy,
+    )
+    assert result.ok is False
+    assert result.policy_violation is not None
+    msg = result.policy_violation.lower()
+    assert "exec" in msg or "eval" in msg or "__import__" in msg
+
+
+@pytest.mark.asyncio
+async def test_blocked_eval_builtin(default_policy):
+    """A script using eval() to invoke __import__ is rejected by policy."""
+    result = await exec_script(
+        language="python",
+        source="eval(\"__import__('os').getcwd()\")",
+        policy=default_policy,
+    )
+    assert result.ok is False
+    assert result.policy_violation is not None
+    msg = result.policy_violation.lower()
+    assert "exec" in msg or "eval" in msg or "__import__" in msg
+
+
+@pytest.mark.asyncio
+async def test_pythonpath_stripped_from_env(default_policy):
+    """The subprocess does not receive PYTHONPATH even when set in the host env."""
+    # Inject a recognisable value into the current process environment so
+    # that, if sandbox.py were to pass PYTHONPATH through, the child would
+    # see it.
+    sentinel = "/tmp/attacker_controlled_path_sentinel"
+    original = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = sentinel
+    try:
+        result = await exec_script(
+            language="python",
+            source=textwrap.dedent("""\
+                import os, json
+                pp = os.environ.get("PYTHONPATH")
+                print(json.dumps({"PYTHONPATH": pp}))
+            """),
+            # Allow os for the subprocess so we can inspect its env;
+            # the point is that PYTHONPATH from the HOST is not passed through.
+            allowed_imports={"python": {"os", "json"}},
+            policy=default_policy,
+        )
+    finally:
+        # Restore original env state regardless of test outcome
+        if original is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = original
+
+    assert result.ok is True
+    assert sentinel not in result.stdout
+    # The subprocess should report PYTHONPATH as absent (null in JSON)
+    assert '"PYTHONPATH": null' in result.stdout

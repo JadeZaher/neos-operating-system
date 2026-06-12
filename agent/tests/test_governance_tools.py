@@ -464,3 +464,141 @@ class TestToolRegistry:
         result = await execute_tool("get_active_members", {}, seeded_db)
         assert result["success"] is True
         assert result["data"]["count"] == 3
+
+
+# ===================================================================
+# 17 + 18: Emergency tools (added during L2 review of S2 patch)
+# ===================================================================
+#
+# These tests cover the get_emergency_state (tool #17) and
+# declare_emergency (tool #18) handlers which were modified by the
+# half-open patch. The originally claimed "5 test additions" did not
+# exist in the file -- they are added here.
+
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+
+from neos_agent.agent.governance_tools import (
+    declare_emergency,
+    get_emergency_state,
+)
+from neos_agent.db.models import EmergencyState
+
+# Mirror conftest.ECO_ID — conftest is not importable as a module under pytest's
+# plugin loader, so the constant is redeclared here for tests that need to
+# reference the seeded ecosystem by id.
+ECO_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+class TestGetEmergencyState:
+    """Tool 17 -- circuit-breaker introspection."""
+
+    async def test_returns_closed_when_no_record(self, seeded_db):
+        result = await get_emergency_state({}, seeded_db)
+        assert result["success"] is True
+        assert result["data"]["state"] == "closed"
+        assert "CLOSED" in result["data"]["message"]
+
+    async def test_returns_open_when_active(self, seeded_db):
+        now = datetime.now(timezone.utc)
+        em = EmergencyState(
+            id=uuid.uuid4(),
+            ecosystem_id=ECO_ID,
+            state="open",
+            declared_by="test",
+            declared_at=now,
+            auto_revert_at=now + timedelta(days=30),
+            actions_log=[],
+        )
+        seeded_db.add(em)
+        await seeded_db.commit()
+        result = await get_emergency_state({}, seeded_db)
+        assert result["success"] is True
+        assert result["data"]["state"] == "open"
+        assert "OPEN" in result["data"]["message"]
+
+    async def test_returns_half_open_state(self, seeded_db):
+        now = datetime.now(timezone.utc)
+        em = EmergencyState(
+            id=uuid.uuid4(),
+            ecosystem_id=ECO_ID,
+            state="half_open",
+            declared_by="test",
+            declared_at=now - timedelta(days=5),
+            half_open_entered_at=now - timedelta(days=1),
+            auto_revert_at=now + timedelta(days=29),
+            actions_log=[],
+        )
+        seeded_db.add(em)
+        await seeded_db.commit()
+        result = await get_emergency_state({}, seeded_db)
+        assert result["success"] is True
+        assert result["data"]["state"] == "half_open"
+        assert "HALF_OPEN" in result["data"]["message"]
+
+
+class TestDeclareEmergencyTool:
+    """Tool 18 -- declare_emergency invariant: only one active emergency
+    per ecosystem at a time.
+    """
+
+    async def test_creates_open_state_with_30_day_auto_revert(self, seeded_db):
+        args = dict()
+        args["declared_by"] = "Lani"
+        args["notes"] = "Severe storm: kitchen flooded"
+        result = await declare_emergency(args, seeded_db)
+        assert result["success"] is True
+        assert result["data"]["state"] == "open"
+        assert result["data"]["id"]
+        # The auto_revert_at must be set 30 days out.
+        em_id_str = result["data"]["id"]
+        loaded = await seeded_db.execute(
+            select(EmergencyState).where(EmergencyState.id == uuid.UUID(em_id_str))
+        )
+        em = loaded.scalar_one()
+        assert em.state == "open"
+        assert em.auto_revert_at is not None
+        assert em.declared_at is not None
+        delta = em.auto_revert_at - em.declared_at
+        assert 29 <= delta.days <= 31
+
+    async def test_rejects_when_emergency_already_open(self, seeded_db):
+        now = datetime.now(timezone.utc)
+        em = EmergencyState(
+            id=uuid.uuid4(),
+            ecosystem_id=ECO_ID,
+            state="open",
+            declared_by="prior",
+            declared_at=now - timedelta(hours=1),
+            auto_revert_at=now + timedelta(days=29),
+            actions_log=[],
+        )
+        seeded_db.add(em)
+        await seeded_db.commit()
+        args = dict()
+        args["declared_by"] = "Lani"
+        result = await declare_emergency(args, seeded_db)
+        assert result["success"] is False
+        assert "already active" in result["error"].lower()
+
+    async def test_rejects_when_half_open_recovery_active(self, seeded_db):
+        now = datetime.now(timezone.utc)
+        em = EmergencyState(
+            id=uuid.uuid4(),
+            ecosystem_id=ECO_ID,
+            state="half_open",
+            declared_by="prior",
+            declared_at=now - timedelta(days=10),
+            half_open_entered_at=now - timedelta(days=2),
+            auto_revert_at=now + timedelta(days=28),
+            actions_log=[],
+        )
+        seeded_db.add(em)
+        await seeded_db.commit()
+        args = dict()
+        args["declared_by"] = "Lani"
+        result = await declare_emergency(args, seeded_db)
+        assert result["success"] is False
+        assert "already active" in result["error"].lower()

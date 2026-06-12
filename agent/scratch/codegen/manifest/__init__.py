@@ -151,7 +151,9 @@ def build_manifest(
             lines.append(f'tool_file = "generated/{tool_filename}"')
             lines.append(f'schema_file = "generated/{schema_filename}"')
             lines.append(f'aliased_tool = "{aliases.get(spec.name, spec.tool_name)}"')
-            lines.append(f'dependencies = {spec.depends_on}')
+            # Emit TOML-valid array (strings must use double quotes)
+            deps_toml = "[" + ", ".join(f'"{d}"' for d in spec.depends_on) + "]"
+            lines.append(f'dependencies = {deps_toml}')
             lines.append(f'rollout_status = "stub"')
             lines.append("")
 

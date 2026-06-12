@@ -107,21 +107,35 @@ def check_skill_drift(
     skill_params = {i.name for i in spec.inputs}
     tool_param_names = set(tool_params.keys())
 
-    # Parameters in SKILL.md but not in tool
+    # Compute both sets upfront so alias suggestions can reference extra_in_tool
     missing_in_tool = skill_params - tool_param_names
+    extra_in_tool = tool_param_names - skill_params
+
+    # Parameters in SKILL.md but not in tool
     for p in sorted(missing_in_tool):
         inp = next(i for i in spec.inputs if i.name == p)
+        # Suggest possible aliases: tool params that share a common prefix/suffix
+        alias_candidates = [
+            t for t in sorted(extra_in_tool)
+            if t in p or p in t or p.split("_")[0] == t.split("_")[0]
+        ]
+        alias_note = (
+            f" Possible alias in tool: {alias_candidates[0]!r}."
+            if alias_candidates
+            else ""
+        )
         report.issues.append(DriftIssue(
             severity="warning",
             category="param_mismatch",
             skill_name=spec.name,
-            message=f"Input '{p}' defined in SKILL.md section D but missing from tool parameters.",
+            message=(
+                f"Input '{p}' defined in SKILL.md section D but missing from tool parameters.{alias_note}"
+            ),
             skill_says=f"Input '{p}': {inp.description[:100]}",
             tool_says="(not present in tool)",
         ))
 
     # Parameters in tool but not in SKILL.md
-    extra_in_tool = tool_param_names - skill_params
     for p in sorted(extra_in_tool):
         report.issues.append(DriftIssue(
             severity="info",

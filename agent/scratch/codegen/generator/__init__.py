@@ -52,9 +52,6 @@ JSON_SCHEMA_TYPE_MAP: dict[str, str] = {
 def _generate_pydantic_schema(spec: SkillSpec) -> str:
     """Generate a Pydantic BaseModel for the skill's inputs."""
     lines: list[str] = []
-    lines.append("from __future__ import annotations")
-    lines.append("")
-    lines.append("from pydantic import BaseModel, Field")
     lines.append("")
     lines.append("")
     lines.append(f"class {spec.schema_class_name}(BaseModel):")
@@ -202,7 +199,7 @@ def generate_tool_file(spec: SkillSpec) -> str:
         \"\"\"NEOS governance tool for {spec.name} (Layer {spec.layer}).
 
         Auto-generated from SKILL.md on {datetime.now().isoformat(timespec="seconds")}.
-        Source: {spec.source_path}
+        Source: {str(spec.source_path).replace(chr(92), "/")}
 
         This file is generated. To regenerate, run:
             python -m scratch.codegen generate {spec.name}
@@ -214,6 +211,7 @@ def generate_tool_file(spec: SkillSpec) -> str:
         from datetime import date, datetime, timedelta, timezone
         from typing import Any, Optional
 
+        from pydantic import BaseModel, Field
         from sqlalchemy import func, select
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -238,15 +236,12 @@ def generate_tool_file(spec: SkillSpec) -> str:
     tooldef = _generate_tooldef_entry(spec)
 
     # Optional: generate a `get_X_tooldef()` function
-    export_func = textwrap.dedent(f"""\
-
-        def get_{spec.tool_name}_tooldef() -> object:
-            \"\"\"Return the ToolDef entry for {spec.name}.\"\"\"
-            return {spec.tool_name}_TOOLDEF
-
-
-        {spec.tool_name}_TOOLDEF = {tooldef}
-    """)
+    export_func = (
+        f"\n\ndef get_{spec.tool_name}_tooldef() -> object:\n"
+        f'    """Return the ToolDef entry for {spec.name}."""\n'
+        f"    return {spec.tool_name}_TOOLDEF\n"
+        f"\n\n{spec.tool_name}_TOOLDEF = {tooldef}\n"
+    )
 
     parts = [header, pydantic_schema, handler_stub, export_func]
     return "\n".join(parts)

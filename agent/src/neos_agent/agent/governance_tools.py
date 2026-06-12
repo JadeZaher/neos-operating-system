@@ -1359,24 +1359,40 @@ async def get_emergency_state(args: dict, db: AsyncSession, ecosystem_ids: list 
 
 async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
     """Declare an emergency and open the circuit breaker."""
+    # Local import to avoid module-level circular dep with the API layer.
+    from neos_agent.api.emergency import ACTIVE_STATES
+
     eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
     result = await db.execute(
-        select(EmergencyState).where(EmergencyState.ecosystem_id == eco_id, EmergencyState.state != "closed").limit(1)
+        select(EmergencyState).where(
+            EmergencyState.ecosystem_id == eco_id,
+            EmergencyState.state.in_(ACTIVE_STATES),
+        ).limit(1)
     )
     if result.scalar_one_or_none():
         return {"success": False, "error": "An emergency is already active."}
     now = datetime.now(timezone.utc)
+    declared_by = args.get("declared_by", "system")
     state = EmergencyState(
         id=uuid.uuid4(),
         ecosystem_id=eco_id,
         state="open",
         declared_at=now,
-        declared_by=args.get("declared_by", "system"),
+        declared_by=declared_by,
         criteria_met=args.get("criteria_met"),
         auto_revert_at=now + timedelta(days=30),
         notes=args.get("notes"),
+        pre_authorized_roles=[],
+        actions_log=[
+            {
+                "action": "declared",
+                "actor": declared_by,
+                "at": now.isoformat(),
+                "auto_revert_at": (now + timedelta(days=30)).isoformat(),
+            }
+        ],
     )
     db.add(state)
     await db.flush()

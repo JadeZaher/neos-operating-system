@@ -51,7 +51,12 @@ subprocess.call(["/bin/sh", "-i"])
 2. **`__import__()` detection** (`policy.py` lines 29, 99–101): A
    dedicated regex catches dynamic import builtins, which are also
    denied by default.
-3. **Open() tracking** (`policy.py` line 32): The regex pattern for
+3. **`exec()`/`eval()` detection** (`policy.py` `_EXEC_EVAL_RE`): A
+   dedicated regex (`\b(exec|eval)\s*\(`) detects calls to Python's
+   `exec()` and `eval()` builtins, which can execute arbitrary code
+   strings and would otherwise bypass the import allowlist. Scripts
+   containing either call are denied before execution.
+4. **Open() tracking** (`policy.py` line 32): The regex pattern for
    `open(` is defined, though file I/O through `io` or `pathlib` is
    permitted by policy. The v1 stance is that `open()` inside the temp
    directory is acceptable; the dangerous vector is `open()` on
@@ -210,6 +215,7 @@ and continues running after the agent considers execution complete.
 |-------|---------------|-------------|
 | **Import scanning** (`policy.py:26-118`) | `os`, `socket`, `subprocess`, `http`, `urllib`, `ctypes`, `multiprocessing`, `threading`, `asyncio`, `importlib`, `signal`, `pty` | ✅ Implemented (regex, over-approximating) |
 | **`__import__` detection** (`policy.py:99-101`) | Dynamic import builtin | ✅ Implemented |
+| **`exec()`/`eval()` detection** (`policy.py` `_EXEC_EVAL_RE`) | Code-string execution builtins that bypass import scanning | ✅ Implemented |
 | **Language allowlist** (`policy.py:170-178`) | Execution of non-Python interpreters | ✅ Implemented (Python only by default) |
 | **Wall-clock timeout** (`sandbox.py:230-246`) | Infinite loops, sleep bombs | ✅ Implemented (asyncio + SIGTERM → SIGKILL) |
 | **RLIMIT_AS / RLIMIT_CPU** (`sandbox.py:194-207`) | Memory/CPU exhaustion | ✅ Linux only; ❌ Windows |

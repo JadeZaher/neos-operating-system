@@ -105,9 +105,17 @@ def _extract_sections(content: str) -> dict[str, str | None]:
                 break
         if found_idx is not None:
             content_lines: list[str] = []
+            in_code_fence = False
             for j in range(found_idx + 1, len(lines)):
                 if _SECTION_STOP_RE.match(lines[j]):
                     break
+                # Track code fences so we skip their content
+                stripped = lines[j].strip()
+                if stripped.startswith("```") or stripped.startswith("~~~"):
+                    in_code_fence = not in_code_fence
+                    continue
+                if in_code_fence:
+                    continue
                 content_lines.append(lines[j])
             sections[letter] = "\n".join(content_lines)
         else:
@@ -143,8 +151,8 @@ def _parse_inputs(section_text: str | None) -> list[InputSpec]:
     if not section_text:
         return []
     inputs: list[InputSpec] = []
-    # Split on bullet points
-    bullets = re.split(r"\n\s*-\s+", section_text)
+    # Split on bullet points (- or * or numbered list)
+    bullets = re.split(r"\n\s*[-*]\s+|\n\s*\d+\.\s+", section_text)
     for bullet in bullets:
         bullet = bullet.strip()
         if not bullet:
@@ -221,10 +229,11 @@ def _infer_type_hint(name: str, desc: str) -> str:
 # ---- Optional input detection (gap #2) ----
 
 _OPTIONAL_PHRASES = re.compile(
-    r'(?:may be|optional|if needed|if applicable|if desired|'
+    r'(?:may be|optional|if needed|if applicable|if desired|if available|'
     r'may optionally|can be provided|can be omitted|'
     r'not required|configurable|at the proposer\'s discretion|'
-    r'at the member\'s discretion|left blank)',
+    r'at the member\'s discretion|left blank|if assigned|if provided|'
+    r'if sunset follows|if applicable)',
     re.IGNORECASE,
 )
 

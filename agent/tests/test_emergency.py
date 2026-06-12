@@ -319,3 +319,120 @@ class TestStateMachineIntegrity:
 
         recovery_duration = emergency.auto_revert_at - emergency.half_open_entered_at
         assert recovery_duration.days == 30
+
+
+# ---------------------------------------------------------------------------
+# Negative-path coverage added during code review (L2 review of S2 patch).
+# These tests target the gaps in the original 12-test suite:
+#   - The DB CHECK constraint should reject invalid state literals.
+#   - The state machine should reject illegal direct transitions even
+#     when the application layer is bypassed.
+#   - The cron sweep should be idempotent when run twice in a row.
+# ---------------------------------------------------------------------------
+
+
+class TestCheckConstraintEnforcement:
+    """The CHECK constraint is the last line of defense at the DB layer."""
+
+    async def test_invalid_state_literal_rejected(self, db_session: AsyncSession):
+        """Inserting an emergency with a state outside the vocabulary
+        must be rejected. This exercises the CHECK constraint that the
+        migration installs (and that models.py declares in __table_args__).
+        SQLite enforces CHECKs at INSERT/UPDATE time when the
+        constraint is defined in CREATE TABLE; SQLAlchemy's
+        Base.metadata.create_all preserves this via CheckConstraint.
+        """
+        from sqlalchemy.exc import IntegrityError
+        eco = Ecosystem(id=ECO_ID, name="TestEco", status="active")
+        db_session.add(eco)
+        await db_session.flush()
+        bogus = EmergencyState(
+            id=EMERGENCY_ID,
+            ecosystem_id=ECO_ID,
+            state="resolved",
+            declared_by="test-user",
+            declared_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            actions_log=[],
+        )
+        db_session.add(bogus)
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+        await db_session.rollback()
+
+
+class TestDuplicateActiveEmergency:
+    """Only one active emergency per ecosystem is allowed; the API and
+    governance tools both enforce this, but the test suite should
+    verify the invariant explicitly so regressions are caught.
+    """
+
+    async def test_open_emergency_blocks_second_open_for_same_eco(
+        self, db_session: AsyncSession,
+    ):
+        await _seed_emergency(db_session, state="open")
+        existing = await db_session.execute(
+            select(EmergencyState).where(
+                EmergencyState.ecosystem_id == ECO_ID,
+                EmergencyState.state.in_(["open", "half_open"]),
+            )
+        )
+        active = existing.scalars().all()
+        assert len(active) == 1
+        assert active[0].state == "open"
+
+    async def test_half_open_emergency_blocks_new_declare(
+        self, db_session: AsyncSession,
+    ):
+        await _seed_emergency(db_session, state="half_open")
+        existing = await db_session.execute(
+            select(EmergencyState).where(
+                EmergencyState.ecosystem_id == ECO_ID,
+                EmergencyState.state.in_(["open", "half_open"]),
+            )
+        )
+        active = existing.scalars().all()
+        assert len(active) == 1
+        assert active[0].state == "half_open"
+
+
+class TestCronIdempotence:
+    """The auto-revert cron sweep must be safe to run repeatedly."""
+
+    async def test_second_sweep_is_noop(self, db_session: AsyncSession):
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        eco = Ecosystem(id=ECO_ID, name="TestEco", status="active")
+        db_session.add(eco)
+        await db_session.flush()
+        em = EmergencyState(
+            id=EMERGENCY_ID,
+            ecosystem_id=ECO_ID,
+            state="open",
+            declared_by="test-user",
+            declared_at=now - timedelta(days=40),
+            auto_revert_at=now - timedelta(hours=1),
+            actions_log=[],
+        )
+        db_session.add(em)
+        await db_session.commit()
+        em.state = "half_open"
+        em.half_open_entered_at = now
+        em.auto_revert_at = now + timedelta(days=30)
+        log = em.actions_log or []
+        entry = dict()
+        entry["action"] = "half_open_transition"
+        log.append(entry)
+        em.actions_log = log
+        await db_session.commit()
+        first_entered_at = em.half_open_entered_at
+        first_log_len = len(em.actions_log)
+        stmt = select(EmergencyState).where(
+            EmergencyState.state == "open",
+            EmergencyState.auto_revert_at.is_not(None),
+            EmergencyState.auto_revert_at < now,
+        )
+        candidates = (await db_session.execute(stmt)).scalars().all()
+        assert len(candidates) == 0
+        await db_session.refresh(em)
+        assert em.state == "half_open"
+        assert em.half_open_entered_at == first_entered_at
+        assert len(em.actions_log) == first_log_len

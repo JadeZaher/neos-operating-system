@@ -41,6 +41,11 @@ _OPEN_RE = re.compile(r"\bopen\s*\(", re.MULTILINE)
 # Matches:  __import__(...)
 _BUILTIN_IMPORT_RE = re.compile(r"\b__import__\s*\(", re.MULTILINE)
 
+# Matches:  exec(...)  or  eval(...)
+# These builtins can execute arbitrary code strings, bypassing the import
+# allowlist scanner entirely.
+_EXEC_EVAL_RE = re.compile(r"\b(exec|eval)\s*\(", re.MULTILINE)
+
 
 def _strip_comment(line: str) -> str:
     """Crude comment stripper — removes ``# ...`` from a line.
@@ -104,6 +109,12 @@ def scan_python_imports(source: str) -> set[str]:
         logger.warning("__import__() call detected in script source")
         imports.add("__builtin_import__")
 
+    # Detect exec() / eval() calls — they can execute arbitrary code strings
+    # and bypass the import allowlist entirely.
+    if _EXEC_EVAL_RE.search(source):
+        logger.warning("exec()/eval() call detected in script source")
+        imports.add("__exec_eval__")
+
     # open() is not an import but we track it for policy
     return imports
 
@@ -165,6 +176,12 @@ def check_imports(
     if "__builtin_import__" in detected and "__builtin_import__" not in allowlist:
         raise PolicyViolation(
             "The script uses __import__(), which is not permitted."
+        )
+
+    # exec()/eval() bypass detection
+    if "__exec_eval__" in detected:
+        raise PolicyViolation(
+            "exec()/eval() calls are not permitted - they bypass the import allowlist"
         )
 
     blocked = detected - allowlist
@@ -258,9 +275,10 @@ def enforce_all_policy_gates(
     effective_timeout = check_timeout(timeout_ms, policy)
 
     # Gate 4: Source size sanity (not a policy field, hard-coded guardrail)
-    if len(source.encode()) > 1_000_000:  # 1 MiB source hard stop
+    source_bytes = source.encode()
+    if len(source_bytes) > 1_000_000:  # 1 MiB source hard stop
         raise PolicyViolation(
-            f"Source code size {len(source.encode())} bytes exceeds 1 MiB hard limit."
+            f"Source code size {len(source_bytes)} bytes exceeds 1 MiB hard limit."
         )
 
     return effective_timeout

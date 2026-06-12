@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import signal
 import sys
 import tempfile
@@ -46,6 +47,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 # Minimal safe environment variables passed through by default.
+# PYTHONPATH and VIRTUAL_ENV are intentionally EXCLUDED — they would let
+# scripts prepend attacker-controlled directories to sys.path, bypassing
+# the import allowlist.
 _MINIMAL_ENV: set[str] = {
     "PATH",
     "HOME",
@@ -55,8 +59,6 @@ _MINIMAL_ENV: set[str] = {
     "LANG",
     "LC_ALL",
     "SYSTEMROOT",    # Windows
-    "PYTHONPATH",    # Needed for Python subprocesses to find packages
-    "VIRTUAL_ENV",   # Needed for venv support
 }
 
 # Grace period between SIGTERM and SIGKILL (seconds)
@@ -171,6 +173,7 @@ async def run_script(
     tmp_file: Path | None = None
     stdout_str = ""
     stderr_str = ""
+    exe: str = language  # pre-initialize so FileNotFoundError handler can reference it
 
     try:
         # ---- 1. Create temp directory ----
@@ -182,7 +185,7 @@ async def run_script(
         tmp_file.write_text(source, encoding="utf-8")
 
         # ---- 3. Resolve interpreter ----
-        exe, base_args = _resolve_interpreter(language)
+        exe, base_args = _resolve_interpreter(language)  # exe is now properly defined
         full_args = [exe, *base_args, str(tmp_file), *args]
 
         # ---- 4. Build sanitized env ----
@@ -202,14 +205,16 @@ async def run_script(
             def set_limits() -> None:
                 """Apply resource limits in the child process."""
                 if policy.max_memory_mb > 0:
+                    mem_bytes = policy.max_memory_mb * 1024 * 1024
                     _resource.setrlimit(
                         _RLIMIT_AS,  # type: ignore[arg-type]
-                        (policy.max_memory_mb * 1024 * 1024,),  # type: ignore
+                        (mem_bytes, mem_bytes),
                     )
                 if policy.max_cpu_sec > 0:
+                    cpu_limit = int(policy.max_cpu_sec) + 1
                     _resource.setrlimit(
                         _RLIMIT_CPU,  # type: ignore[arg-type]
-                        (int(policy.max_cpu_sec) + 1,),  # type: ignore
+                        (cpu_limit, cpu_limit),
                     )
         else:
             set_limits = None
@@ -245,7 +250,18 @@ async def run_script(
                     )
                 except asyncio.TimeoutError:
                     proc.kill()
-                    stdout_bytes, stderr_bytes = await proc.communicate()
+                    # Do NOT call proc.communicate() again — the coroutine was
+                    # cancelled and the pipe transport is already closed.
+                    # Instead, reap the process then drain pipes directly.
+                    await proc.wait()
+                    try:
+                        stdout_bytes = await proc.stdout.read() if proc.stdout else b""
+                    except Exception:
+                        stdout_bytes = b""
+                    try:
+                        stderr_bytes = await proc.stderr.read() if proc.stderr else b""
+                    except Exception:
+                        stderr_bytes = b""
             except ProcessLookupError:
                 stdout_bytes, stderr_bytes = b"", b"[process already exited]".encode()
 
@@ -279,7 +295,7 @@ async def run_script(
             exit_code=None,
             stderr=f"Interpreter not found: {e}",
             duration_ms=duration_ms,
-            policy_violation=f"Interpreter '{exe if 'exe' in dir() else language}' not found on PATH",
+            policy_violation=f"Interpreter '{exe}' not found on PATH",
         )
 
     except Exception as e:
@@ -316,22 +332,10 @@ def _create_temp_dir() -> Path:
 
 
 def _cleanup_temp_dir(tmp_dir: Path | None) -> None:
-    """Best-effort cleanup of *tmp_dir* and its contents."""
+    """Best-effort cleanup of *tmp_dir* and its contents (recursive)."""
     if tmp_dir is None or not tmp_dir.exists():
         return
-
-    # Remove files first
-    for child in tmp_dir.iterdir():
-        try:
-            child.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    # Remove directory
-    try:
-        tmp_dir.rmdir()
-    except OSError:
-        pass
+    shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 __all__ = [

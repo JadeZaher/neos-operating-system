@@ -20,11 +20,21 @@ Usage:
 from __future__ import annotations
 
 import ast
+import io
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
+
+# Ensure stdout/stderr use UTF-8 on Windows (avoids cp1252 crash on
+# Unicode characters like → in drift report output).
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from .ir import SkillSpec
 from .parser import parse_skill_file
