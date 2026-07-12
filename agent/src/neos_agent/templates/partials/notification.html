@@ -1,0 +1,56 @@
+{# Toast notification region — managed via vanilla JS.
+   Call showToast(type, title, message) to display.
+   Types: "success" | "warning" | "error" | "info"
+   Also listens for HX-Trigger response headers with a showToast payload. #}
+<div id="toast-container"
+  class="fixed top-4 right-4 z-50 flex flex-col gap-3 max-w-sm"
+  role="status" aria-live="polite" aria-label="Notifications">
+</div>
+
+<template id="toast-template">
+  <div class="toast bg-neos-surface rounded-lg shadow-lg border border-neos-border p-4 flex items-start gap-3" role="alert">
+    <span class="toast-icon text-lg flex-shrink-0" aria-hidden="true"></span>
+    <div class="flex-1 min-w-0">
+      <div class="toast-title font-semibold text-sm text-neos-text"></div>
+      <div class="toast-message text-sm text-neos-muted mt-0.5"></div>
+    </div>
+    <button type="button" class="text-neos-muted hover:text-neos-text flex-shrink-0"
+      aria-label="Dismiss notification" onclick="this.closest('.toast').remove()">&#10005;</button>
+  </div>
+</template>
+
+<script>
+function showToast(type, title, message) {
+  const container = document.getElementById('toast-container');
+  const template = document.getElementById('toast-template');
+  const clone = template.content.cloneNode(true);
+  const toast = clone.querySelector('.toast');
+
+  const icons = {success: '\u2713', warning: '\u26A0', error: '\u2717', info: '\u2139'};
+  const borders = {success: 'border-green-400', warning: 'border-yellow-400', error: 'border-red-400', info: 'border-blue-400'};
+
+  toast.classList.add(borders[type] || 'border-neos-border');
+  toast.querySelector('.toast-icon').textContent = icons[type] || '\u2139';
+  toast.querySelector('.toast-title').textContent = title;
+  toast.querySelector('.toast-message').textContent = message;
+
+  container.appendChild(clone);
+  // Auto-dismiss after 5s — grab the live node after appendChild
+  const liveToast = container.lastElementChild;
+  setTimeout(() => liveToast && liveToast.remove(), 5000);
+}
+
+// Listen for htmx response headers to trigger toasts
+document.addEventListener('htmx:afterRequest', function(event) {
+  const header = event.detail.xhr.getResponseHeader('HX-Trigger');
+  if (header) {
+    try {
+      const triggers = JSON.parse(header);
+      if (triggers.showToast) {
+        const t = triggers.showToast;
+        showToast(t.type || 'info', t.title || '', t.message || '');
+      }
+    } catch(e) {}
+  }
+});
+</script>

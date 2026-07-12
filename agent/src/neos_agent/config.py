@@ -26,16 +26,15 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     DATABASE_URL: str
-
     # AI Provider settings (LiteLLM/OpenRouter)
     AI_API_KEY: str = ""  # Empty = AI disabled (governance still works)
     AI_BASE_URL: str | None = None
     AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
     AI_PROVIDER: str = "anthropic"  # openrouter, anthropic, openai, local
 
-    # Legacy aliases (backward compat with existing .env files)
+    # Legacy aliases (backward compat with existing .env files and views)
     ANTHROPIC_API_KEY: str = ""
-
+    ANTHROPIC_BASE_URL: str | None = None
     NEOS_CORE_PATH: str = "../neos-core"
     LOG_LEVEL: str = "info"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
@@ -58,9 +57,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_ai_key(self) -> Settings:
-        """Fall back to ANTHROPIC_API_KEY if AI_API_KEY is not set."""
+        """Sync AI_* and legacy ANTHROPIC_* settings."""
         if not self.AI_API_KEY and self.ANTHROPIC_API_KEY:
             self.AI_API_KEY = self.ANTHROPIC_API_KEY
+        if not self.ANTHROPIC_API_KEY and self.AI_API_KEY:
+            self.ANTHROPIC_API_KEY = self.AI_API_KEY
+        if not self.ANTHROPIC_BASE_URL and self.AI_BASE_URL:
+            self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
         return self
 
     @model_validator(mode="after")

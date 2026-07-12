@@ -1,0 +1,115 @@
+{# htmx fragment — swaps #dashboard-stats outerHTML.
+   Context variable: counts (dict with keys: agreements, members, domains,
+   proposals, decisions, proposals_by_status, agreements_by_status)
+#}
+
+<div
+  id="dashboard-stats"
+  class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8"
+>
+
+  {# Active Agreements #}
+  <a
+    href="/dashboard/agreements"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Active Agreements"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9634;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Agreements</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">{{ counts.agreements }}</div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Active Agreements</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+  {# Active Proposals #}
+  <a
+    href="/dashboard/proposals"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Active Proposals"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9998;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Proposals</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">{{ counts.proposals }}</div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Active Proposals</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+  {# Pending Consent Rounds — derived from proposals_by_status #}
+  <a
+    href="/dashboard/proposals?phase=consent"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Pending Consent Rounds"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9745;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Consent</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">
+      {{ counts.proposals_by_status.get('consent', 0) }}
+    </div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Pending Consent Rounds</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+  {# Decisions (30 days) #}
+  <a
+    href="/dashboard/decisions"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Decisions in last 30 days"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9878;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Decisions</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">{{ counts.decisions }}</div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Decisions (30 days)</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+  {# Active Members #}
+  <a
+    href="/dashboard/members"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Active Members"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9823;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Members</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">{{ counts.members }}</div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Active Members</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+  {# Domains #}
+  <a
+    href="/dashboard/domains"
+    class="flex flex-col gap-2 bg-neos-surface border border-neos-border rounded-xl p-5 hover:shadow-md hover:border-neos-accent transition-all group no-underline"
+    aria-label="Domains"
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-2xl text-neos-primary" aria-hidden="true">&#9673;</span>
+      <span class="text-xs font-medium text-neos-muted uppercase tracking-wide">Domains</span>
+    </div>
+    <div class="text-3xl font-bold text-neos-text tabular-nums">{{ counts.domains }}</div>
+    <div class="flex items-center justify-between">
+      <span class="text-sm text-neos-muted">Domains</span>
+      <span class="text-xs text-neos-accent font-semibold group-hover:underline">View all &rarr;</span>
+    </div>
+  </a>
+
+</div>

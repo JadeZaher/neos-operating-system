@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Onboarding{% endblock %}
+
+{% block ai_actions %}
+<div class="bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+  <div class="flex items-center gap-2 shrink-0">
+    <svg class="w-5 h-5 text-neos-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+    <span class="text-sm font-semibold text-neos-primary">AI Onboarding Guide</span>
+  </div>
+  <div class="flex flex-wrap gap-2 flex-1">
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+            onclick="openChatWithMessage('Explain the Universal Agreement Field and what each section means for new members')">
+      Explain UAF Sections
+    </button>
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
+            onclick="openChatWithMessage('What should a facilitator know before running a consent ceremony?')">
+      Facilitator Briefing
+    </button>
+    <button type="button" class="px-3 py-1.5 text-xs font-medium rounded-full bg-neos-surface border border-neos-border text-neos-text hover:bg-neos-surface-alt transition-colors"
+            onclick="openChatWithMessage('Explain the 48-hour cooling off period and why it exists')">
+      Cooling Off Period
+    </button>
+  </div>
+  <button type="button" class="text-xs text-neos-primary hover:text-neos-secondary font-medium shrink-0 transition-colors"
+          onclick="toggleChat()">
+    Open Chat &rarr;
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<nav class="flex items-center gap-2 text-sm text-neos-muted mb-6" aria-label="Breadcrumb">
+  <a href="/dashboard" class="hover:text-neos-primary transition-colors">Dashboard</a>
+  <span aria-hidden="true" class="text-neos-border">/</span>
+  <span class="text-neos-text font-medium" aria-current="page">Onboarding</span>
+</nav>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">{{ error }}</div>
+{% endif %}
+
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-neos-text tracking-tight">Onboarding</h1>
+    <p class="text-sm text-neos-muted mt-1">Universal Agreement Field consent ceremonies and member onboarding</p>
+  </div>
+</div>
+
+{# UAF explanation card #}
+<div class="bg-neos-accent/10 border border-neos-accent/30 rounded-xl p-6 mb-6">
+  <h2 class="text-base font-semibold text-neos-primary mb-2">Universal Agreement Field (UAF)</h2>
+  <p class="text-sm text-neos-text mb-3">The UAF is the root agreement every member consents to. It defines the shared foundation of the ecosystem through 6 sections:</p>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">1. Purpose & Values</span>
+      <p class="text-xs text-neos-muted mt-1">Shared purpose and core value commitments</p>
+    </div>
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">2. Governance Structure</span>
+      <p class="text-xs text-neos-muted mt-1">Authority distribution and domains</p>
+    </div>
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">3. Decision-Making</span>
+      <p class="text-xs text-neos-muted mt-1">ACT process and escalation</p>
+    </div>
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">4. Resource Agreements</span>
+      <p class="text-xs text-neos-muted mt-1">Economic and Current-See management</p>
+    </div>
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">5. Conflict Resolution</span>
+      <p class="text-xs text-neos-muted mt-1">Escalation and repair processes</p>
+    </div>
+    <div class="bg-neos-surface/60 rounded-lg p-3">
+      <span class="text-xs font-semibold text-neos-primary">6. Exit Rights</span>
+      <p class="text-xs text-neos-muted mt-1">Voluntary exit and data portability</p>
+    </div>
+  </div>
+  <div class="mt-4">
+    <button type="button"
+            class="px-3 py-2 text-xs font-medium rounded-lg bg-neos-primary text-white hover:bg-neos-secondary transition-colors"
+            onclick="openChatWithMessage('Explain the Universal Agreement Field sections in detail')">
+      Ask AI About UAF
+    </button>
+  </div>
+</div>
+
+{# Desktop table — hidden on mobile #}
+<div class="hidden sm:block bg-neos-surface border border-neos-border rounded-xl overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm" aria-label="Onboarding records">
+      <thead>
+        <tr class="border-b border-neos-border bg-neos-surface-alt">
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Member</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Status</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Started</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Cooling Off Ends</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Completed</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-neos-muted uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-neos-border">
+        {% for onboarding in onboardings %}
+        <tr class="hover:bg-neos-surface-alt transition-colors">
+          <td class="px-4 py-3 font-medium text-neos-text">{{ onboarding.member.display_name if onboarding.member else onboarding.member_id }}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold">
+              {% if onboarding.completion_percentage == 100 %}
+              <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Complete</span>
+              {% elif onboarding.cooling_off_end %}
+              <span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Cooling Off</span>
+              {% else %}
+              <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{{ onboarding.completion_percentage or 0 }}%</span>
+              {% endif %}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ onboarding.created_at.strftime('%Y-%m-%d') if onboarding.created_at else '—' }}</td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ onboarding.cooling_off_end.strftime('%Y-%m-%d') if onboarding.cooling_off_end else '—' }}</td>
+          <td class="px-4 py-3 text-neos-muted text-xs">{{ onboarding.consent_date.strftime('%Y-%m-%d') if onboarding.consent_date else '—' }}</td>
+          <td class="px-4 py-3">
+            {% if onboarding.completion_percentage != 100 %}
+            <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}" class="text-xs text-neos-primary hover:underline font-medium">Continue Ceremony</a>
+            {% else %}
+            <span class="text-xs text-green-600">&#10003; Done</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+
+        {% if not onboardings %}
+        <tr>
+          <td colspan="6" class="px-4 py-16 text-center">
+            <div class="flex flex-col items-center gap-3">
+              <span class="text-4xl text-neos-border" aria-hidden="true">&#10003;</span>
+              <p class="text-base font-semibold text-neos-text">No onboarding records</p>
+              <p class="text-sm text-neos-muted">Start an onboarding ceremony from the Members page.</p>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Mobile card layout #}
+<div class="sm:hidden space-y-3">
+  {% for onboarding in onboardings %}
+  <div class="bg-neos-surface border border-neos-border rounded-xl p-4">
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <span class="font-medium text-neos-text text-sm">{{ onboarding.member.display_name if onboarding.member else onboarding.member_id }}</span>
+      {% if onboarding.completion_percentage == 100 %}
+      <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">Complete</span>
+      {% elif onboarding.cooling_off_end %}
+      <span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">Cooling Off</span>
+      {% else %}
+      <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-semibold shrink-0">{{ onboarding.completion_percentage or 0 }}%</span>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neos-muted mb-3">
+      <span>Started {{ onboarding.created_at.strftime('%Y-%m-%d') if onboarding.created_at else '—' }}</span>
+      {% if onboarding.cooling_off_end %}
+      <span>Cooling off ends {{ onboarding.cooling_off_end.strftime('%Y-%m-%d') }}</span>
+      {% endif %}
+    </div>
+    {% if onboarding.completion_percentage != 100 %}
+    <a href="/dashboard/onboarding/ceremony/{{ onboarding.id }}" class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-neos-primary border border-neos-border rounded-lg hover:bg-neos-surface-alt transition-colors">Continue Ceremony</a>
+    {% else %}
+    <span class="text-xs text-green-600 font-medium">&#10003; Done</span>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if not onboardings %}
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <span class="text-4xl text-neos-border" aria-hidden="true">&#10003;</span>
+    <p class="text-base font-semibold text-neos-text">No onboarding records</p>
+    <p class="text-sm text-neos-muted">Start an onboarding ceremony from the Members page.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
