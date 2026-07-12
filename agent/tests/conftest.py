@@ -212,6 +212,12 @@ DM_CONVERSATION_ID = uuid.UUID("00000000000000000000000000100000")
 GROUP_CONVERSATION_ID = uuid.UUID("00000000000000000000000000200000")
 
 
+@pytest.fixture
+def ecosystem_ids() -> list[uuid.UUID]:
+    """Active ecosystem IDs for the default seeded test ecosystem."""
+    return [ECO_ID]
+
+
 @pytest_asyncio.fixture
 async def seeded_db(db_engine):
     """Session pre-loaded with governance seed data.
