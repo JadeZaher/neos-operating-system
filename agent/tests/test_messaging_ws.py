@@ -12,22 +12,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from neos_agent.db.models import (
-    AuthSession,
-    Conversation,
     ConversationParticipant,
     Member,
     Message,
 )
-from neos_agent.messaging.connections import ConnectionManager
 from neos_agent.messaging.handlers import (
     handle_message,
     handle_read_receipt,
@@ -73,7 +66,6 @@ class TestHandleMessage:
         member = await seeded_messaging_db.get(Member, MEMBER_STEWARD_ID)
 
         # Create app mock with a real db session
-        session_factory = seeded_messaging_db.get_bind()
         app = MagicMock()
 
         # Create a context manager that yields the real session

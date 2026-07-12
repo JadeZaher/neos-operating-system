@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-) 
+)
 
 
 def _ensure_async_url(url: str) -> str:
@@ -25,9 +25,11 @@ def _ensure_async_url(url: str) -> str:
 
 async def create_db_engine(database_url: str, **kwargs: Any) -> AsyncEngine:
     """Create an async SQLAlchemy engine."""
-    kwargs.setdefault("pool_size", 10)
-    kwargs.setdefault("max_overflow", 5)
-    kwargs.setdefault("pool_timeout", 30)
+    is_sqlite = "sqlite" in database_url.lower()
+    if not is_sqlite:
+        kwargs.setdefault("pool_size", 10)
+        kwargs.setdefault("max_overflow", 5)
+        kwargs.setdefault("pool_timeout", 30)
     kwargs.setdefault("pool_recycle", 1800)
     kwargs.setdefault("pool_pre_ping", True)
     return create_async_engine(_ensure_async_url(database_url), **kwargs)

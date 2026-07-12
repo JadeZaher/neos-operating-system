@@ -32,8 +32,8 @@ def test_settings_defaults():
         s = Settings()
         assert s.NEOS_CORE_PATH == "../neos-core"
         assert s.LOG_LEVEL == "info"
-        assert s.CORS_ORIGINS == "*"
-        assert "claude" in s.CLAUDE_MODEL.lower() or "sonnet" in s.CLAUDE_MODEL.lower()
+        assert s.CORS_ORIGINS == "http://localhost:5173,http://localhost:8000"
+        assert "claude" in s.AI_MODEL.lower() or "sonnet" in s.AI_MODEL.lower()
 
 
 def test_settings_missing_required_raises():
@@ -53,7 +53,7 @@ def test_settings_custom_overrides():
         "DATABASE_URL": "sqlite+aiosqlite://",
         "ANTHROPIC_API_KEY": "sk-custom",
         "NEOS_CORE_PATH": "/custom/path",
-        "CLAUDE_MODEL": "claude-opus-4-20250514",
+        "AI_MODEL": "claude-opus-4-20250514",
         "LOG_LEVEL": "debug",
         "CORS_ORIGINS": "https://example.com",
     }
@@ -61,7 +61,7 @@ def test_settings_custom_overrides():
         from neos_agent.config import Settings
         s = Settings()
         assert s.NEOS_CORE_PATH == "/custom/path"
-        assert s.CLAUDE_MODEL == "claude-opus-4-20250514"
+        assert s.AI_MODEL == "claude-opus-4-20250514"
         assert s.LOG_LEVEL == "debug"
         assert s.CORS_ORIGINS == "https://example.com"
 

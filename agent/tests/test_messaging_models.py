@@ -14,7 +14,7 @@ All tests use the ``seeded_db`` fixture from conftest.py which provides:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -25,7 +25,6 @@ from neos_agent.db.models import (
     ConversationLink,
     ConversationParticipant,
     Message,
-    Member,
 )
 
 # Stable UUIDs matching conftest.py seed data
@@ -170,7 +169,7 @@ class TestConversationParticipant:
         result = await seeded_db.get(ConversationParticipant, participant.id)
         assert result.last_read_at is None
 
-        result.last_read_at = datetime.now(UTC)
+        result.last_read_at = datetime.now(timezone.utc)
         await seeded_db.commit()
         refreshed = await seeded_db.get(ConversationParticipant, participant.id)
         assert refreshed.last_read_at is not None
@@ -251,7 +250,7 @@ class TestMessage:
         result = await seeded_db.get(Message, msg.id)
         assert result.deleted_at is None
 
-        result.deleted_at = datetime.now(UTC)
+        result.deleted_at = datetime.now(timezone.utc)
         await seeded_db.commit()
 
         refreshed = await seeded_db.get(Message, msg.id)
@@ -280,7 +279,7 @@ class TestMessage:
         assert result.edited_at is None
 
         result.content = "Edited"
-        result.edited_at = datetime.now(UTC)
+        result.edited_at = datetime.now(timezone.utc)
         await seeded_db.commit()
 
         refreshed = await seeded_db.get(Message, msg.id)
@@ -438,7 +437,7 @@ class TestRelationshipsAndCascades:
         # Reload with fresh query
         stmt = select(Conversation).where(Conversation.id == convo.id)
         result = await seeded_db.execute(stmt)
-        loaded = result.scalar_one()
+        _ = result.scalar_one()
 
         # Access participants through relationship (may need selectinload for async)
         stmt_p = select(ConversationParticipant).where(
