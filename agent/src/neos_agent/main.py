@@ -16,7 +16,7 @@ import uuid
 
 from sanic import Sanic
 from sanic.request import Request
-from sanic.response import json as json_response
+from sanic.response import json as json_response, redirect
 from sqlalchemy import select
 
 if TYPE_CHECKING:
@@ -169,6 +169,22 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(oauth_bp)
     app.blueprint(orientation_api_bp)
 
+    # Register dashboard view blueprints
+    from neos_agent.views import register_views
+    register_views(app)
+
+    # Register ecosystem directory blueprint (public + auth routes)
+    from neos_agent.views.ecosystems import ecosystems_bp
+    app.blueprint(ecosystems_bp)
+
+    # Register chat blueprint
+    from neos_agent.views.chat import chat_bp
+    app.blueprint(chat_bp)
+
+    # Register auth blueprint
+    from neos_agent.auth.routes import auth_bp
+    app.blueprint(auth_bp)
+
     # Register messaging blueprint (WebSocket + REST)
     from neos_agent.messaging.routes import messaging_bp
     app.blueprint(messaging_bp)
@@ -298,13 +314,25 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
             return None
 
+        def _unauth(delete_cookie: bool = False):
+            """Return 401 JSON for API routes; redirect browsers to login."""
+            if request.path.startswith("/api/"):
+                resp = json_response({"error": "Unauthorized"}, status=401)
+                if delete_cookie:
+                    resp.delete_cookie("neos_session", path="/")
+                return resp
+            resp = redirect("/auth/login")
+            if delete_cookie:
+                resp.delete_cookie("neos_session", path="/")
+            return resp
+
         cookie = request.cookies.get("neos_session")
         if not cookie:
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth()
 
         session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
         if not session_id:
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth(delete_cookie=True)
 
         try:
             async with app.ctx.db() as db:
@@ -317,9 +345,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 )
                 auth_session = result.scalar_one_or_none()
                 if not auth_session:
-                    response = json_response({"error": "Unauthorized"}, status=401)
-                    response.delete_cookie("neos_session", path="/")
-                    return response
+                    return _unauth(delete_cookie=True)
 
                 user = await db.get(UserModel, auth_session.user_id)
                 request.ctx.user = user
@@ -351,20 +377,22 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 request.ctx.ecosystem_scope = EcosystemScope.from_ecosystems(ecosystems, eco_ids)
         except Exception:
             logger.exception("Auth middleware error")
-            return json_response({"error": "Unauthorized"}, status=401)
+            return _unauth()
 
         return None
 
-    # Root route — API-only mode
+    # Root redirect
     @app.get("/")
     async def root(request: Request):
-        return json_response({"service": "neos-agent", "status": "ok"})
+        if hasattr(request.ctx, "member") and request.ctx.member:
+            return redirect("/dashboard")
+        return redirect("/auth/login")
 
-    # Catch-all 404 handler
+    # Catch-all: redirect unknown paths to the dashboard
     from sanic.exceptions import NotFound
     @app.exception(NotFound)
     async def catch_not_found(request, exception):
-        return json_response({"error": "Not found"}, status=404)
+        return redirect("/dashboard")
 
     return app
 
@@ -379,11 +407,17 @@ if __name__ == "__main__":
     parser.add_argument("--dev", action="store_true", help="Enable debug + auto-reload")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--single-process", action="store_true", help="Run in single process")
+    parser.add_argument("--ssl-cert", default=None, help="Path to TLS certificate file")
+    parser.add_argument("--ssl-key", default=None, help="Path to TLS private key file")
     args = parser.parse_args()
 
-    # On Windows, Sanic's multiprocess reloader can't resolve the factory,
-    # so we fall back to single_process + debug (no auto-reload).
-    single = args.single_process or (args.dev and sys.platform == "win32")
+    # Sanic's multiprocess reloader can't resolve the factory when the app is
+    # instantiated inside __main__, so dev mode always runs single-process.
+    single = args.single_process or args.dev
+
+    ssl = None
+    if args.ssl_cert and args.ssl_key:
+        ssl = {"cert": args.ssl_cert, "key": args.ssl_key}
 
     app = create_app()
     if single:
@@ -392,6 +426,7 @@ if __name__ == "__main__":
             port=args.port,
             debug=args.dev,
             single_process=True,
+            ssl=ssl,
         )
     else:
         app.run(
@@ -399,4 +434,5 @@ if __name__ == "__main__":
             port=args.port,
             dev=args.dev,
             workers=args.workers,
+            ssl=ssl,
         )
