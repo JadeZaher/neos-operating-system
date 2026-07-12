@@ -11,6 +11,28 @@ from neos_agent.db.models import (
 )
 
 
+async def _find_existing_dm(db, member_a_id, member_b_id, ecosystem_id):
+    """Return the existing DM conversation between two members, or None."""
+    stmt = (
+        select(Conversation)
+        .join(ConversationParticipant, ConversationParticipant.conversation_id == Conversation.id)
+        .where(Conversation.type == "dm")
+        .where(Conversation.ecosystem_id == ecosystem_id)
+        .where(ConversationParticipant.member_id.in_([member_a_id, member_b_id]))
+    )
+    result = await db.execute(stmt)
+    convos = result.scalars().unique().all()
+    for convo in convos:
+        participant_result = await db.execute(
+            select(ConversationParticipant.member_id)
+            .where(ConversationParticipant.conversation_id == convo.id)
+        )
+        member_ids = {row[0] for row in participant_result.all()}
+        if member_ids == {member_a_id, member_b_id}:
+            return convo
+    return None
+
+
 async def get_entity_discussions(db, entity_type: str, entity_id):
     """Get conversations linked to a governance entity, with participant counts."""
     links_result = await db.execute(

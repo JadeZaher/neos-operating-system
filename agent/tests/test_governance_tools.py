@@ -10,10 +10,7 @@ All tests use the ``seeded_db`` fixture from conftest.py which provides:
 
 from __future__ import annotations
 
-import pytest
-
 from neos_agent.agent.governance_tools import (
-    GOVERNANCE_TOOLS,
     check_authority,
     check_quorum,
     create_agreement_draft,
@@ -23,7 +20,6 @@ from neos_agent.agent.governance_tools import (
     get_active_members,
     get_agreement,
     get_domain,
-    get_member_roles,
     get_tool_definitions,
     record_advice,
     record_consent_position,
@@ -86,7 +82,7 @@ class TestGetAgreement:
 
 
 class TestCreateAgreementDraft:
-    async def test_create_agreement_draft(self, seeded_db):
+    async def test_create_agreement_draft(self, seeded_db, ecosystem_ids):
         """Creates a draft agreement with generated ID and correct defaults."""
         result = await create_agreement_draft(
             {
@@ -94,9 +90,11 @@ class TestCreateAgreementDraft:
                 "type": "space",
                 "proposer": "Kai",
                 "domain": "Wellness",
+                "text": "Full agreement body with purpose, scope, terms, and sunset criteria.",
                 "affected_parties": ["Lani", "Manu"],
             },
             seeded_db,
+            ecosystem_ids=ecosystem_ids,
         )
         assert result["success"] is True
         data = result["data"]
@@ -105,7 +103,7 @@ class TestCreateAgreementDraft:
         assert data["version"] == "0.1"
         assert data["review_date"] is not None
 
-    async def test_create_agreement_draft_invalid_proposer(self, seeded_db):
+    async def test_create_agreement_draft_invalid_proposer(self, seeded_db, ecosystem_ids):
         """Rejects creation when proposer is not an active member."""
         result = await create_agreement_draft(
             {
@@ -113,8 +111,10 @@ class TestCreateAgreementDraft:
                 "type": "space",
                 "proposer": "NonExistentPerson",
                 "domain": "Phantom",
+                "text": "Full agreement body with purpose, scope, terms, and sunset criteria.",
             },
             seeded_db,
+            ecosystem_ids=ecosystem_ids,
         )
         assert result["success"] is False
         assert "not an active member" in result["error"]
@@ -188,7 +188,7 @@ class TestCheckAuthority:
 
 
 class TestCreateProposal:
-    async def test_create_proposal(self, seeded_db):
+    async def test_create_proposal(self, seeded_db, ecosystem_ids):
         """Creates a proposal with generated ID and auto-set consent mode."""
         result = await create_proposal(
             {
@@ -196,8 +196,11 @@ class TestCreateProposal:
                 "type": "agreement",
                 "proposer": "Kai",
                 "affected_domain": "SHUR-KITCHEN",
+                "proposed_change": "Extend kitchen hours to 10pm on weekdays.",
+                "rationale": "Community members requested evening access to the kitchen.",
             },
             seeded_db,
+            ecosystem_ids=ecosystem_ids,
         )
         assert result["success"] is True
         data = result["data"]
@@ -337,7 +340,7 @@ class TestCheckQuorum:
 
 
 class TestCreateDecisionRecord:
-    async def test_create_decision_record(self, seeded_db):
+    async def test_create_decision_record(self, seeded_db, ecosystem_ids):
         """Creates a decision record with auto-generated ID and tags."""
         result = await create_decision_record(
             {
@@ -350,6 +353,7 @@ class TestCreateDecisionRecord:
                 "recorder": "Manu",
             },
             seeded_db,
+            ecosystem_ids=ecosystem_ids,
         )
         assert result["success"] is True
         data = result["data"]
@@ -365,16 +369,18 @@ class TestCreateDecisionRecord:
 
 
 class TestSearchPrecedents:
-    async def test_search_precedents_by_domain(self, seeded_db):
+    async def test_search_precedents_by_domain(self, seeded_db, ecosystem_ids):
         """Finds decision records matching a domain filter."""
         # First create a record to search for
         await create_decision_record(
             {
                 "holding": "Kitchen hours set to 6am-9pm.",
+                "rationale": "Original schedule for kitchen use.",
                 "domain": "SHUR-KITCHEN",
                 "tags": ["kitchen"],
             },
             seeded_db,
+            ecosystem_ids=ecosystem_ids,
         )
         await seeded_db.flush()
 

@@ -6,13 +6,9 @@ and governance link creation. Uses seeded_messaging_db fixture.
 
 from __future__ import annotations
 
-import json
 import uuid
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
 
-import pytest
 from sqlalchemy import func, select
 
 from neos_agent.db.models import (
@@ -23,11 +19,7 @@ from neos_agent.db.models import (
     Message,
     User,
 )
-from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.messaging.routes import (
-    _find_existing_dm,
-    _find_or_create_dm,
-)
+from neos_agent.messaging.queries import _find_existing_dm, get_entity_discussions
 
 # Stable UUIDs matching conftest.py
 ECO_ID = uuid.UUID("00000000000000000000000000000001")
@@ -156,7 +148,7 @@ class TestMessageEndpoints:
 
         result = await db.get(Message, msg.id)
         result.content = "Edited text"
-        result.edited_at = datetime.now(UTC)
+        result.edited_at = datetime.now(timezone.utc)
         await db.commit()
 
         refreshed = await db.get(Message, msg.id)
@@ -177,7 +169,7 @@ class TestMessageEndpoints:
         await db.commit()
 
         result = await db.get(Message, msg.id)
-        result.deleted_at = datetime.now(UTC)
+        result.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         refreshed = await db.get(Message, msg.id)
@@ -265,7 +257,7 @@ class TestParticipantManagement:
             )
         )
         part = result.scalar_one()
-        part.last_read_at = datetime.now(UTC)
+        part.last_read_at = datetime.now(timezone.utc)
         await db.commit()
 
         refreshed_result = await db.execute(
@@ -299,7 +291,7 @@ class TestGovernanceLink:
         )
         links = result.scalars().all()
         assert len(links) == 2
-        types = {l.entity_type for l in links}
+        types = {link.entity_type for link in links}
         assert "proposal" in types
         assert "agreement" in types
 
@@ -361,7 +353,7 @@ class TestUnreadCount:
             )
         )
         part = result.scalar_one()
-        read_time = datetime.now(UTC)
+        read_time = datetime.now(timezone.utc)
         part.last_read_at = read_time
         await db.commit()
 
@@ -523,7 +515,7 @@ class TestEdgeCases:
         )
         db.add(msg)
         await db.flush()
-        msg.deleted_at = datetime.now(UTC)
+        msg.deleted_at = datetime.now(timezone.utc)
         await db.commit()
 
         result = await db.execute(
