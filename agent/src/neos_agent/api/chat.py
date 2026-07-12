@@ -29,6 +29,7 @@ from neos_agent.ai.provider import acompletion, is_ai_enabled
 from neos_agent.agent.governance_tools import get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
 from neos_agent.agent.router import SkillRouter
+from neos_agent.agent.hitl import parse_approval_request
 
 logger = logging.getLogger(__name__)
 
@@ -546,13 +547,26 @@ async def send_message(request: Request):
 
                 assistant_msg = choice.message
 
+                approval_request = None
                 if assistant_msg.content:
-                    await response.write(_sse_event("append", assistant_msg.content))
+                    cleaned_text, approval_request = parse_approval_request(
+                        assistant_msg.content,
+                    )
+                    if approval_request:
+                        await response.write(_sse_event("append", cleaned_text))
+                        await response.write(_sse_event(
+                            "approval_request", json.dumps(approval_request),
+                        ))
+                    else:
+                        await response.write(_sse_event("append", assistant_msg.content))
 
                 # Check for tool calls
                 tool_calls = getattr(assistant_msg, "tool_calls", None)
                 if not tool_calls or choice.finish_reason != "tool_calls":
-                    messages.append({"role": "assistant", "content": assistant_msg.content or ""})
+                    assistant_record = {"role": "assistant", "content": assistant_msg.content or ""}
+                    if approval_request:
+                        assistant_record["approval_request"] = approval_request
+                    messages.append(assistant_record)
                     break
 
                 # Process tool calls

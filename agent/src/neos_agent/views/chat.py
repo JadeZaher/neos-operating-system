@@ -24,6 +24,7 @@ from sanic.response import ResponseStream, json as json_response, html as html_r
 from sqlalchemy import select, delete, func, or_, Text
 
 from neos_agent.db.models import AgentSession
+from neos_agent.agent.hitl import parse_approval_request
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +523,22 @@ async def send_message(request: Request):
                         final_message = await msg_stream.get_final_message()
 
                 response_text = turn_text
+
+                # --- Extract any structured approval request from the streamed text ---
+                if response_text:
+                    cleaned_text, approval_request = parse_approval_request(
+                        response_text,
+                    )
+                    if approval_request:
+                        await emit_chat_event(
+                            response, "morph",
+                            render_agent_message(cleaned_text, msg_id),
+                        )
+                        await emit_chat_event(
+                            response, "approval_request",
+                            json.dumps(approval_request),
+                        )
+                        response_text = cleaned_text
 
                 # --- If no tool calls, we're done ---
                 if final_message.stop_reason != "tool_use":

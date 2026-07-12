@@ -1,4 +1,4 @@
-"""29 governance MCP-style tools for the NEOS agent.
+"""30 governance MCP-style tools for the NEOS agent.
 
 Each tool is an async function with signature:
     async def handler(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict
@@ -2092,6 +2092,48 @@ async def list_domains(args: dict, db: AsyncSession, ecosystem_ids: list | None 
 
 
 # ===================================================================
+# TOOL 30: request_human_input
+# ===================================================================
+
+async def request_human_input(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None
+) -> dict:
+    """Request a structured choice from the user with options and an Other field.
+
+    Use this tool when the agent needs a choice, approval, or agreement-question
+    answer. The tool returns a structured payload that the backend can use to
+    emit an ``approval_request`` SSE event to the frontend.
+    """
+    question = (args.get("question") or "").strip()
+    options = args.get("options") or []
+    allow_other = args.get("allow_other", True)
+
+    if not question:
+        return {"success": False, "error": "question is required."}
+    if not isinstance(options, list) or len(options) < 2:
+        return {
+            "success": False,
+            "error": "options must be a list with at least two choices.",
+        }
+
+    cleaned_options = [str(o).strip() for o in options if str(o).strip()]
+    if len(cleaned_options) < 2:
+        return {"success": False, "error": "at least two non-empty options are required."}
+
+    return {
+        "success": True,
+        "data": {
+            "requires_input": True,
+            "input_id": str(uuid.uuid4()),
+            "question": question,
+            "options": cleaned_options,
+            "allow_other": bool(allow_other),
+            "message": "Approval request prepared for the user.",
+        },
+    }
+
+
+# ===================================================================
 # TOOL REGISTRY
 # ===================================================================
 
@@ -2647,6 +2689,25 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
             "required": [],
         },
         handler=list_domains,
+    ),
+    # 30
+    ToolDef(
+        name="request_human_input",
+        description="Request a structured choice from the user. Use when you need approval, a decision, or an answer to an agreement question. Provide 2-4 concrete options and an 'Other' option for free-form text. The frontend will render the options as buttons and an 'Other' text field.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The question to ask the user."},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of 2-4 concrete choices. Always include an 'Other' option in the text, or set allow_other to true.",
+                },
+                "allow_other": {"type": "boolean", "description": "Whether the user can type a free-form alternative. Default true.", "default": True},
+            },
+            "required": ["question", "options"],
+        },
+        handler=request_human_input,
     ),
 ]
 
