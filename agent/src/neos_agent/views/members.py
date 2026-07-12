@@ -31,6 +31,7 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
     MemberStatusTransition,
+    User,
 )
 from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, html_fragment, escape_like
 from neos_agent.views.onboarding import UAF_SECTIONS, apply_section_consent
@@ -147,14 +148,21 @@ async def create_member(request: Request):
         return html(content, status=403)
     try:
         async with request.app.ctx.db() as session:
+            user = User(
+                id=uuid.uuid4(),
+                display_name=form.get("display_name", ""),
+                phone=form.get("phone") or None,
+            )
+            session.add(user)
+            await session.flush()
             member = Member(
                 id=uuid.uuid4(),
+                user_id=user.id,
                 ecosystem_id=eco_id,
                 member_id=form.get("member_id", ""),
                 display_name=form.get("display_name", ""),
                 current_status="prospective",
                 profile=form.get("profile"),
-                phone=form.get("phone"),
                 notes=form.get("notes"),
             )
             session.add(member)
@@ -289,7 +297,9 @@ async def update_member(request: Request, member_id: uuid.UUID):
             if form.get("profile"):
                 member.profile = form.get("profile")
             if form.get("phone"):
-                member.phone = form.get("phone")
+                user = await session.get(User, member.user_id)
+                if user:
+                    user.phone = form.get("phone")
             if form.get("notes"):
                 member.notes = form.get("notes")
             if form.get("onboarding_status"):
