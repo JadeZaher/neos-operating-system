@@ -4,6 +4,47 @@ description: "Manage the staged transition from currency-dependent resource exch
 layer: 4
 version: 0.1.0
 depends_on: [resource-request, funding-pool-stewardship, commons-monitoring, act-consent-phase]
+
+# === Codegen v2: deterministic tool generation ===
+target_tool:
+  name: create_ecosystem
+  description: "Create a new NEOS ecosystem. Checks for duplicate names. Sets founded date to today."
+  handler: governance_tools.create_ecosystem
+  model: models.Ecosystem
+  action: create
+  parameters:
+    - name: name
+      type: string
+      required: true
+      description: "Ecosystem name (must be unique)."
+    - name: description
+      type: string
+      required: false
+      description: "Description of the ecosystem."
+    - name: location
+      type: string
+      required: false
+      description: "Physical location or region."
+    - name: website
+      type: string
+      required: false
+      description: "Website URL."
+    - name: contact_email
+      type: string
+      required: false
+      description: "Primary contact email."
+    - name: governance_summary
+      type: string
+      required: false
+      description: "Brief governance model summary."
+    - name: tags
+      type: object
+      required: false
+      description: "Descriptive tags."
+    - name: visibility
+      type: string
+      required: false
+      description: "Visibility (default: public)."
 ---
 
 # access-economy-transition

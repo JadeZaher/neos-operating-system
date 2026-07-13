@@ -12,7 +12,7 @@ import secrets
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve .env relative to this file so it works regardless of CWD
@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     # Legacy aliases (backward compat with existing .env files and views)
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str | None = None
+    # OpenRouter free tier: sign up at https://openrouter.ai/keys
+    # Free models: openrouter/quasar-alpha, openrouter/google/gemini-flash-1.5,
+    # openrouter/meta-llama/llama-3.1-8b-instruct:free
+    AI_API_KEY: str = Field(
+        default="",  # Empty = AI disabled (governance still works)
+        validation_alias=AliasChoices("AI_API_KEY", "OPENROUTER_KEY"),
+    )
+    AI_BASE_URL: str = "https://openrouter.ai/api/v1"
+    AI_MODEL: str = "openrouter/qwen/qwen3-30b-a3b-instruct-2507"  # Default OpenRouter model
+    AI_PROVIDER: str = "openrouter"  # openrouter, anthropic, openai, local
+
     NEOS_CORE_PATH: str = "../neos-core"
     LOG_LEVEL: str = "info"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
@@ -65,6 +76,8 @@ class Settings(BaseSettings):
         if not self.ANTHROPIC_BASE_URL and self.AI_BASE_URL:
             self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
         return self
+        extra="ignore",
+    )
 
     @model_validator(mode="after")
     def _validate_session_secret(self) -> Settings:

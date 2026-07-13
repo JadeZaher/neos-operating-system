@@ -72,11 +72,14 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
     @app.before_server_start
     async def init_db(app, loop):
-        """Initialize database connection and ensure a default ecosystem exists."""
+        """Initialize database connection, create tables, and ensure a default ecosystem exists."""
         try:
             from neos_agent.db.session import setup_db
+            from neos_agent.db.models import Base
             await setup_db(app, loop)
             import neos_agent.db.course_models  # noqa: F401 — register course/quiz tables
+            async with app.ctx.db_engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
             logger.info("Database initialized")
         except Exception as e:
             logger.error("Failed to initialize database: %s", e)

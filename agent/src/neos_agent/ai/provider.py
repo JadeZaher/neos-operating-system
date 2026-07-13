@@ -84,6 +84,13 @@ async def acompletion(
     if settings.AI_BASE_URL:
         kwargs["api_base"] = settings.AI_BASE_URL
 
+    # OpenRouter requires extra_headers for optimal routing and free tier usage
+    if "openrouter" in resolved_model or settings.AI_PROVIDER == "openrouter":
+        kwargs.setdefault("extra_headers", {})
+        # Allow OpenRouter to route to the best available free tier model
+        kwargs["extra_headers"].setdefault("HTTP-Referer", "https://neos-governance.org")
+        kwargs["extra_headers"].setdefault("X-Title", "NEOS Governance Agent")
+
     try:
         if stream:
             return await litellm.acompletion(**kwargs)

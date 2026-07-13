@@ -1,7 +1,7 @@
 """Skill loader — parses SKILL.md files into structured dataclasses.
 
 Reuses parsing patterns from scripts/validate_skill.py, adapted for
-the agent webservice runtime.
+the agent webservice runtime. Now supports OKF-style pipeline configurations.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .pipeline_schema import PipelineConfig, parse_pipeline_config
 
 
 class SkillParseError(Exception):
@@ -39,6 +41,7 @@ class ParsedSkill:
     """Complete parsed skill with metadata and content."""
     meta: SkillMeta
     content: SkillContent
+    pipeline_config: PipelineConfig | None = None  # Generic pipeline configuration
 
 
 # 12 parseable sections. The loader still recognises all 12 letters so that
@@ -204,7 +207,16 @@ def parse_skill_file(file_path: Path) -> ParsedSkill:
     sections = parse_sections(raw_text)
     content = SkillContent(sections=sections, raw_text=raw_text)
 
-    return ParsedSkill(meta=meta, content=content)
+    # Parse pipeline configuration if present
+    pipeline_config = None
+    if "target_tool" in frontmatter:
+        pipeline_config, pipeline_errors = parse_pipeline_config(frontmatter)
+        if pipeline_errors:
+            raise SkillParseError(
+                f"Invalid pipeline configuration in {file_path}: {'; '.join(pipeline_errors)}"
+            )
+
+    return ParsedSkill(meta=meta, content=content, pipeline_config=pipeline_config)
 
 
 def discover_skill_files(root: Path) -> list[Path]:

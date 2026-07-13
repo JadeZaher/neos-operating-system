@@ -1,0 +1,22 @@
+name: test_create_member
+description: "Test pipeline for creating a member using generic framework"
+version: 1.0.0
+pipeline:
+  - op: validate
+    args:
+      type: required
+      fields: [display_name, member_id]
+  - op: validate
+    args:
+      type: format
+      field: member_id
+      format: uuid
+  - op: generate_key
+    args:
+      pattern: "MEM-{year}-{seq}"
+      prefix: MEM
+  - op: create
+    args:
+      entity: member
+      defaults:
+        current_status: prospective

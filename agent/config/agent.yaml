@@ -1,0 +1,202 @@
+# Agent primitives and context management configuration
+#
+# This configuration defines how the agent maps Alembic models, traits,
+# functions, skills, and config sections into a unified context matrix.
+# It is designed to be framework-agnostic and open-source friendly.
+
+agent:
+  name: "NEOS Governance Agent"
+  version: "1.0.0"
+  description: "Generic, declarative agent orchestration framework"
+
+# AI provider configuration (OpenRouter free tier recommended)
+ai:
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1
+  # Free tier models — get a key at https://openrouter.ai/keys
+  default_model: openrouter/quasar-alpha
+  free_models:
+    - openrouter/quasar-alpha
+    - openrouter/google/gemini-flash-1.5
+    - openrouter/meta-llama/llama-3.1-8b-instruct:free
+    - openrouter/mistralai/mistral-7b-instruct:free
+    - openrouter/nousresearch/hermes-3-llama-3.1-8b:free
+  # Optional headers for OpenRouter analytics/routing
+  extra_headers:
+    HTTP-Referer: https://neos-governance.org
+    X-Title: NEOS Governance Agent
+  # Disable AI entirely by leaving api_key empty
+
+# Context management layers
+context:
+  # Session-level context (conversation, user, auth)
+  session:
+    fields:
+      - session_id
+      - user_id
+      - member_id
+      - conversation_id
+    persistence:
+      enabled: true
+      store: database
+      ttl: 3600
+
+  # Scope-level context (multi-tenant, ecosystem, permissions)
+  scope:
+    fields:
+      - ecosystem_ids
+      - tenant_id
+      - organization_id
+      - permissions
+    injection: required
+
+  # Page/workflow context (frontend, active skill, workflow)
+  page:
+    fields:
+      - current_page
+      - active_skill
+      - workflow_id
+      - page_context_summary
+    injection: optional
+
+  # Pipeline execution context (resolves, keys, intermediate state)
+  pipeline:
+    shared_keys:
+      - resolved_entities
+      - generated_keys
+      - workflow_state
+    isolation: per_tool
+
+# Traits define composable behaviors that can be applied to models and tools
+traits:
+  auditable:
+    enabled: true
+    log_all_operations: true
+    required_fields:
+      - action
+      - entity_type
+      - entity_id
+
+  versioned:
+    enabled: true
+    auto_create: true
+    max_versions: 100
+    required_fields:
+      - version_number
+      - change_description
+
+  resolvable:
+    enabled: true
+    cache_enabled: true
+    cache_ttl: 300
+    resolvable_fields:
+      - id
+      - business_key
+      - display_name
+
+  indexable:
+    enabled: true
+    embedding_provider: sentence_transformers
+    required_fields:
+      - entity_type
+      - entity_id
+      - content
+
+  session_aware:
+    enabled: true
+    track_workflows: true
+    required_fields:
+      - session_type
+
+# Operations map to functions with traits
+operations:
+  validate:
+    enabled: true
+    strict_mode: true
+    traits: []
+
+  resolve:
+    enabled: true
+    traits: [resolvable]
+
+  create:
+    enabled: true
+    traits: [auditable, versioned]
+
+  read:
+    enabled: true
+    traits: []
+
+  update:
+    enabled: true
+    traits: [auditable, versioned]
+
+  delete:
+    enabled: true
+    traits: [auditable]
+
+  transition:
+    enabled: true
+    traits: [auditable, versioned]
+
+  branch:
+    enabled: true
+    traits: []
+
+  parallel:
+    enabled: true
+    traits: []
+
+  loop:
+    enabled: true
+    traits: []
+
+  create_version:
+    enabled: true
+    traits: [versioned]
+
+  log_audit:
+    enabled: true
+    traits: [auditable]
+
+  create_session:
+    enabled: true
+    traits: [session_aware]
+
+  update_session:
+    enabled: true
+    traits: [session_aware]
+
+  index_entity:
+    enabled: true
+    traits: [indexable]
+
+  semantic_search:
+    enabled: true
+    traits: [indexable]
+
+  start_workflow:
+    enabled: true
+    traits: [session_aware]
+
+  advance_workflow:
+    enabled: true
+    traits: [session_aware]
+
+# Skill format configuration
+skills:
+  format:
+    frontmatter_required:
+      - name
+      - description
+      - version
+    pipeline_optional: false
+    traits_field: traits
+    target_tool_field: target_tool
+
+# Tool registration
+registry:
+  auto_register: true
+  skills_directory: "neos-core"
+  handler_packages:
+    - neos_agent.agent.neos_handlers
