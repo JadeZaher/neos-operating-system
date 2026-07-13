@@ -32,9 +32,16 @@ class Settings(BaseSettings):
     AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
     AI_PROVIDER: str = "anthropic"  # openrouter, anthropic, openai, local
 
+    _DEFAULT_AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
+    _DEFAULT_OPENROUTER_MODEL: str = "openrouter/anthropic/claude-sonnet-4-20250514"
+
     # Legacy aliases (backward compat with existing .env files and views)
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str | None = None
+
+    # OpenRouter aliases (preferred for multi-provider deployments)
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str | None = None
     NEOS_CORE_PATH: str = "../neos-core"
     LOG_LEVEL: str = "info"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
@@ -57,13 +64,46 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_ai_key(self) -> Settings:
-        """Sync AI_* and legacy ANTHROPIC_* settings."""
-        if not self.AI_API_KEY and self.ANTHROPIC_API_KEY:
-            self.AI_API_KEY = self.ANTHROPIC_API_KEY
-        if not self.ANTHROPIC_API_KEY and self.AI_API_KEY:
-            self.ANTHROPIC_API_KEY = self.AI_API_KEY
-        if not self.ANTHROPIC_BASE_URL and self.AI_BASE_URL:
-            self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
+        """Sync AI_* and legacy ANTHROPIC_* / OPENROUTER_* settings."""
+        # Canonical AI_API_KEY, falling back to OpenRouter then Anthropic keys
+        if not self.AI_API_KEY:
+            if self.OPENROUTER_API_KEY:
+                self.AI_API_KEY = self.OPENROUTER_API_KEY
+            elif self.ANTHROPIC_API_KEY:
+                self.AI_API_KEY = self.ANTHROPIC_API_KEY
+
+        # Mirror the canonical key back to the provider-specific aliases
+        if self.AI_API_KEY:
+            if not self.OPENROUTER_API_KEY:
+                self.OPENROUTER_API_KEY = self.AI_API_KEY
+            if not self.ANTHROPIC_API_KEY:
+                self.ANTHROPIC_API_KEY = self.AI_API_KEY
+
+        # Canonical AI_BASE_URL, falling back to OpenRouter then Anthropic URLs
+        if not self.AI_BASE_URL:
+            if self.OPENROUTER_BASE_URL:
+                self.AI_BASE_URL = self.OPENROUTER_BASE_URL
+            elif self.ANTHROPIC_BASE_URL:
+                self.AI_BASE_URL = self.ANTHROPIC_BASE_URL
+            elif self.OPENROUTER_API_KEY:
+                # If an OpenRouter key is configured and no base URL was given,
+                # default to the OpenRouter API endpoint.
+                self.AI_BASE_URL = "https://openrouter.ai/api/v1"
+
+        # Mirror the canonical base URL back to the provider-specific aliases
+        if self.AI_BASE_URL:
+            if not self.OPENROUTER_BASE_URL:
+                self.OPENROUTER_BASE_URL = self.AI_BASE_URL
+            if not self.ANTHROPIC_BASE_URL:
+                self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
+
+        # If OpenRouter is configured and the model is still the Anthropic default,
+        # route via the OpenRouter provider so the base URL/key are used correctly.
+        if (
+            self.OPENROUTER_API_KEY
+            and self.AI_MODEL == self._DEFAULT_AI_MODEL
+        ):
+            self.AI_MODEL = self._DEFAULT_OPENROUTER_MODEL
         return self
 
     @model_validator(mode="after")

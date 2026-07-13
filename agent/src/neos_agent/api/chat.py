@@ -426,7 +426,7 @@ async def send_message(request: Request):
 
     if not is_ai_enabled():
         async def disabled_stream(response):
-            msg = "AI chat is not configured. Set AI_API_KEY in the server environment to enable chat features."
+            msg = "AI chat is not configured. Set OPENROUTER_API_KEY or AI_API_KEY in the server environment to enable chat features."
             await response.write(_sse_event("append", msg))
             await response.write(_sse_event("done", ""))
 
