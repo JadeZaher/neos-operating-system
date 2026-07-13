@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
     AI_PROVIDER: str = "anthropic"  # openrouter, anthropic, openai, local
 
+    _DEFAULT_AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
+    _DEFAULT_OPENROUTER_MODEL: str = "openrouter/anthropic/claude-sonnet-4-20250514"
+
     # Legacy aliases (backward compat with existing .env files and views)
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str | None = None
@@ -93,6 +96,14 @@ class Settings(BaseSettings):
                 self.OPENROUTER_BASE_URL = self.AI_BASE_URL
             if not self.ANTHROPIC_BASE_URL:
                 self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
+
+        # If OpenRouter is configured and the model is still the Anthropic default,
+        # route via the OpenRouter provider so the base URL/key are used correctly.
+        if (
+            self.OPENROUTER_API_KEY
+            and self.AI_MODEL == self._DEFAULT_AI_MODEL
+        ):
+            self.AI_MODEL = self._DEFAULT_OPENROUTER_MODEL
         return self
 
     @model_validator(mode="after")

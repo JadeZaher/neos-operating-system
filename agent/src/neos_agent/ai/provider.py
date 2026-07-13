@@ -68,6 +68,7 @@ async def acompletion(
     litellm.drop_params = True  # Drop unsupported params per provider
 
     kwargs = {
+        "_skip_mcp_handler": True,  # avoid litellm's optional proxy deps for tool calls
         "model": resolved_model,
         "messages": full_messages,
         "max_tokens": max_tokens,
