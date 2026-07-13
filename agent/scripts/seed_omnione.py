@@ -90,6 +90,31 @@ def _uid(name: str) -> uuid.UUID:
     return uuid.uuid5(uuid.NAMESPACE_DNS, f"neos.seed.{name}")
 
 
+ECOSYSTEM_MEDIA_URLS = {
+    _uid("eco.omnione"): "/api/v1/media/ecosystems/omnione.webp",
+    _uid("eco.escherbridge"): "/api/v1/media/ecosystems/escherbridge.webp",
+    _uid("eco.plansystems"): "/api/v1/media/ecosystems/plan-systems.webp",
+    _uid("eco.oasis"): "/api/v1/media/ecosystems/oasis.webp",
+}
+
+
+async def _backfill_ecosystem_media_urls(session: AsyncSession) -> int:
+    """Fill missing image URLs for deterministic seeded ecosystems."""
+    result = await session.execute(
+        select(Ecosystem).where(Ecosystem.id.in_(list(ECOSYSTEM_MEDIA_URLS)))
+    )
+    updated = 0
+    for ecosystem in result.scalars().all():
+        media_url = ECOSYSTEM_MEDIA_URLS[ecosystem.id]
+        if not (ecosystem.logo_url or "").strip():
+            ecosystem.logo_url = media_url
+            updated += 1
+
+    if updated:
+        await session.commit()
+    return updated
+
+
 # ---------------------------------------------------------------------------
 # Date / time helpers
 # ---------------------------------------------------------------------------
@@ -241,8 +266,13 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
         result = await session.execute(
             select(Ecosystem).where(Ecosystem.name == "OmniOne")
         )
-        if result.scalar_one_or_none() is not None:
-            print("OmniOne ecosystem already exists. Skipping seed.")
+        existing_omnione = result.scalar_one_or_none()
+        image_backfills = await _backfill_ecosystem_media_urls(session)
+        if existing_omnione is not None:
+            print(
+                "OmniOne ecosystem already exists. "
+                f"Backfilled {image_backfills} image URL(s); skipping seed."
+            )
             await engine.dispose()
             return
 
@@ -266,6 +296,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             status="active",
             location="Bali, Indonesia",
             website="https://escherbridge.com/",
+            logo_url=ECOSYSTEM_MEDIA_URLS[eco_omni_id],
             founded_date=days_ago(180),
             tags=["regenerative", "governance", "community", "bali"],
             contact_email="omnione@escherbridge.com",
@@ -291,6 +322,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             status="active",
             location="Amsterdam, Netherlands",
             website="https://escherbridge.com/",
+            logo_url=ECOSYSTEM_MEDIA_URLS[eco_eb_id],
             founded_date=days_ago(120),
             tags=["creative-arts", "technology", "digital-art", "collaboration"],
             contact_email="hello@escherbridge.com",
@@ -314,6 +346,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             status="active",
             location="Portland, Oregon, USA",
             website="https://plan-systems.org/",
+            logo_url=ECOSYSTEM_MEDIA_URLS[eco_ps_id],
             founded_date=days_ago(90),
             tags=["systems-thinking", "planning", "cooperative", "organizational-development"],
             contact_email="info@plan-systems.org",
@@ -338,6 +371,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             status="active",
             location="Global / Remote",
             website="https://www.oasisweb4.com/",
+            logo_url=ECOSYSTEM_MEDIA_URLS[eco_oa_id],
             founded_date=days_ago(60),
             tags=["web4", "decentralized", "community-platform", "digital-sovereignty"],
             contact_email="hello@oasisweb4.com",

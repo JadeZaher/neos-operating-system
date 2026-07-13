@@ -31,6 +31,7 @@ class OnboardingSnapshot(BaseModel):
 
 
 class MemberDetail(MemberListItem):
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     did: str | None = None
     skills_offered: list | dict | None = None
     skills_needed: list | dict | None = None

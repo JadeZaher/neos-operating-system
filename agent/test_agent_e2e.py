@@ -98,7 +98,7 @@ def show_env():
     settings = get_settings()
     print("[INFO] Settings:")
     print(f"  AI_API_KEY length: {len(settings.AI_API_KEY)}")
-    print(f"  ANTHROPIC_API_KEY length: {len(settings.ANTHROPIC_API_KEY)}")
+    print(f"  AI key configured: {bool(settings.AI_API_KEY)}")
     print(f"  AI_MODEL: {settings.AI_MODEL}")
     print(f"  AI_BASE_URL: {settings.AI_BASE_URL}")
     print(f"  AI_PROVIDER: {settings.AI_PROVIDER}")

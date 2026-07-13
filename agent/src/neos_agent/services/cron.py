@@ -96,7 +96,10 @@ async def _check_compliance_regen(app):
                     .limit(1)
                 )
                 summary = latest.scalar_one_or_none()
-                if summary is None or summary.generated_at < threshold:
+                generated_at = summary.generated_at if summary else None
+                if generated_at is not None and generated_at.tzinfo is None:
+                    generated_at = generated_at.replace(tzinfo=timezone.utc)
+                if generated_at is None or generated_at < threshold:
                     logger.info("Compliance summary stale for ecosystem %s -- regeneration needed", eco_id)
     except Exception:
         logger.exception("Compliance regen check failed")

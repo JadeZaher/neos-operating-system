@@ -16,6 +16,7 @@ PUBLIC_PREFIXES = (
     "/api/v1/auth/",
     "/api/v1/skills",
     "/api/v1/auth/oauth/",
+    "/api/v1/media/",
 )
 
 PUBLIC_EXACT = frozenset({

@@ -130,6 +130,7 @@ def _agreement_to_detail(a: Agreement) -> dict:
         sunset_date=a.sunset_date,
         created_at=a.created_at,
         ecosystem_id=a.ecosystem_id,
+        shared_ecosystem_ids=a.shared_ecosystem_ids,
         text=a.text,
         affected_parties=a.affected_parties,
         parent_agreement_id=a.parent_agreement_id,

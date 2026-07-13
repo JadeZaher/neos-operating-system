@@ -11,6 +11,7 @@ import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,12 +28,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     # AI Provider settings (LiteLLM/OpenRouter)
-    AI_API_KEY: str = ""  # Empty = AI disabled (governance still works)
-    AI_BASE_URL: str | None = None
-    AI_MODEL: str = "anthropic/claude-sonnet-4-20250514"
-    AI_PROVIDER: str = "anthropic"  # openrouter, anthropic, openai, local
-
-    # Legacy aliases (backward compat with existing .env files and views)
+    # Legacy Anthropic fields remain for compatibility with older integrations.
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_BASE_URL: str | None = None
     # OpenRouter free tier: sign up at https://openrouter.ai/keys
@@ -52,6 +48,14 @@ class Settings(BaseSettings):
     SESSION_SECRET: str = ""
     SESSION_MAX_AGE_HOURS: int = 24
 
+    # Private Railway bucket (empty = media redirects disabled)
+    AWS_ENDPOINT_URL: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_BUCKET_NAME: str = ""
+    AWS_DEFAULT_REGION: str = ""
+    AWS_S3_URL_STYLE: Literal["virtual", "path"] = "virtual"
+
     # OAuth settings (empty = disabled)
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
@@ -64,6 +68,7 @@ class Settings(BaseSettings):
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     @model_validator(mode="after")
@@ -76,8 +81,6 @@ class Settings(BaseSettings):
         if not self.ANTHROPIC_BASE_URL and self.AI_BASE_URL:
             self.ANTHROPIC_BASE_URL = self.AI_BASE_URL
         return self
-        extra="ignore",
-    )
 
     @model_validator(mode="after")
     def _validate_session_secret(self) -> Settings:

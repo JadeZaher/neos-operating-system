@@ -33,6 +33,7 @@ class DomainListItem(BaseModel):
 
 
 class DomainDetail(DomainListItem):
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     steward_id: uuid.UUID | None = None
     created_by: str | None = None
     metric_definitions: str | dict | None = None

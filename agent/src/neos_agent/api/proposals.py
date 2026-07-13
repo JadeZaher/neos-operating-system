@@ -227,6 +227,7 @@ def _proposal_to_detail(p: Proposal) -> ProposalDetail:
         urgency=p.urgency,
         created_at=p.created_at,
         ecosystem_id=p.ecosystem_id,
+        shared_ecosystem_ids=p.shared_ecosystem_ids,
         co_sponsors=p.co_sponsors,
         impacted_parties=p.impacted_parties,
         proposed_change=p.proposed_change,

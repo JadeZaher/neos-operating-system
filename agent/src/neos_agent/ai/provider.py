@@ -6,11 +6,19 @@ All governance processes work without AI — this is an optimization layer.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _DISABLED_MSG = "AI features are disabled (no AI_API_KEY configured)"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _resolve_openrouter_model(model: str | None, configured_model: str) -> str:
+    """Return a LiteLLM model name explicitly routed through OpenRouter."""
+    resolved = (model or configured_model).strip()
+    if not resolved:
+        raise ValueError("AI_MODEL must be configured for OpenRouter")
+    return resolved if resolved.startswith("openrouter/") else f"openrouter/{resolved}"
 
 
 async def acompletion(
@@ -27,7 +35,7 @@ async def acompletion(
 
     Args:
         messages: List of {"role": "user"|"assistant", "content": "..."} dicts
-        model: Model identifier (e.g. "openrouter/anthropic/claude-sonnet-4-20250514")
+        model: OpenRouter model ID, with or without the ``openrouter/`` prefix.
         system: System prompt (prepended as system message)
         max_tokens: Maximum tokens in response
         temperature: Sampling temperature
@@ -56,7 +64,10 @@ async def acompletion(
         logger.debug(_DISABLED_MSG)
         return None
 
-    resolved_model = model or settings.AI_MODEL
+    if settings.AI_PROVIDER.lower() != "openrouter":
+        raise ValueError("NEOS AI provider must be configured as 'openrouter'")
+
+    resolved_model = _resolve_openrouter_model(model, settings.AI_MODEL)
 
     # Build messages with system prompt
     full_messages = []
@@ -80,16 +91,13 @@ async def acompletion(
     if tools:
         kwargs["tools"] = tools
 
-    # Add base URL if configured (for self-hosted or custom endpoints)
-    if settings.AI_BASE_URL:
-        kwargs["api_base"] = settings.AI_BASE_URL
+    kwargs["api_base"] = (settings.AI_BASE_URL or _OPENROUTER_BASE_URL).rstrip("/")
 
     # OpenRouter requires extra_headers for optimal routing and free tier usage
-    if "openrouter" in resolved_model or settings.AI_PROVIDER == "openrouter":
-        kwargs.setdefault("extra_headers", {})
-        # Allow OpenRouter to route to the best available free tier model
-        kwargs["extra_headers"].setdefault("HTTP-Referer", "https://neos-governance.org")
-        kwargs["extra_headers"].setdefault("X-Title", "NEOS Governance Agent")
+    kwargs["extra_headers"] = {
+        "HTTP-Referer": "https://neos-governance.org",
+        "X-Title": "NEOS Governance Agent",
+    }
 
     try:
         if stream:

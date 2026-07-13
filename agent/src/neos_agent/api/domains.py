@@ -86,6 +86,7 @@ def _domain_to_detail(d: Domain) -> dict:
         created_at=d.created_at,
         version_fingerprint=d.version_fingerprint,
         ecosystem_id=d.ecosystem_id,
+        shared_ecosystem_ids=d.shared_ecosystem_ids,
         steward_id=d.steward_id,
         created_by=d.created_by,
         metric_definitions=d.metric_definitions,

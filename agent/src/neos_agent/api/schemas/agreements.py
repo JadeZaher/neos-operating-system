@@ -31,6 +31,7 @@ class RatificationRecordSchema(BaseModel):
 
 
 class AgreementDetail(AgreementListItem):
+    shared_ecosystem_ids: list[UUID] | None = None
     text: str | None = None
     affected_parties: list | dict | None = None
     parent_agreement_id: UUID | None = None

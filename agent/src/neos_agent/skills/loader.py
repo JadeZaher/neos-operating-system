@@ -209,7 +209,7 @@ def parse_skill_file(file_path: Path) -> ParsedSkill:
 
     # Parse pipeline configuration if present
     pipeline_config = None
-    if "target_tool" in frontmatter:
+    if isinstance(frontmatter.get("target_tool"), dict) or "pipeline" in frontmatter:
         pipeline_config, pipeline_errors = parse_pipeline_config(frontmatter)
         if pipeline_errors:
             raise SkillParseError(

@@ -83,6 +83,19 @@ set ANTHROPIC_API_KEY=sk-ant-your-key-here
 | `CLAUDE_MODEL` | No | `claude-sonnet-4-20250514` | Claude model ID for governance chat |
 | `LOG_LEVEL` | No | `info` | Logging level (`debug`, `info`, `warning`, `error`) |
 | `CORS_ORIGINS` | No | `*` | Allowed CORS origins (comma-separated or `*`) |
+| `AWS_ENDPOINT_URL` | For media | â€” | Railway bucket S3-compatible endpoint |
+| `AWS_ACCESS_KEY_ID` | For media | â€” | Server-only Railway bucket access key ID |
+| `AWS_SECRET_ACCESS_KEY` | For media | â€” | Server-only Railway bucket secret access key |
+| `AWS_S3_BUCKET_NAME` | For media | â€” | Private bucket containing rich media objects |
+| `AWS_DEFAULT_REGION` | For media | â€” | S3-compatible signing region supplied by Railway |
+| `AWS_S3_URL_STYLE` | No | `virtual` | S3 addressing style (`virtual` for current Railway buckets; `path` for legacy buckets) |
+
+When all five required bucket variables are set, `GET /api/v1/media/<object-key>` accepts
+only the seeded editorial-media allowlist and redirects to a one-hour signed download
+URL. The bucket credentials remain backend-only; missing configuration degrades to a
+`503` response. Extend the allowlist deliberately when adding public media so private
+objects in the same bucket can never be signed by a guessed key. URL style defaults to
+Railway's current virtual-hosted format and can be changed to `path` for a legacy bucket.
 
 The app loads variables in this order (first found wins):
 1. System environment variables

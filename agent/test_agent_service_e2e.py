@@ -4,8 +4,7 @@ Spins up the actual Sanic service in-process, hits real HTTP endpoints,
 and uses a judge LLM on the same configured model (low-token mode) to
 check response quality.
 
-Run from the agent/ directory:
-    ..\.venv\Scripts\python.exe test_agent_service_e2e.py
+Run from the agent/ directory with the project's Python environment.
 """
 
 from __future__ import annotations
@@ -21,6 +20,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except AttributeError:
+    pass
 
 # --- Environment configuration before any agent imports ---
 # Set a fixed session secret so cookie signing is deterministic.
@@ -141,9 +145,9 @@ def run_tests() -> list[dict]:
     # ------------------------------------------------------------------
     # 1. Health check
     # ------------------------------------------------------------------
-    print("[TEST] GET /")
-    _, resp = client.get("/")
-    if resp.status == 200 and resp.json.get("status") == "ok":
+    print("[TEST] GET /api/v1/health")
+    _, resp = client.get("/api/v1/health")
+    if resp.status == 200 and resp.json and resp.json.get("status") == "healthy":
         print("  ✅ Health check passed")
         results.append({"name": "health", "status": "PASS", "elapsed": 0})
     else:

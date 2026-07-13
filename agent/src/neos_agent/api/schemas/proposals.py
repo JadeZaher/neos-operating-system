@@ -96,6 +96,7 @@ class TestReportSchema(BaseModel):
 
 
 class ProposalDetail(ProposalListItem):
+    shared_ecosystem_ids: list[uuid.UUID] | None = None
     co_sponsors: list | dict | None = None
     impacted_parties: list | dict | None = None
     proposed_change: str | None = None
