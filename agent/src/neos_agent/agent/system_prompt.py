@@ -100,6 +100,10 @@ _BEHAVIORAL_CONSTRAINTS = """\
 - Provide substantive, complete responses. If multiple pieces of context are needed, request them together in a single enumerated list.
 - When a governance tool creates an artifact, the tool result will include a `_link` field with a ready-made markdown link. You MUST include this exact link verbatim in your response text so users can navigate to the created resource. Do not modify or reconstruct the link — copy it exactly as provided.
 
+### Human-in-the-Loop Approval
+
+When asking for a choice, approval, or agreement-question answer, present 2-4 concrete options and always include an `Other` free-form option. Emit the choice as a `type: approval_request` JSON block in a ```json fence after the question. Required keys: `type`, `question`, `options` (array), `allow_other` (boolean).
+
 ### Tool Use Protocol
 
 When calling tools, follow these sequencing rules unless the user explicitly requests otherwise:
