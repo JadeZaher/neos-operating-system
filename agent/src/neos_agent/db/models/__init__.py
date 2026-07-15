@@ -55,6 +55,12 @@ from .pushsubscription import PushSubscription  # noqa: F401
 from .journeymap import JourneyMap  # noqa: F401
 from .ethosuseraccess import EthosUserAccess  # noqa: F401
 from .userjourneyprogress import UserJourneyProgress  # noqa: F401
+from .badgedefinition import BadgeDefinition  # noqa: F401
+from .team import Team  # noqa: F401
+from .teammembership import TeamMembership  # noqa: F401
+from .quizassignment import QuizAssignment  # noqa: F401
+from .appsetting import AppSetting  # noqa: F401
+from .ctchandoff import CtcHandoff  # noqa: F401
 
 __all__ = [
     "Base",
@@ -107,4 +113,10 @@ __all__ = [
     "JourneyMap",
     "EthosUserAccess",
     "UserJourneyProgress",
+    "BadgeDefinition",
+    "Team",
+    "TeamMembership",
+    "QuizAssignment",
+    "AppSetting",
+    "CtcHandoff",
 ]

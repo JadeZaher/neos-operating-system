@@ -79,7 +79,7 @@
             hx-target="#exits-list"
             hx-include="closest form">
       <option value="">All Statuses</option>
-      <option value="initiated" {% if filters and filters.get('status', [''])[0] == 'initiated' %}selected{% endif %}>Initiated</option>
+      <option value="declared" {% if filters and filters.get('status', [''])[0] == 'declared' %}selected{% endif %}>Declared</option>
       <option value="cooling_off" {% if filters and filters.get('status', [''])[0] == 'cooling_off' %}selected{% endif %}>Cooling Off</option>
       <option value="unwinding" {% if filters and filters.get('status', [''])[0] == 'unwinding' %}selected{% endif %}>Unwinding</option>
       <option value="completed" {% if filters and filters.get('status', [''])[0] == 'completed' %}selected{% endif %}>Completed</option>
@@ -132,7 +132,7 @@
             </td>
             <td class="px-4 py-3">
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize
-                {% if exit.status == 'initiated' %}bg-blue-100 text-blue-700
+                {% if exit.status == 'declared' %}bg-blue-100 text-blue-700
                 {% elif exit.status == 'cooling_off' %}bg-yellow-100 text-yellow-700
                 {% elif exit.status == 'unwinding' %}bg-orange-100 text-orange-700
                 {% elif exit.status == 'completed' %}bg-green-100 text-green-700
@@ -167,7 +167,7 @@
       <div class="flex items-start justify-between gap-2 mb-2">
         <span class="font-semibold text-neos-text font-mono text-xs">{{ exit.id | string | truncate(13, true, '') }}</span>
         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize shrink-0
-          {% if exit.status == 'initiated' %}bg-blue-100 text-blue-700
+          {% if exit.status == 'declared' %}bg-blue-100 text-blue-700
           {% elif exit.status == 'cooling_off' %}bg-yellow-100 text-yellow-700
           {% elif exit.status == 'unwinding' %}bg-orange-100 text-orange-700
           {% elif exit.status == 'completed' %}bg-green-100 text-green-700

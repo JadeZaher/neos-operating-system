@@ -102,6 +102,13 @@
           >
             <option value="" disabled>Select type...</option>
             <option value="uaf" {% if agreement is defined and agreement and agreement.type == 'uaf' %}selected{% endif %}>UAF (Universal Agreement Field)</option>
+            <option value="ecosystem" {% if agreement is defined and agreement and agreement.type == 'ecosystem' %}selected{% endif %}>Ecosystem</option>
+            <option value="access" {% if agreement is defined and agreement and agreement.type == 'access' %}selected{% endif %}>Access</option>
+            <option value="stewardship" {% if agreement is defined and agreement and agreement.type == 'stewardship' %}selected{% endif %}>Stewardship</option>
+            <option value="ethos" {% if agreement is defined and agreement and agreement.type == 'ethos' %}selected{% endif %}>Ethos</option>
+            <option value="culture_code" {% if agreement is defined and agreement and agreement.type == 'culture_code' %}selected{% endif %}>Culture Code</option>
+            <option value="space" {% if agreement is defined and agreement and agreement.type == 'space' %}selected{% endif %}>Space</option>
+            <option value="organizational" {% if agreement is defined and agreement and agreement.type == 'organizational' %}selected{% endif %}>Organizational</option>
             <option value="policy" {% if agreement is defined and agreement and agreement.type == 'policy' %}selected{% endif %}>Policy</option>
             <option value="protocol" {% if agreement is defined and agreement and agreement.type == 'protocol' %}selected{% endif %}>Protocol</option>
             <option value="role_definition" {% if agreement is defined and agreement and agreement.type == 'role_definition' %}selected{% endif %}>Role Definition</option>
@@ -121,8 +128,9 @@
             class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
             required
           >
-            <option value="ecosystem" {% if agreement is not defined or not agreement or agreement.hierarchy_level == 'ecosystem' %}selected{% endif %}>Ecosystem</option>
-            <option value="domain" {% if agreement is defined and agreement and agreement.hierarchy_level == 'domain' %}selected{% endif %}>Domain</option>
+            <option value="foundational" {% if agreement is defined and agreement and agreement.hierarchy_level == 'foundational' %}selected{% endif %}>Foundational</option>
+            <option value="operational" {% if agreement is defined and agreement and agreement.hierarchy_level == 'operational' %}selected{% endif %}>Operational</option>
+            <option value="domain" {% if agreement is not defined or not agreement or agreement.hierarchy_level == 'domain' %}selected{% endif %}>Domain</option>
             <option value="local" {% if agreement is defined and agreement and agreement.hierarchy_level == 'local' %}selected{% endif %}>Local</option>
           </select>
           <p class="mt-1 text-xs text-neos-muted">Where this agreement applies in the governance hierarchy</p>

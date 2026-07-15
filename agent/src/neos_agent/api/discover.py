@@ -594,10 +594,10 @@ async def create_share_need(request: Request):
         type          – "share" or "need" (required)
         title         – display title (required)
         description   – optional detail text
-        category      – skill | resource | knowledge | space | labor
+        category      – technology | resources | skills | knowledge | infrastructure | funding | space | labor | other
         capacity      – availability level
         tags          – list of strings
-        visibility    – "public" (default), "ecosystem", "domain"
+        visibility    – "public" (default), "ecosystem", "private"
     """
     member, err = require_auth(request)
     if err:

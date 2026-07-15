@@ -26,3 +26,4 @@ class SkillsResponse(BaseModel):
 
 class ApiError(BaseModel):
     error: str
+    detail: str | None = None

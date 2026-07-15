@@ -26,7 +26,7 @@
           <p class="text-sm text-neos-muted mt-1">{{ exit_record.exit_type | capitalize }} exit process</p>
         </div>
         <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold capitalize
-          {% if exit_record.status == 'initiated' %}bg-blue-100 text-blue-700
+          {% if exit_record.status == 'declared' %}bg-blue-100 text-blue-700
           {% elif exit_record.status == 'cooling_off' %}bg-yellow-100 text-yellow-700
           {% elif exit_record.status == 'unwinding' %}bg-orange-100 text-orange-700
           {% elif exit_record.status == 'completed' %}bg-green-100 text-green-700
@@ -94,7 +94,7 @@
     <div class="bg-neos-surface border border-neos-border rounded-xl p-4">
       <h3 class="text-sm font-semibold text-neos-text mb-3">Actions</h3>
       <form method="POST" action="/dashboard/exit/{{ exit_record.id }}/status" class="space-y-3">
-        {% if exit_record.status == 'initiated' %}
+        {% if exit_record.status == 'declared' %}
         <button type="submit" name="new_status" value="cooling_off" class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition-colors">Start Cooling Off Period</button>
         {% elif exit_record.status == 'cooling_off' %}
         <button type="submit" name="new_status" value="unwinding" class="w-full px-3 py-2 text-xs font-medium rounded-lg bg-orange-600 text-white hover:bg-orange-700 transition-colors">Begin Commitment Unwinding</button>

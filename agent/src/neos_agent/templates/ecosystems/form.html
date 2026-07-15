@@ -148,8 +148,9 @@
           >
             <option value="public" {% if not ecosystem or ecosystem.visibility == 'public' %}selected{% endif %}>Public</option>
             <option value="private" {% if ecosystem and ecosystem.visibility == 'private' %}selected{% endif %}>Private</option>
+            <option value="unlisted" {% if ecosystem and ecosystem.visibility == 'unlisted' %}selected{% endif %}>Unlisted</option>
           </select>
-          <span class="text-xs text-neos-muted">Private ecosystems are hidden from the public directory</span>
+          <span class="text-xs text-neos-muted">Private ecosystems are hidden from the public directory; unlisted ecosystems are reachable by direct link only</span>
         </div>
 
         {# Status (only for edit) #}

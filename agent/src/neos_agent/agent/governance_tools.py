@@ -930,7 +930,7 @@ async def check_quorum(args: dict, db: AsyncSession, ecosystem_ids: list | None 
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
 
     consent_mode = prop.decision_type or "consent"
-    is_emergency = (prop.urgency or "").lower() == "emergency"
+    is_emergency = (prop.urgency or "").lower() == "critical"
 
     # Count total deciding body = active members in ecosystem
     member_count_stmt = select(func.count()).select_from(Member).where(
@@ -2140,7 +2140,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "type": {"type": "string", "description": "Agreement type filter (space, access, organizational, uaf, culture_code)."},
+                "type": {"type": "string", "description": "Agreement type filter (uaf, ecosystem, access, stewardship, ethos, culture_code, space, organizational, policy, protocol, role_definition, domain_contract, guideline)."},
                 "domain": {"type": "string", "description": "Partial domain name match."},
                 "status": {"type": "string", "description": "Agreement status filter."},
                 "affected_party": {"type": "string", "description": "Name of an affected party."},
@@ -2172,7 +2172,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Concise, action-oriented title (5-15 words) describing what this agreement establishes."},
-                "type": {"type": "string", "description": "Agreement type. Valid values: space (workspace/resource agreements), access (access-control agreements), organizational (org-structure agreements), uaf (Universal Agreement Framework agreements), culture_code (cultural norms and code of conduct agreements)."},
+                "type": {"type": "string", "description": "Agreement type. Valid values: uaf (Universal Agreement Field), ecosystem, access (access-control agreements), stewardship, ethos, culture_code (cultural norms and code of conduct agreements), space (workspace/resource agreements), organizational (org-structure agreements), policy, protocol, role_definition, domain_contract, guideline."},
                 "proposer": {"type": "string", "description": "Name or member_id of the proposer (must be active member)."},
                 "domain": {"type": "string", "description": "Domain this agreement applies to."},
                 "text": {"type": "string", "description": "Full agreement body, 200-2000 words. Must include: purpose, scope, parties, terms, exceptions, sunset criteria."},
@@ -2244,7 +2244,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "decision_type": {"type": "string", "description": "Explicit decision type hint."},
                 "affected_domain": {"type": "string", "description": "Domain affected by this proposal."},
                 "impacted_parties": {"type": "array", "items": {"type": "string"}, "description": "List of impacted parties."},
-                "urgency": {"type": "string", "description": "Urgency level (normal, urgent, emergency)."},
+                "urgency": {"type": "string", "description": "Urgency level (low, medium, high, critical)."},
                 "co_sponsors": {"type": "array", "items": {"type": "string"}, "description": "Member names co-sponsoring this proposal."},
                 "advice_deadline": {"type": "string", "description": "When advice-gathering closes (ISO date, YYYY-MM-DD)."},
                 "consent_deadline": {"type": "string", "description": "When consent voting closes (ISO date, YYYY-MM-DD)."},
@@ -2380,11 +2380,11 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 14
     ToolDef(
         name="get_active_members",
-        description="Get all active ecosystem members. Supports optional profile filter (co_creator, builder, townhall).",
+        description="Get all active ecosystem members. Supports optional profile filter (co_creator, builder, collaborator, townhall).",
         parameters={
             "type": "object",
             "properties": {
-                "profile": {"type": "string", "description": "Filter by member profile."},
+                "profile": {"type": "string", "enum": ["co_creator", "builder", "collaborator", "townhall"], "description": "Filter by member profile."},
             },
             "required": [],
         },
@@ -2400,8 +2400,8 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "title": {"type": "string", "description": "Concise neutral framing (5-15 words). Avoid blame language."},
                 "description": {"type": "string", "description": "Full description of the conflict: what happened, when, who was involved, what's at stake. 3-10 sentences minimum."},
                 "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"], "description": "Severity level."},
-                "scope": {"type": "string", "enum": ["interpersonal", "circle", "cross_circle", "ecosystem"], "description": "Scope of conflict."},
-                "urgency": {"type": "string", "enum": ["normal", "elevated", "emergency"], "description": "Urgency level."},
+                "scope": {"type": "string", "enum": ["individual", "interpersonal", "role", "domain", "cross-domain", "circle", "cross-circle", "ecosystem", "cross-ecosystem", "structural"], "description": "Scope of conflict."},
+                "urgency": {"type": "string", "enum": ["low", "medium", "high", "critical"], "description": "Urgency level."},
                 "safety_flag": {"type": "boolean", "description": "True if safety is at risk."},
                 "parties": {"type": "array", "items": {"type": "string"}, "description": "Names of involved parties."},
                 "reporter_id": {"type": "string", "description": "UUID of the member who reported the conflict."},
@@ -2517,7 +2517,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "contact_email": {"type": "string", "description": "Primary contact email."},
                 "governance_summary": {"type": "string", "description": "Brief governance model summary."},
                 "tags": {"type": "object", "description": "Descriptive tags."},
-                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Visibility (default: public)."},
+                "visibility": {"type": "string", "enum": ["public", "private", "unlisted"], "description": "Visibility (default: public)."},
             },
             "required": ["name"],
         },
@@ -2596,8 +2596,8 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Partial name match (e.g. 'escher' matches Escherbridge)."},
-                "status": {"type": "string", "enum": ["active", "inactive", "proposed"], "description": "Filter by ecosystem status."},
-                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Filter by visibility."},
+                "status": {"type": "string", "enum": ["active", "forming", "inactive"], "description": "Filter by ecosystem status."},
+                "visibility": {"type": "string", "enum": ["public", "private", "unlisted"], "description": "Filter by visibility."},
             },
             "required": [],
         },

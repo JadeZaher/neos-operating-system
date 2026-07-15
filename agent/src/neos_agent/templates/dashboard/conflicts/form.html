@@ -27,9 +27,15 @@
       <label for="scope" class="block text-sm font-medium text-neos-text mb-1">Scope</label>
       <select id="scope" name="scope" required
               class="w-full px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent">
+        <option value="individual" {% if conflict and conflict.scope == 'individual' %}selected{% endif %}>Individual</option>
         <option value="interpersonal" {% if conflict and conflict.scope == 'interpersonal' %}selected{% endif %}>Interpersonal — Between individuals</option>
         <option value="role" {% if conflict and conflict.scope == 'role' %}selected{% endif %}>Role — Related to stewardship roles</option>
         <option value="domain" {% if conflict and conflict.scope == 'domain' %}selected{% endif %}>Domain — Between circles or domains</option>
+        <option value="cross-domain" {% if conflict and conflict.scope == 'cross-domain' %}selected{% endif %}>Cross-Domain</option>
+        <option value="circle" {% if conflict and conflict.scope == 'circle' %}selected{% endif %}>Circle</option>
+        <option value="cross-circle" {% if conflict and conflict.scope == 'cross-circle' %}selected{% endif %}>Cross-Circle</option>
+        <option value="ecosystem" {% if conflict and conflict.scope == 'ecosystem' %}selected{% endif %}>Ecosystem-wide</option>
+        <option value="cross-ecosystem" {% if conflict and conflict.scope == 'cross-ecosystem' %}selected{% endif %}>Cross-Ecosystem</option>
         <option value="structural" {% if conflict and conflict.scope == 'structural' %}selected{% endif %}>Structural — Systemic or governance-level</option>
       </select>
     </div>

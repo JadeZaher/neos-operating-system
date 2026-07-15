@@ -90,6 +90,7 @@
             <option value="" disabled {% if not (member is defined and member and member.profile) %}selected{% endif %}>Select profile type...</option>
             <option value="co_creator" {% if member is defined and member and member.profile == 'co_creator' %}selected{% endif %}>Co-Creator</option>
             <option value="builder" {% if member is defined and member and member.profile == 'builder' %}selected{% endif %}>Builder</option>
+            <option value="collaborator" {% if member is defined and member and member.profile == 'collaborator' %}selected{% endif %}>Collaborator</option>
             <option value="townhall" {% if member is defined and member and member.profile == 'townhall' %}selected{% endif %}>Town Hall</option>
           </select>
           <p class="mt-1 text-xs text-neos-muted">Determines governance participation level and Current-See allocation</p>

@@ -146,6 +146,12 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.oauth import oauth_bp
     from neos_agent.api.orientation import orientation_api_bp
     from neos_agent.api.media import media_api_bp
+    from neos_agent.api.ethos_access import ethos_access_api_bp
+    from neos_agent.api.badges import badges_api_bp
+    from neos_agent.api.teams import teams_api_bp
+    from neos_agent.api.quiz_assignments import quiz_assignments_api_bp
+    from neos_agent.api.settings import settings_api_bp
+    from neos_agent.api.ctc_handoff import ctc_handoff_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -173,6 +179,12 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(oauth_bp)
     app.blueprint(orientation_api_bp)
     app.blueprint(media_api_bp)
+    app.blueprint(ethos_access_api_bp)
+    app.blueprint(badges_api_bp)
+    app.blueprint(teams_api_bp)
+    app.blueprint(quiz_assignments_api_bp)
+    app.blueprint(settings_api_bp)
+    app.blueprint(ctc_handoff_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views

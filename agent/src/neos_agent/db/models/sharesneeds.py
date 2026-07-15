@@ -53,10 +53,10 @@ class SharesNeeds(TimestampMixin, Base):
     type: Mapped[str] = mapped_column(String(10), nullable=False)  # "share" | "need"
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # skill, resource, knowledge, space, labor
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # technology, resources, skills, knowledge, infrastructure, funding, space, labor, other
     capacity: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # availability level
     tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="public")  # public, ecosystem, domain
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="public")  # public, ecosystem, private
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")  # active, fulfilled, withdrawn
 
 

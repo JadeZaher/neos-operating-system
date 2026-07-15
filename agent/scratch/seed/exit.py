@@ -80,8 +80,8 @@ EXIT_RECORDS: list[dict] = [
         "id": EXIT_IN_PROGRESS,
         "ecosystem_id": ECOSYSTEM_ID,
         "member_id": None,  # set in run.py — Rani's Member ID
-        "exit_type": "cooling_off",
-        "status": "in_progress",
+        "exit_type": "standard",
+        "status": "cooling_off",
         "declared_date": date(2025, 6, 5),
         "target_completion_date": date(2025, 7, 5),
         "coordinator_id": None,  # set in run.py — Ketut Arsana

@@ -36,7 +36,7 @@ AGREEMENTS: list[dict] = [
         "id": AG_UAF,
         "ecosystem_id": ECOSYSTEM_ID,
         "agreement_id": "AG-UAF-001",
-        "type": "universal_field",
+        "type": "uaf",
         "title": "OmniOne Universal Agreement Field (UAF) v1.0",
         "version": "1.0",
         "status": "ratified",
@@ -72,7 +72,7 @@ AGREEMENTS: list[dict] = [
             "**Consent.**  By signing below, I consent to these ten structural "
             "principles and enter the OmniOne ecosystem."
         ),
-        "hierarchy_level": "uaf",
+        "hierarchy_level": "foundational",
         "parent_agreement_id": None,
         "review_date": date(2026, 12, 15),
         "sunset_date": None,
@@ -112,7 +112,7 @@ AGREEMENTS: list[dict] = [
             "are made through ACT, not voting.\n\n"
             "**Review.**  This Master Plan is reviewed annually through the ACT process."
         ),
-        "hierarchy_level": "ecosystem",
+        "hierarchy_level": "operational",
         "parent_agreement_id": AG_UAF,
         "review_date": date(2026, 12, 15),
         "sunset_date": None,
@@ -152,7 +152,7 @@ AGREEMENTS: list[dict] = [
             "Damage is reported, not hidden.  Repeated access violations trigger "
             "a coaching intervention."
         ),
-        "hierarchy_level": "access",
+        "hierarchy_level": "domain",
         "parent_agreement_id": AG_MASTER_PLAN,
         "review_date": date(2026, 9, 1),
         "sunset_date": None,
@@ -189,7 +189,7 @@ AGREEMENTS: list[dict] = [
             "transition to the next steward.\n\n"
             "This commitment is reviewed every 6 months by the AE ETHOS."
         ),
-        "hierarchy_level": "stewardship",
+        "hierarchy_level": "local",
         "parent_agreement_id": AG_SHUR_ACCESS,
         "review_date": date(2026, 6, 1),
         "sunset_date": None,
@@ -232,7 +232,7 @@ AGREEMENTS: list[dict] = [
             "7. **Exit from TH.**  A member may leave TH at any time.  Leaving TH "
             "does not automatically mean leaving OmniOne."
         ),
-        "hierarchy_level": "ethos",
+        "hierarchy_level": "domain",
         "parent_agreement_id": AG_MASTER_PLAN,
         "review_date": date(2026, 6, 15),
         "sunset_date": None,
@@ -271,7 +271,7 @@ AGREEMENTS: list[dict] = [
             "6. **Conflict.**  Disputes over land or resource use route through "
             "Kai's triage process before escalating."
         ),
-        "hierarchy_level": "ethos",
+        "hierarchy_level": "domain",
         "parent_agreement_id": AG_MASTER_PLAN,
         "review_date": date(2026, 6, 15),
         "sunset_date": None,

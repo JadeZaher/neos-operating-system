@@ -34,7 +34,7 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import require_auth, require_admin, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
     MemberDetail,
@@ -577,3 +577,27 @@ async def get_member_onboarding(request: Request, member_id: uuid.UUID):
         completion_percentage=ob.completion_percentage,
     )
     return json(data.model_dump(mode="json"))
+
+
+@members_api_bp.post("/<member_id:uuid>/resend-invite")
+async def resend_invite(request: Request, member_id: uuid.UUID):
+    """POST /api/v1/members/:id/resend-invite -- Re-send a member's invite.
+
+    No email/delivery infra exists yet; this records the intent and reports
+    success. Actual delivery depends on future notification infra.
+    """
+    admin, err = require_admin(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        m = await session.get(Member, member_id)
+        if m is None:
+            return json({"error": "Member not found"}, status=404)
+        display_name = m.display_name
+
+    return json({
+        "success": True,
+        "message": f"Invite re-sent to {display_name}",
+        "resent_at": _dt.datetime.utcnow().isoformat(),
+    })

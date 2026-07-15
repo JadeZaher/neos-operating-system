@@ -492,6 +492,10 @@ async def send_message(request: Request):
 
             await response.write(_sse_event("thinking", json.dumps({"step": "Analyzing your request..."})))
 
+            # Tracks whether any assistant-facing "append" event was written this request,
+            # so we can fall back to a graceful message instead of a silent blank bubble.
+            assistant_appended = False
+
             for _round in range(_MAX_TOOL_ROUNDS):
                 # (A6-b) From round 3 onward, drop the oldest tool-turn pair
                 # (assistant-with-tool_calls + its tool results) appended during
@@ -530,6 +534,7 @@ async def send_message(request: Request):
 
                 if resp is None:
                     await response.write(_sse_event("append", "AI service is not available."))
+                    assistant_appended = True
                     break
 
                 # Accumulate usage
@@ -542,12 +547,19 @@ async def send_message(request: Request):
                 choices = getattr(resp, "choices", None)
                 choice = choices[0] if choices else None
                 if not choice:
+                    # Empty choices from the LLM — avoid a silent blank bubble.
+                    await response.write(_sse_event(
+                        "append",
+                        "I wasn't able to generate a response for that. Please try rephrasing your question or try again in a moment.",
+                    ))
+                    assistant_appended = True
                     break
 
                 assistant_msg = choice.message
 
                 if assistant_msg.content:
                     await response.write(_sse_event("append", assistant_msg.content))
+                    assistant_appended = True
 
                 # Check for tool calls
                 tool_calls = getattr(assistant_msg, "tool_calls", None)
@@ -669,6 +681,14 @@ async def send_message(request: Request):
                         )
                         if session_ctx:
                             system_prompt += f"\n\n## Session Context\n{session_ctx}"
+
+            # Fallback if the loop ended (e.g. max rounds exhausted) without ever
+            # appending assistant-facing content — avoid a silent blank bubble.
+            if not assistant_appended:
+                await response.write(_sse_event(
+                    "append",
+                    "I wasn't able to generate a response for that. Please try rephrasing your question or try again in a moment.",
+                ))
 
             # --- Persist session ---
             session_id = await _save_session(

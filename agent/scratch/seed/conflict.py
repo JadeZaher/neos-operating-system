@@ -144,7 +144,7 @@ CONFLICT_CASES: list[dict] = [
         "scope": "circle",
         "tier": 3,
         "root_cause_category": "agreement_breach",
-        "urgency": "elevated",
+        "urgency": "high",
         "safety_flag": False,
         "parties": {
             "reporter": "[contributor — name withheld per harm circle protocol]",
@@ -202,7 +202,7 @@ CONFLICT_CASES: list[dict] = [
         "scope": "ecosystem",
         "tier": 4,
         "root_cause_category": "structural_deficiency",
-        "urgency": "normal",
+        "urgency": "medium",
         "safety_flag": False,
         "parties": {
             "reporter": "Ayu Pertiwi (inter-ETHOS liaison)",

@@ -90,6 +90,7 @@
             <option value="operational" {% if not (proposal is defined and proposal) or proposal.type == 'operational' %}selected{% endif %}>Operational</option>
             <option value="structural" {% if proposal is defined and proposal and proposal.type == 'structural' %}selected{% endif %}>Structural</option>
             <option value="policy" {% if proposal is defined and proposal and proposal.type == 'policy' %}selected{% endif %}>Policy</option>
+            <option value="resource" {% if proposal is defined and proposal and proposal.type == 'resource' %}selected{% endif %}>Resource</option>
           </select>
           <p class="mt-1 text-xs text-neos-muted">Determines the ACT process requirements</p>
         </div>
@@ -104,6 +105,8 @@
             <option value="" {% if not (proposal is defined and proposal and proposal.decision_type) %}selected{% endif %}>Not specified</option>
             <option value="consent" {% if proposal is defined and proposal and proposal.decision_type == 'consent' %}selected{% endif %}>Consent (no reasoned objection)</option>
             <option value="consensus" {% if proposal is defined and proposal and proposal.decision_type == 'consensus' %}selected{% endif %}>Consensus (all agree)</option>
+            <option value="advice" {% if proposal is defined and proposal and proposal.decision_type == 'advice' %}selected{% endif %}>Advice (advisory only)</option>
+            <option value="autocratic" {% if proposal is defined and proposal and proposal.decision_type == 'autocratic' %}selected{% endif %}>Autocratic (single decision-maker)</option>
           </select>
           <p class="mt-1 text-xs text-neos-muted">Consent for ACT decisions, consensus for OSC/Master Plan</p>
         </div>
@@ -144,11 +147,12 @@
           name="urgency"
           class="w-full sm:w-48 px-3 py-2 text-sm border border-neos-border rounded-lg bg-neos-surface text-neos-text focus:outline-none focus:ring-2 focus:ring-neos-accent focus:border-transparent"
         >
-          <option value="standard" {% if not (proposal is defined and proposal) or proposal.urgency == 'standard' %}selected{% endif %}>Standard</option>
-          <option value="elevated" {% if proposal is defined and proposal and proposal.urgency == 'elevated' %}selected{% endif %}>Elevated</option>
-          <option value="emergency" {% if proposal is defined and proposal and proposal.urgency == 'emergency' %}selected{% endif %}>Emergency</option>
+          <option value="low" {% if proposal is defined and proposal and proposal.urgency == 'low' %}selected{% endif %}>Low</option>
+          <option value="medium" {% if not (proposal is defined and proposal) or proposal.urgency == 'medium' %}selected{% endif %}>Medium</option>
+          <option value="high" {% if proposal is defined and proposal and proposal.urgency == 'high' %}selected{% endif %}>High</option>
+          <option value="critical" {% if proposal is defined and proposal and proposal.urgency == 'critical' %}selected{% endif %}>Critical</option>
         </select>
-        <p class="mt-1 text-xs text-neos-muted">Emergency proposals bypass normal advice windows</p>
+        <p class="mt-1 text-xs text-neos-muted">Critical proposals bypass normal advice windows</p>
       </div>
 
       {# Proposed Change #}

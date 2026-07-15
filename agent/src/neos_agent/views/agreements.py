@@ -132,7 +132,7 @@ async def create_agreement(request: Request):
                 id=uuid.uuid4(),
                 ecosystem_id=eco_id,
                 agreement_id=form.get("agreement_id", ""),
-                type=form.get("type", "operational"),
+                type=form.get("type", "ecosystem"),
                 title=form.get("title", ""),
                 version=form.get("version", "1.0"),
                 status="draft",

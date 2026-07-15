@@ -45,7 +45,7 @@ class Member(TimestampMixin, Base):
     member_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), nullable=False, default="prospective")
-    profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, townhall
+    profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, collaborator, townhall
     skills_offered: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     skills_needed: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     interests: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
