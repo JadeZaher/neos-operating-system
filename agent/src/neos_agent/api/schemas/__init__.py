@@ -69,6 +69,7 @@ from .members import (
     MemberUpdateRequest,
     OnboardingChecklistItem,
     OnboardingSnapshot,
+    RoleUpdateRequest,
     StatusTransitionRequest,
 )
 
