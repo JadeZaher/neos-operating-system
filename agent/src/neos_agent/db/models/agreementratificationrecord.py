@@ -33,13 +33,25 @@ from ._base import Base, GUID, TimestampMixin
 
 class AgreementRatificationRecord(TimestampMixin, Base):
     __tablename__ = "agreement_ratification_records"
-    __table_args__ = (Index("ix_agreement_ratification_records_agreement_id", "agreement_id"),)
+    __table_args__ = (
+        Index("ix_agreement_ratification_records_agreement_id", "agreement_id"),
+        Index("ix_agreement_ratification_records_member_id", "member_id"),
+        UniqueConstraint(
+            "agreement_id", "member_id", "agreement_version",
+            name="uq_agreement_member_version_consent",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     agreement_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("agreements.id"), nullable=False)
+    member_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), ForeignKey("members.id"), nullable=True)
+    agreement_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     participant: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     position: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    objection_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    withdrawn_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    alignment_awarded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     agreement: Mapped[Agreement] = relationship(back_populates="ratification_records")

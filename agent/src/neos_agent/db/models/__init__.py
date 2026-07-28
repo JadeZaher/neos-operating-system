@@ -19,6 +19,10 @@ from .domainmetric import DomainMetric  # noqa: F401
 from .agreement import Agreement  # noqa: F401
 from .agreementversion import AgreementVersion  # noqa: F401
 from .agreementratificationrecord import AgreementRatificationRecord  # noqa: F401
+from .agreementceremony import AgreementCeremony  # noqa: F401
+from .agreementmemberconsent import AgreementMemberConsent  # noqa: F401
+from .agreementrequirement import AgreementRequirement  # noqa: F401
+from .memberalignmentevent import MemberAlignmentEvent  # noqa: F401
 from .amendmentrecord import AmendmentRecord  # noqa: F401
 from .reviewrecord import ReviewRecord  # noqa: F401
 from .proposal import Proposal  # noqa: F401
@@ -50,6 +54,7 @@ from .conversationlink import ConversationLink  # noqa: F401
 from .circlemembership import CircleMembership  # noqa: F401
 from .sharesneeds import SharesNeeds  # noqa: F401
 from .collaboration import Collaboration  # noqa: F401
+from .collaborationapproval import CollaborationApproval  # noqa: F401
 from .compliancesummary import ComplianceSummary  # noqa: F401
 from .pushsubscription import PushSubscription  # noqa: F401
 from .journeymap import JourneyMap  # noqa: F401
@@ -77,6 +82,10 @@ __all__ = [
     "Agreement",
     "AgreementVersion",
     "AgreementRatificationRecord",
+    "AgreementCeremony",
+    "AgreementMemberConsent",
+    "AgreementRequirement",
+    "MemberAlignmentEvent",
     "AmendmentRecord",
     "ReviewRecord",
     "Proposal",
@@ -108,6 +117,7 @@ __all__ = [
     "CircleMembership",
     "SharesNeeds",
     "Collaboration",
+    "CollaborationApproval",
     "ComplianceSummary",
     "PushSubscription",
     "JourneyMap",

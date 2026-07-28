@@ -30,6 +30,7 @@ from neos_agent.api.schemas.domains import (
 )
 from neos_agent.db.models import (
     Domain,
+    CircleMembership,
     DomainElement,
     DomainMetric,
     Member,
@@ -38,6 +39,7 @@ from neos_agent.db.models import (
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.services.fingerprint import generate_fingerprint
+from neos_agent.services.agreement_consent import missing_agreement_consents
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +314,68 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
 
 
 # ---------------------------------------------------------------------------
+# Domain participation
+# ---------------------------------------------------------------------------
+
+
+@domains_api_bp.post("/<domain_id:uuid>/participation")
+async def join_domain_participation(request: Request, domain_id: uuid.UUID):
+    """Join a domain after satisfying its ecosystem's agreement gates."""
+    auth_member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    role = body.get("role", "member")
+    if role != "member":
+        return json({"error": "Participation grants member access; stewardship roles require a separate governance action"}, status=403)
+
+    async with request.app.ctx.db() as session:
+        domain = await session.get(Domain, domain_id)
+        if domain is None:
+            return json({"error": "Domain not found"}, status=404)
+        local_member = await session.scalar(select(Member).where(
+            Member.user_id == auth_member.user_id,
+            Member.ecosystem_id == domain.ecosystem_id,
+        ))
+        if local_member is None or local_member.current_status != "active":
+            return json({"error": "Active ecosystem membership is required for domain participation"}, status=403)
+
+        missing = await missing_agreement_consents(
+            session, local_member.id, domain.ecosystem_id, "domain", domain.id
+        )
+        if missing:
+            return json({
+                "error": "Agreement consent is required before domain participation",
+                "required_agreements": [
+                    {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                    for agreement in missing
+                ],
+            }, status=409)
+
+        participation = await session.scalar(select(CircleMembership).where(
+            CircleMembership.domain_id == domain.id,
+            CircleMembership.member_id == local_member.id,
+        ))
+        if participation is None:
+            participation = CircleMembership(
+                id=uuid.uuid4(), domain_id=domain.id, member_id=local_member.id,
+                role=role, status="active", joined_date=_dt.date.today(),
+            )
+            session.add(participation)
+        else:
+            participation.status = "active"
+        await session.commit()
+
+    return json({
+        "status": "joined",
+        "domain_id": str(domain_id),
+        "member_id": str(local_member.id),
+        "role": role,
+    }, status=201)
+
+
+# ---------------------------------------------------------------------------
 # Domain Quiz Management
 # ---------------------------------------------------------------------------
 
@@ -531,6 +595,7 @@ async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
         items = [
             {
                 "id": str(r.id),
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "ecosystem_id": str(r.ecosystem_id),
                 "domain_id": str(r.domain_id),
                 "type": r.type,
@@ -547,4 +612,3 @@ async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
         ]
 
     return json({"items": items})
-                "author_member_id": str(r.author_member_id) if r.author_member_id else None,

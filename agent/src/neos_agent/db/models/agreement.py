@@ -60,10 +60,17 @@ class Agreement(TimestampMixin, Base):
     ratification_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    requires_explicit_consent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    prerequisite_scopes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+    prerequisite_domain_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    alignment_points: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="agreements")
     parent_agreement: Mapped[Optional[Agreement]] = relationship(remote_side="Agreement.id")
     ratification_records: Mapped[list[AgreementRatificationRecord]] = relationship(back_populates="agreement")
+    ceremonies: Mapped[list["AgreementCeremony"]] = relationship(
+        back_populates="agreement", order_by="AgreementCeremony.created_at"
+    )
     amendment_records: Mapped[list[AmendmentRecord]] = relationship(
         back_populates="agreement", foreign_keys="AmendmentRecord.parent_agreement_id"
     )

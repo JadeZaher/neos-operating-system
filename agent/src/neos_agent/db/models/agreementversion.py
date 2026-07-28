@@ -53,5 +53,9 @@ class AgreementVersion(TimestampMixin, Base):
     version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     change_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     changed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    requires_explicit_consent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    prerequisite_scopes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    prerequisite_domain_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    alignment_points: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
     agreement: Mapped[Agreement] = relationship(back_populates="versions")

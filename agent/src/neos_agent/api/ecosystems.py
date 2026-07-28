@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from neos_agent.db.models import Domain, Ecosystem, Member, SharesNeeds, User
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
+from neos_agent.services.agreement_consent import missing_agreement_consents
 
 from .helpers import _escape_like, require_auth
 from .schemas import (
@@ -343,8 +344,8 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Join an ecosystem.
 
-    Creates an active member record for the authenticated user (auto-approved).
-    Returns JSON: {"status": "joined", "message": "..."}
+    Creates a pending member when agreement consent is a participation gate.
+    The member becomes active after attesting to each required agreement.
     """
     member, err = require_auth(request)
     if err:
@@ -367,24 +368,43 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Already a member of this ecosystem"}, status=409)
 
-        # Auto-approve: create an active member record immediately
+        # A gate is evaluated only after a member identity exists so consent is
+        # self-attested, auditable, and bound to this ecosystem membership.
         mid = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
         new_member = Member(
+            id=uuid.uuid4(),
             ecosystem_id=ecosystem_id,
             user_id=user_id,
             member_id=mid,
             display_name=member.display_name,
-            current_status="active",
-            onboarding_status="complete",
+            current_status="pending_consent",
+            onboarding_status="agreement_consent_required",
         )
         db.add(new_member)
+        await db.flush()
+        missing = await missing_agreement_consents(
+            db, new_member.id, ecosystem_id, "ecosystem"
+        )
+        if not missing:
+            new_member.current_status = "active"
+            new_member.onboarding_status = "complete"
         await db.commit()
 
         eco_name = eco.name
 
+    if missing:
+        return json({
+            "status": "consent_required",
+            "message": f"Consent to the ecosystem agreements before participating in {eco_name}.",
+            "required_agreements": [
+                {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                for agreement in missing
+            ],
+        }, status=201)
     return json({
         "status": "joined",
         "message": f"Welcome to {eco_name}! You are now an active member.",
+        "required_agreements": [],
     }, status=201)
 
 

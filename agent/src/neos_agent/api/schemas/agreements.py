@@ -3,7 +3,12 @@
 import datetime as _dt
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+from neos_agent.api.agreement_vocabulary import (
+    PREREQUISITE_SCOPES,
+    canonical_agreement_type,
+)
 
 
 class AgreementListItem(BaseModel):
@@ -30,6 +35,30 @@ class RatificationRecordSchema(BaseModel):
     date: _dt.date | None = None
 
 
+class AgreementCeremonySchema(BaseModel):
+    id: UUID
+    stage: str
+    outcome: str
+    evidence: str | None = None
+    completed_at: _dt.datetime
+
+
+class AgreementConsentSummary(BaseModel):
+    required: int
+    consented: int
+    outstanding: int
+    complete: bool
+
+
+class AgreementMemberConsentSchema(BaseModel):
+    id: UUID
+    member_id: UUID
+    agreement_version: str
+    attested_at: _dt.datetime
+    withdrawn_at: _dt.datetime | None = None
+    alignment_awarded: int = 0
+
+
 class AgreementDetail(AgreementListItem):
     shared_ecosystem_ids: list[UUID] | None = None
     text: str | None = None
@@ -39,6 +68,13 @@ class AgreementDetail(AgreementListItem):
     created_date: _dt.date | None = None
     updated_at: _dt.datetime
     ratification_records: list[RatificationRecordSchema] = []
+    ceremonies: list[AgreementCeremonySchema] = []
+    requires_explicit_consent: bool = True
+    prerequisite_scopes: list[str] = []
+    prerequisite_domain_ids: list[UUID] = []
+    alignment_points: int = 5
+    consent_summary: AgreementConsentSummary | None = None
+    current_member_consent: AgreementMemberConsentSchema | None = None
 
 
 class AgreementCreateRequest(BaseModel):
@@ -53,9 +89,35 @@ class AgreementCreateRequest(BaseModel):
     affected_parties: list | dict | None = None
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
+    requires_explicit_consent: bool = True
+    prerequisite_scopes: list[str] = Field(default_factory=list)
+    prerequisite_domain_ids: list[UUID] = Field(default_factory=list)
+    alignment_points: int = Field(default=5, ge=0, le=25)
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        return canonical_agreement_type(value)
+
+    @field_validator("requires_explicit_consent")
+    @classmethod
+    def require_explicit_consent(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("All agreements require explicit member consent")
+        return True
+
+    @field_validator("prerequisite_scopes")
+    @classmethod
+    def validate_prerequisite_scopes(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip().lower() for value in values))
+        invalid = set(normalized) - PREREQUISITE_SCOPES
+        if invalid:
+            raise ValueError(f"Unsupported prerequisite scopes: {', '.join(sorted(invalid))}")
+        return normalized
 
 
 class AgreementUpdateRequest(BaseModel):
+    type: str | None = None
     title: str | None = None
     text: str | None = None
     proposer: str | None = None
@@ -65,7 +127,33 @@ class AgreementUpdateRequest(BaseModel):
     shared_ecosystem_ids: list[UUID] | None = None
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
-    status: str | None = None
+    prerequisite_scopes: list[str] | None = None
+    prerequisite_domain_ids: list[UUID] | None = None
+    alignment_points: int | None = Field(default=None, ge=0, le=25)
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str | None) -> str | None:
+        return canonical_agreement_type(value) if value is not None else None
+
+    @field_validator("prerequisite_scopes")
+    @classmethod
+    def validate_prerequisite_scopes(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        normalized = list(dict.fromkeys(value.strip().lower() for value in values))
+        invalid = set(normalized) - PREREQUISITE_SCOPES
+        if invalid:
+            raise ValueError(f"Unsupported prerequisite scopes: {', '.join(sorted(invalid))}")
+        return normalized
+
+
+class AgreementConsentRequest(BaseModel):
+    attestation: str = Field(min_length=8, max_length=500)
+
+
+class AgreementConsentWithdrawalRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
 
 
 class AmendmentRecordSchema(BaseModel):

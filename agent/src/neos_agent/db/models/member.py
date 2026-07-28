@@ -54,6 +54,7 @@ class Member(TimestampMixin, Base):
     last_governance_activity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     privacy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    agreement_alignment_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="members")

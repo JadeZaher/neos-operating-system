@@ -13,16 +13,31 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+import datetime as _dt
 
 from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import case, func, select
 
 from neos_agent.db.course_models import Course, Quiz, QuizResult
-from neos_agent.db.models import Ecosystem, Member, SharesNeeds, Collaboration, Domain
+from neos_agent.db.models import (
+    CircleMembership,
+    Collaboration,
+    CollaborationApproval,
+    Domain,
+    Ecosystem,
+    Member,
+    SharesNeeds,
+)
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, require_admin
+from neos_agent.services.agreement_consent import (
+    missing_agreement_consents,
+    required_agreements_for_scope,
+)
 
 logger = logging.getLogger(__name__)
+
+_COLLABORATION_TIERS = {"observe", "cooperate", "federate", "integrate"}
 
 discover_api_bp = Blueprint("discover_api", url_prefix="/api/v1/discover")
 
@@ -30,13 +45,6 @@ discover_api_bp = Blueprint("discover_api", url_prefix="/api/v1/discover")
 def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
 
-
-# --- Endpoints ---
-
-
-@discover_api_bp.get("/")
-async def discover_feed(request: Request):
-    """GET /api/v1/discover -- Discover quizzes and ecosystems.
 
 def _shares_needs_stats(stats) -> dict:
     return {
@@ -49,6 +57,13 @@ def _shares_needs_stats(stats) -> dict:
         "withdrawn": stats.withdrawn or 0,
     }
 
+
+# --- Endpoints ---
+
+
+@discover_api_bp.get("/")
+async def discover_feed(request: Request):
+    """GET /api/v1/discover -- Discover quizzes and ecosystems.
 
     Query params:
         q        – search term (matches quiz title / ecosystem name+description)
@@ -306,6 +321,7 @@ async def list_shares_needs(request: Request):
         for r in rows:
             items.append({
                 "id": str(r.id),
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "ecosystem_id": str(r.ecosystem_id),
                 "ecosystem_name": eco_names.get(r.ecosystem_id),
                 "domain_id": str(r.domain_id),
@@ -313,7 +329,6 @@ async def list_shares_needs(request: Request):
                 "type": r.type,
                 "title": r.title,
                 "description": r.description,
-                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "category": r.category,
                 "capacity": r.capacity,
                 "tags": r.tags if isinstance(r.tags, list) else [],
@@ -426,6 +441,7 @@ async def admin_list_shares_needs(request: Request):
         for r in rows:
             items.append({
                 "id": str(r.id),
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "ecosystem_id": str(r.ecosystem_id),
                 "ecosystem_name": eco_names.get(r.ecosystem_id),
                 "domain_id": str(r.domain_id),
@@ -433,7 +449,6 @@ async def admin_list_shares_needs(request: Request):
                 "type": r.type,
                 "title": r.title,
                 "description": r.description,
-                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "category": r.category,
                 "capacity": r.capacity,
                 "tags": r.tags if isinstance(r.tags, list) else [],
@@ -490,6 +505,44 @@ async def _require_auth_for_shares_needs(request: Request, session, sn_uuid: uui
     return member, record, None
 
 
+async def _publication_gate_error(session, record: SharesNeeds):
+    """Return a response when a publication's author no longer may participate."""
+    domain = await session.get(Domain, record.domain_id)
+    if domain is None or domain.ecosystem_id != record.ecosystem_id:
+        return json({"error": "The publication domain must belong to its ecosystem"}, status=400)
+    author = await session.scalar(select(Member).where(
+        Member.id == record.author_member_id,
+        Member.ecosystem_id == record.ecosystem_id,
+        Member.current_status == "active",
+    ))
+    if author is None:
+        return json({"error": "The publication author needs active ecosystem membership"}, status=409)
+    required = await required_agreements_for_scope(
+        session, record.ecosystem_id, "domain", record.domain_id
+    )
+    if not required:
+        return None
+    participation = await session.scalar(select(CircleMembership).where(
+        CircleMembership.domain_id == record.domain_id,
+        CircleMembership.member_id == author.id,
+        CircleMembership.status == "active",
+    ))
+    if participation is None:
+        return json({"error": "The publication author needs active domain participation"}, status=409)
+    missing = await missing_agreement_consents(
+        session, author.id, record.ecosystem_id, "domain", record.domain_id
+    )
+    if missing:
+        return json({
+            "error": "Agreement consent is required before publishing in this domain",
+            "required_agreements": [
+                {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                for agreement in missing
+            ],
+        }, status=409)
+    return None
+
+
 @discover_api_bp.put("/shares-needs/<sn_id:str>")
 async def update_share_need(request: Request, sn_id: str):
     """PUT /api/v1/discover/shares-needs/<id> -- Update a share or need.
@@ -502,6 +555,8 @@ async def update_share_need(request: Request, sn_id: str):
         return json({"error": "Invalid ID"}, status=400)
 
     body = request.json or {}
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
     # Regular members may not reassign ecosystem_id or domain_id
     member, err = require_auth(request)
     if err:
@@ -517,20 +572,11 @@ async def update_share_need(request: Request, sn_id: str):
         "visibility",
     }
     if is_admin:
-    if not isinstance(body, dict):
-        return json({"error": "JSON object required"}, status=400)
         allowed_fields |= {"domain_id", "ecosystem_id"}
     update_data = {k: v for k, v in body.items() if k in allowed_fields}
 
     if not update_data:
         return json({"error": "No valid fields to update"}, status=400)
-
-    async with request.app.ctx.db() as session:
-        member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
-        if auth_err:
-            return auth_err
-
-        for key, value in update_data.items():
     if "type" in update_data and update_data["type"] not in ("share", "need", "solution"):
         return json({"error": "type must be 'share', 'need', or 'solution'"}, status=400)
     if "visibility" in update_data and update_data["visibility"] not in (
@@ -572,13 +618,24 @@ async def update_share_need(request: Request, sn_id: str):
             not isinstance(description, str) or len(description) > 20_000
         ):
             return json({"error": "description must be at most 20000 characters"}, status=400)
+
+    async with request.app.ctx.db() as session:
+        member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
+        if auth_err:
+            return auth_err
+        for key, value in update_data.items():
             setattr(record, key, value)
+        if record.status == "active":
+            gate_error = await _publication_gate_error(session, record)
+            if gate_error:
+                return gate_error
 
         await session.commit()
         await session.refresh(record)
 
     return json({
         "id": str(record.id),
+        "author_member_id": str(record.author_member_id) if record.author_member_id else None,
         "ecosystem_id": str(record.ecosystem_id),
         "domain_id": str(record.domain_id),
         "type": record.type,
@@ -586,7 +643,6 @@ async def update_share_need(request: Request, sn_id: str):
         "description": record.description,
         "category": record.category,
         "capacity": record.capacity,
-        "author_member_id": str(record.author_member_id) if record.author_member_id else None,
         "tags": record.tags if isinstance(record.tags, list) else [],
         "visibility": record.visibility,
         "status": record.status,
@@ -606,6 +662,8 @@ async def update_share_need_status(request: Request, sn_id: str):
         return json({"error": "Invalid ID"}, status=400)
 
     body = request.json or {}
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
     new_status = body.get("status")
     if new_status not in ("active", "fulfilled", "withdrawn"):
         return json({"error": "Status must be 'active', 'fulfilled', or 'withdrawn'"}, status=400)
@@ -613,9 +671,11 @@ async def update_share_need_status(request: Request, sn_id: str):
     async with request.app.ctx.db() as session:
         member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
         if auth_err:
-    if not isinstance(body, dict):
-        return json({"error": "JSON object required"}, status=400)
             return auth_err
+        if new_status == "active":
+            gate_error = await _publication_gate_error(session, record)
+            if gate_error:
+                return gate_error
 
         old_status = record.status
         record.status = new_status
@@ -673,6 +733,8 @@ async def create_share_need(request: Request):
         return err
 
     body = request.json or {}
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
     eco_id_str = body.get("ecosystem_id")
     domain_id_str = body.get("domain_id")
     sn_type = body.get("type")
@@ -680,8 +742,6 @@ async def create_share_need(request: Request):
 
     if not eco_id_str or not domain_id_str or not sn_type or not title:
         return json({"error": "ecosystem_id, domain_id, type, and title are required"}, status=400)
-    if not isinstance(body, dict):
-        return json({"error": "JSON object required"}, status=400)
     if len(title) > 255:
         return json({"error": "title must be 1-255 characters"}, status=400)
     if sn_type not in ("share", "need", "solution"):
@@ -727,28 +787,51 @@ async def create_share_need(request: Request):
             select(Member).where(
                 Member.ecosystem_id == eco_id,
                 Member.user_id == member.user_id,
+                Member.current_status == "active",
             )
         )
         if not member_check:
             return json({"error": "You are not a member of the specified ecosystem"}, status=403)
 
-        record = SharesNeeds(
-            id=uuid.uuid4(),
-                Member.current_status == "active",
-            ecosystem_id=eco_id,
-            domain_id=domain_id,
-            type=sn_type,
-            title=title,
-            description=body.get("description"),
         domain = await session.get(Domain, domain_id)
         if not domain or domain.ecosystem_id != eco_id:
             return json({"error": "Domain does not belong to the specified ecosystem"}, status=400)
 
+        required = await required_agreements_for_scope(
+            session, eco_id, "domain", domain.id
+        )
+        if required:
+            participation = await session.scalar(select(CircleMembership).where(
+                CircleMembership.domain_id == domain.id,
+                CircleMembership.member_id == member_check.id,
+                CircleMembership.status == "active",
+            ))
+            if participation is None:
+                return json({"error": "Active domain participation is required to publish a share or need"}, status=403)
+            missing = await missing_agreement_consents(
+                session, member_check.id, eco_id, "domain", domain.id
+            )
+            if missing:
+                return json({
+                    "error": "Agreement consent is required before publishing in this domain",
+                    "required_agreements": [
+                        {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                        for agreement in missing
+                    ],
+                }, status=409)
+
+        record = SharesNeeds(
+            id=uuid.uuid4(),
+            ecosystem_id=eco_id,
+            domain_id=domain_id,
+            author_member_id=member_check.id,
+            type=sn_type,
+            title=title,
+            description=body.get("description"),
             category=(body.get("category") or "").strip() or None,
             capacity=(body.get("capacity") or "").strip() or None,
             tags=tags,
             visibility=visibility,
-            author_member_id=member_check.id,
         )
         session.add(record)
         await session.commit()
@@ -756,6 +839,7 @@ async def create_share_need(request: Request):
 
     return json({
         "id": str(record.id),
+        "author_member_id": str(record.author_member_id),
         "ecosystem_id": str(record.ecosystem_id),
         "domain_id": str(record.domain_id),
         "type": record.type,
@@ -763,12 +847,113 @@ async def create_share_need(request: Request):
         "description": record.description,
         "category": record.category,
         "capacity": record.capacity,
-        "author_member_id": str(record.author_member_id),
         "tags": record.tags if isinstance(record.tags, list) else [],
         "visibility": record.visibility,
         "status": record.status,
         "created_at": record.created_at.isoformat() if record.created_at else None,
     }, status=201)
+
+
+@discover_api_bp.post("/collaborations/<collaboration_id:uuid>/activate")
+async def activate_collaboration(request: Request, collaboration_id: uuid.UUID):
+    """Record one ecosystem's approval and activate after both sides approve."""
+    member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        record = await session.get(Collaboration, collaboration_id)
+        if record is None:
+            return json({"error": "Collaboration not found"}, status=404)
+        if record.status != "proposed":
+            return json({"error": "Only proposed collaborations can be activated"}, status=409)
+        domains = (await session.execute(
+            select(Domain).where(Domain.id.in_([record.source_domain_id, record.target_domain_id]))
+        )).scalars().all()
+        domain_by_id = {domain.id: domain for domain in domains}
+        source = domain_by_id.get(record.source_domain_id)
+        target = domain_by_id.get(record.target_domain_id)
+        if source is None or target is None:
+            return json({"error": "Collaboration domain no longer exists"}, status=409)
+
+        domains_by_ecosystem = {
+            source.ecosystem_id: source,
+            target.ecosystem_id: target,
+        }
+        local_member = await session.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id.in_(list(domains_by_ecosystem)),
+            Member.current_status == "active",
+        ).order_by(Member.ecosystem_id == source.ecosystem_id))
+        if local_member is None:
+            return json({"error": "Activation requires active membership in a collaboration ecosystem"}, status=403)
+
+        local_domain = domains_by_ecosystem[local_member.ecosystem_id]
+        missing = await missing_agreement_consents(
+            session, local_member.id, local_member.ecosystem_id, "collaboration", local_domain.id
+        )
+        if missing:
+            return json({
+                "error": "Agreement consent is required before approving this collaboration",
+                "required_agreements": [
+                    {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                    for agreement in missing
+                ],
+            }, status=409)
+
+        approval = await session.scalar(select(CollaborationApproval).where(
+            CollaborationApproval.collaboration_id == record.id,
+            CollaborationApproval.ecosystem_id == local_member.ecosystem_id,
+        ).with_for_update())
+        now = _dt.datetime.now(_dt.UTC)
+        if approval is None:
+            session.add(CollaborationApproval(
+                id=uuid.uuid4(), collaboration_id=record.id,
+                ecosystem_id=local_member.ecosystem_id, member_id=local_member.id,
+                approved_at=now,
+            ))
+        else:
+            approval.member_id = local_member.id
+            approval.approved_at = now
+
+        await session.flush()
+        approval_rows = list((await session.execute(select(CollaborationApproval).where(
+            CollaborationApproval.collaboration_id == record.id
+        ))).scalars().all())
+        for stored_approval in approval_rows:
+            approval_domain = domains_by_ecosystem.get(stored_approval.ecosystem_id)
+            approver = await session.scalar(select(Member).where(
+                Member.id == stored_approval.member_id,
+                Member.ecosystem_id == stored_approval.ecosystem_id,
+                Member.current_status == "active",
+            ))
+            stale = approver is None or approval_domain is None
+            if not stale:
+                stale = bool(await missing_agreement_consents(
+                    session, approver.id, approver.ecosystem_id,
+                    "collaboration", approval_domain.id,
+                ))
+            if stale:
+                await session.delete(stored_approval)
+        await session.flush()
+        approvals = set((await session.execute(select(CollaborationApproval.ecosystem_id).where(
+            CollaborationApproval.collaboration_id == record.id
+        ))).scalars().all())
+        required_ecosystems = set(domains_by_ecosystem)
+        pending_ecosystems = required_ecosystems - approvals
+        if not pending_ecosystems:
+            record.status = "active"
+            record.started_date = record.started_date or _dt.date.today()
+        await session.commit()
+
+    response = {
+        "id": str(record.id),
+        "status": record.status,
+        "started_date": record.started_date.isoformat() if record.started_date else None,
+    }
+    if pending_ecosystems:
+        response["awaiting_ecosystem_id"] = str(next(iter(pending_ecosystems)))
+    return json(response)
 
 
 # ---------------------------------------------------------------------------
@@ -874,6 +1059,46 @@ async def list_collaborations(request: Request):
     return json({"items": items, "total": total, "page": page, "per_page": per_page})
 
 
+@discover_api_bp.get("/collaborations/<collaboration_id:uuid>")
+async def get_collaboration(request: Request, collaboration_id: uuid.UUID):
+    """Return collaboration detail, including the agreements that gated it."""
+    _member, err = require_auth(request)
+    if err:
+        return err
+
+    async with request.app.ctx.db() as session:
+        record = await session.get(Collaboration, collaboration_id)
+        if record is None:
+            return json({"error": "Collaboration not found"}, status=404)
+        domains = (await session.execute(
+            select(Domain).where(Domain.id.in_([record.source_domain_id, record.target_domain_id]))
+        )).scalars().all()
+        domain_by_id = {domain.id: domain for domain in domains}
+        source = domain_by_id.get(record.source_domain_id)
+        target = domain_by_id.get(record.target_domain_id)
+        if source is None or target is None:
+            return json({"error": "Collaboration domain no longer exists"}, status=409)
+        ecosystems = (await session.execute(
+            select(Ecosystem).where(Ecosystem.id.in_([source.ecosystem_id, target.ecosystem_id]))
+        )).scalars().all()
+        ecosystem_names = {ecosystem.id: ecosystem.name for ecosystem in ecosystems}
+
+    return json({
+        "id": str(record.id), "title": record.title, "description": record.description,
+        "status": record.status, "engagement_tier": record.engagement_tier,
+        "terms": record.terms, "required_agreement_ids": record.required_agreement_ids or [],
+        "source_domain_id": str(source.id), "source_domain_name": source.domain_id,
+        "source_ecosystem_id": str(source.ecosystem_id),
+        "source_ecosystem_name": ecosystem_names.get(source.ecosystem_id),
+        "target_domain_id": str(target.id), "target_domain_name": target.domain_id,
+        "target_ecosystem_id": str(target.ecosystem_id),
+        "target_ecosystem_name": ecosystem_names.get(target.ecosystem_id),
+        "started_date": record.started_date.isoformat() if record.started_date else None,
+        "review_date": record.review_date.isoformat() if record.review_date else None,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    })
+
+
 @discover_api_bp.post("/collaborations")
 async def propose_collaboration(request: Request):
     """POST /api/v1/discover/collaborations -- Propose a new collaboration (authenticated).
@@ -904,6 +1129,10 @@ async def propose_collaboration(request: Request):
     except ValueError:
         return json({"error": "Invalid UUID in source_domain_id or target_domain_id"}, status=400)
 
+    engagement_tier = (body.get("engagement_tier") or "cooperate").strip().lower()
+    if engagement_tier not in _COLLABORATION_TIERS:
+        return json({"error": "engagement_tier must be observe, cooperate, federate, or integrate"}, status=400)
+
     async with request.app.ctx.db() as session:
         # Resolve source domain to get its ecosystem
         src_domain_row = await session.execute(
@@ -920,8 +1149,9 @@ async def propose_collaboration(request: Request):
                 Member.user_id == member.user_id,
             )
         )
-        if not member_check.scalars().first():
-            return json({"error": "You are not a member of the source domain's ecosystem"}, status=403)
+        source_member = member_check.scalars().first()
+        if not source_member or source_member.current_status != "active":
+            return json({"error": "You are not an active member of the source domain's ecosystem"}, status=403)
 
         # Validate target domain exists
         tgt_domain_row = await session.execute(
@@ -930,14 +1160,30 @@ async def propose_collaboration(request: Request):
         if not tgt_domain_row.scalars().first():
             return json({"error": "target_domain_id not found"}, status=404)
 
+        missing = await missing_agreement_consents(
+            session, source_member.id, src_domain.ecosystem_id, "collaboration", src_domain.id
+        )
+        if missing:
+            return json({
+                "error": "Agreement consent is required before proposing a collaboration",
+                "required_agreements": [
+                    {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+                    for agreement in missing
+                ],
+            }, status=409)
+        required = await required_agreements_for_scope(
+            session, src_domain.ecosystem_id, "collaboration", src_domain.id
+        )
+
         record = Collaboration(
             id=uuid.uuid4(),
             source_domain_id=src_id,
             target_domain_id=tgt_id,
             title=title,
             description=body.get("description"),
-            engagement_tier=body.get("engagement_tier", "cooperate"),
+            engagement_tier=engagement_tier,
             terms=body.get("terms"),
+            required_agreement_ids=[str(agreement.id) for agreement in required] or None,
             status="proposed",
         )
         session.add(record)
@@ -953,5 +1199,6 @@ async def propose_collaboration(request: Request):
         "status": record.status,
         "engagement_tier": record.engagement_tier,
         "terms": record.terms,
+        "required_agreement_ids": record.required_agreement_ids or [],
         "created_at": record.created_at.isoformat() if record.created_at else None,
     }, status=201)

@@ -55,6 +55,7 @@ class Collaboration(TimestampMixin, Base):
     engagement_tier: Mapped[str] = mapped_column(String(50), nullable=False, default="cooperate")  # observe, cooperate, federate, integrate
     terms: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # collaboration-specific terms
     linked_shares_needs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # IDs of matched shares/needs
+    required_agreement_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     started_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     review_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)

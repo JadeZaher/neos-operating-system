@@ -20,20 +20,41 @@ from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
     Agreement,
+    AgreementCeremony,
+    AgreementMemberConsent,
     AgreementRatificationRecord,
     AgreementVersion,
     AmendmentRecord,
+    Domain,
+    Member,
+    MemberAlignmentEvent,
     ReviewRecord,
 )
 
+from .agreement_vocabulary import (
+    AGREEMENT_STATUSES,
+    AGREEMENT_TYPES,
+    canonical_agreement_status,
+    canonical_agreement_type,
+)
 from .helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.services.agreement_consent import (
+    agreement_consent_summary,
+    missing_agreement_consents,
+    synchronize_agreement_requirements,
+)
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
+    AgreementCeremonySchema,
+    AgreementConsentRequest,
+    AgreementConsentWithdrawalRequest,
     AgreementCreateRequest,
     AgreementDetail,
     AgreementHistoryResponse,
     AgreementListItem,
     AgreementUpdateRequest,
+    AgreementMemberConsentSchema,
+    AgreementConsentSummary,
     AgreementVersionSchema,
     AmendmentRecordSchema,
     RatificationRecordSchema,
@@ -65,11 +86,17 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
 
     agreement_type = request.args.get("type")
     if agreement_type:
-        stmt = stmt.where(Agreement.type == agreement_type)
+        try:
+            stmt = stmt.where(Agreement.type == canonical_agreement_type(agreement_type))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
     status = request.args.get("status")
     if status:
-        stmt = stmt.where(Agreement.status == status)
+        try:
+            stmt = stmt.where(Agreement.status == canonical_agreement_status(status))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
 
     domain = request.args.get("domain")
     if domain:
@@ -116,6 +143,16 @@ def _agreement_to_detail(a: Agreement) -> dict:
         )
         for r in (a.ratification_records or [])
     ]
+    ceremonies = [
+        AgreementCeremonySchema(
+            id=ceremony.id,
+            stage=ceremony.stage,
+            outcome=ceremony.outcome,
+            evidence=ceremony.evidence,
+            completed_at=ceremony.completed_at,
+        ).model_dump(mode="json")
+        for ceremony in (getattr(a, "ceremonies", None) or [])
+    ]
     data = AgreementDetail(
         id=a.id,
         agreement_id=a.agreement_id,
@@ -138,9 +175,64 @@ def _agreement_to_detail(a: Agreement) -> dict:
         created_date=a.created_date,
         updated_at=a.updated_at,
         ratification_records=[r.model_dump(mode="json") for r in ratifications],
+        ceremonies=ceremonies,
+        requires_explicit_consent=getattr(a, "requires_explicit_consent", True),
+        prerequisite_scopes=getattr(a, "prerequisite_scopes", None) or [],
+        prerequisite_domain_ids=getattr(a, "prerequisite_domain_ids", None) or [],
+        alignment_points=getattr(a, "alignment_points", 5),
     ).model_dump(mode="json")
     data["version_fingerprint"] = a.version_fingerprint
     return data
+
+
+async def _agreement_detail_payload(db, agreement: Agreement, user_id: uuid.UUID | None) -> dict:
+    """Add consent progress and the authenticated member's attestation to detail."""
+    payload = _agreement_to_detail(agreement)
+    summary = await agreement_consent_summary(db, agreement)
+    payload["consent_summary"] = AgreementConsentSummary(**summary).model_dump(mode="json")
+    if user_id is None:
+        return payload
+
+    member = await db.scalar(select(Member).where(
+        Member.user_id == user_id,
+        Member.ecosystem_id == agreement.ecosystem_id,
+    ))
+    if member is None:
+        return payload
+    consent = await db.scalar(select(AgreementMemberConsent).where(
+        AgreementMemberConsent.agreement_id == agreement.id,
+        AgreementMemberConsent.member_id == member.id,
+        AgreementMemberConsent.agreement_version == agreement.version,
+    ))
+    if consent is None:
+        return payload
+    awarded = await db.scalar(
+        select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
+            MemberAlignmentEvent.agreement_consent_id == consent.id
+        )
+    )
+    payload["current_member_consent"] = AgreementMemberConsentSchema(
+        id=consent.id,
+        member_id=consent.member_id,
+        agreement_version=consent.agreement_version,
+        attested_at=consent.attested_at,
+        withdrawn_at=consent.withdrawn_at,
+        alignment_awarded=int(awarded or 0),
+    ).model_dump(mode="json")
+    return payload
+
+
+async def _validate_prerequisite_domains(db, ecosystem_id: uuid.UUID, domain_ids: list[uuid.UUID]) -> str | None:
+    """Ensure scoped gates only reference domains in the agreement's ecosystem."""
+    if not domain_ids:
+        return None
+    found = set((await db.execute(select(Domain.id).where(
+        Domain.ecosystem_id == ecosystem_id,
+        Domain.id.in_(domain_ids),
+    ))).scalars().all())
+    if found != set(domain_ids):
+        return "Prerequisite domains must belong to the agreement ecosystem"
+    return None
 
 
 def _bump_version(agreement: Agreement) -> None:
@@ -176,6 +268,10 @@ def _snapshot_agreement(agreement: Agreement, change_reason: str | None = None, 
         version_fingerprint=agreement.version_fingerprint,
         change_reason=change_reason,
         changed_by=changed_by,
+        requires_explicit_consent=agreement.requires_explicit_consent,
+        prerequisite_scopes=agreement.prerequisite_scopes,
+        prerequisite_domain_ids=agreement.prerequisite_domain_ids,
+        alignment_points=agreement.alignment_points,
     )
 
 
@@ -183,7 +279,7 @@ def _snapshot_agreement(agreement: Agreement, change_reason: str | None = None, 
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"advice"},
     "advice": {"consent"},
-    "consent": {"test", "active"},
+    "consent": {"test"},
     "test": {"active"},
     "active": {"under_review"},
     "under_review": {"sunset", "active"},
@@ -194,6 +290,18 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@agreements_api_bp.get("/vocabulary")
+async def agreement_vocabulary(request: Request):
+    """GET /api/v1/agreements/vocabulary -- canonical filter and form values."""
+    _member, err = require_auth(request)
+    if err:
+        return err
+    return json({
+        "types": sorted(AGREEMENT_TYPES),
+        "statuses": sorted(AGREEMENT_STATUSES),
+    })
 
 
 @agreements_api_bp.get("/")
@@ -215,7 +323,10 @@ async def list_agreements(request: Request):
 
     async with request.app.ctx.db() as db:
         stmt = select(Agreement).order_by(Agreement.created_at.desc())
-        stmt = _apply_filters(stmt, request, eco_ids=eco_ids)
+        try:
+            stmt = _apply_filters(stmt, request, eco_ids=eco_ids)
+        except ValueError as exc:
+            return json({"error": str(exc)}, status=400)
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await db.scalar(count_stmt) or 0
@@ -246,9 +357,16 @@ async def get_agreement(request: Request, agreement_id: uuid.UUID):
     eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as db:
+        if not eco_ids:
+            eco_ids = list((await db.execute(select(Member.ecosystem_id).where(
+                Member.user_id == member.user_id,
+                Member.current_status.in_({"active", "pending_consent"}),
+            ))).scalars().all())
+        if not eco_ids:
+            return json({"error": "Access denied"}, status=403)
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement_id)
         )
         if eco_ids:
@@ -260,7 +378,7 @@ async def get_agreement(request: Request, agreement_id: uuid.UUID):
         if agreement is None:
             return json({"error": "Agreement not found"}, status=404)
 
-    return json(_agreement_to_detail(agreement))
+        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
 
 
 @agreements_api_bp.post("/")
@@ -281,14 +399,19 @@ async def create_agreement(request: Request):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     # Verify the ecosystem_id is in the member's scope
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
+    eco_ids = get_authorized_ecosystem_ids(request)
+    if create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
     short_id = uuid.uuid4().hex[:8].upper()
     agreement_id_str = f"AGR-{short_id}"
 
     async with request.app.ctx.db() as db:
+        domain_error = await _validate_prerequisite_domains(
+            db, create_req.ecosystem_id, create_req.prerequisite_domain_ids
+        )
+        if domain_error:
+            return json({"error": domain_error}, status=400)
         agreement = Agreement(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
@@ -306,23 +429,29 @@ async def create_agreement(request: Request):
             review_date=create_req.review_date,
             sunset_date=create_req.sunset_date,
             created_date=_dt.date.today(),
+            requires_explicit_consent=create_req.requires_explicit_consent,
+            prerequisite_scopes=create_req.prerequisite_scopes,
+            prerequisite_domain_ids=[str(domain_id) for domain_id in create_req.prerequisite_domain_ids],
+            alignment_points=create_req.alignment_points,
         )
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
         )
         db.add(agreement)
+        await db.flush()
+        await synchronize_agreement_requirements(db, agreement)
         await db.commit()
 
         # Reload with ratification records for response
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement.id)
         )
         result = await db.execute(stmt)
         agreement = result.scalar_one()
 
-    return json(_agreement_to_detail(agreement), status=201)
+        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)), status=201)
 
 
 @agreements_api_bp.put("/<agreement_id:uuid>")
@@ -343,11 +472,13 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     eco_ids = get_authorized_ecosystem_ids(request)
+    if not eco_ids:
+        return json({"error": "Access denied"}, status=403)
 
     async with request.app.ctx.db() as db:
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement_id)
         )
         if eco_ids:
@@ -359,9 +490,30 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         if agreement is None:
             return json({"error": "Agreement not found"}, status=404)
 
+        actor = await db.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == agreement.ecosystem_id,
+            Member.current_status == "active",
+        ))
+        if actor is None:
+            return json({"error": "Only an active ecosystem member may edit an agreement"}, status=403)
+
+        if agreement.status not in {"draft", "advice"}:
+            return json(
+                {"error": "Only draft or advice agreements can be edited; reopen governance before changing agreement terms."},
+                status=409,
+            )
+
+        if update_req.prerequisite_domain_ids is not None:
+            domain_error = await _validate_prerequisite_domains(
+                db, agreement.ecosystem_id, update_req.prerequisite_domain_ids
+            )
+            if domain_error:
+                return json({"error": domain_error}, status=400)
+
         # Save snapshot of current state before applying changes
         change_reason = body.get("change_reason", "Manual edit")
-        snapshot = _snapshot_agreement(agreement, change_reason=change_reason, changed_by=body.get("changed_by"))
+        snapshot = _snapshot_agreement(agreement, change_reason=change_reason, changed_by=member.display_name)
         db.add(snapshot)
 
         update_data = update_req.model_dump(exclude_none=True)
@@ -369,11 +521,16 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
             )
+        if "prerequisite_domain_ids" in update_data:
+            update_data["prerequisite_domain_ids"] = [
+                str(domain_id) for domain_id in update_req.prerequisite_domain_ids or []
+            ]
         for field, value in update_data.items():
             setattr(agreement, field, value)
 
         # Bump version
         _bump_version(agreement)
+        await synchronize_agreement_requirements(db, agreement)
 
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
@@ -385,21 +542,21 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         # Re-load with ratification records
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement.id)
         )
         result = await db.execute(stmt)
         agreement = result.scalar_one()
 
-    return json(_agreement_to_detail(agreement))
+        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/status")
 async def status_transition(request: Request, agreement_id: uuid.UUID):
     """POST /api/v1/agreements/:id/status -- transition agreement status.
 
-    Accepts JSON: {"status": "ratified"}
-    Valid transitions: draft->ratified, ratified->archived, archived->draft.
+    Each transition is recorded as a governance ceremony. Advice, consent, and
+    test are mandatory before activation; activation also needs test evidence.
     Returns JSON: AgreementDetail
     """
     member, err = require_auth(request)
@@ -410,13 +567,19 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
     new_status = body.get("status")
     if not new_status:
         return json({"error": "\"status\" field is required"}, status=400)
+    try:
+        new_status = canonical_agreement_status(new_status)
+    except ValueError as exc:
+        return json({"error": str(exc)}, status=400)
 
     eco_ids = get_authorized_ecosystem_ids(request)
+    if not eco_ids:
+        return json({"error": "Access denied"}, status=403)
 
     async with request.app.ctx.db() as db:
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement_id)
         )
         if eco_ids:
@@ -428,6 +591,13 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         if agreement is None:
             return json({"error": "Agreement not found"}, status=404)
 
+        actor = await db.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == agreement.ecosystem_id,
+        ).with_for_update())
+        if actor is None or actor.current_status != "active" or actor.profile not in {"co_creator", "builder"}:
+            return json({"error": "Only an active governance steward may conduct this ceremony"}, status=403)
+
         allowed = _VALID_TRANSITIONS.get(agreement.status, set())
         if new_status not in allowed:
             return json(
@@ -435,20 +605,39 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
                 status=400,
             )
 
+        ceremony_evidence = (body.get("evidence") or "").strip()
+        if new_status in {"advice", "consent", "test", "active"} and len(ceremony_evidence) < 8:
+            return json({"error": f"Documented evidence is required for the {new_status} ceremony"}, status=400)
+
+        if new_status == "test" and agreement.requires_explicit_consent:
+            summary = await agreement_consent_summary(db, agreement)
+            if not summary["complete"]:
+                return json({
+                    "error": "The consent ceremony is incomplete",
+                    "consent_summary": summary,
+                }, status=409)
         # Snapshot before status change
         snapshot = _snapshot_agreement(
             agreement,
             change_reason=f"Status transition: {agreement.status} -> {new_status}",
-            changed_by=body.get("changed_by"),
+            changed_by=actor.display_name,
         )
         db.add(snapshot)
 
         old_status = agreement.status
         agreement.status = new_status
-        _bump_version(agreement)
-
-        if new_status == "ratified" and agreement.ratification_date is None:
+        if new_status == "active" and agreement.ratification_date is None:
             agreement.ratification_date = _dt.date.today()
+
+        db.add(AgreementCeremony(
+            id=uuid.uuid4(),
+            agreement_id=agreement.id,
+            stage=new_status,
+            completed_by_member_id=actor.id,
+            outcome={"advice": "opened", "consent": "opened", "test": "started", "active": "passed"}.get(new_status, "completed"),
+            evidence=ceremony_evidence or None,
+            completed_at=_dt.datetime.now(_dt.UTC),
+        ))
 
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
@@ -465,13 +654,153 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         # Re-load with ratification records
         stmt = (
             select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
             .where(Agreement.id == agreement.id)
         )
         result = await db.execute(stmt)
         agreement = result.scalar_one()
 
-    return json(_agreement_to_detail(agreement))
+        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
+
+
+@agreements_api_bp.post("/<agreement_id:uuid>/consent")
+async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
+    """Record the caller's explicit acceptance of the current agreement version."""
+    member, err = require_auth(request)
+    if err:
+        return err
+    try:
+        consent_request = AgreementConsentRequest(**(request.json or {}))
+    except Exception as exc:
+        return json({"error": f"Invalid request: {exc}"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        agreement = await db.scalar(
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
+            .where(Agreement.id == agreement_id)
+        )
+        if agreement is None:
+            return json({"error": "Agreement not found"}, status=404)
+        if agreement.status not in {"consent", "test", "active", "under_review"}:
+            return json({"error": "Agreement consent opens during the consent ceremony"}, status=409)
+
+        actor = await db.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == agreement.ecosystem_id,
+        ).with_for_update())
+        if actor is None:
+            return json({"error": "Only an ecosystem member may attest agreement consent"}, status=403)
+
+        consent = await db.scalar(select(AgreementMemberConsent).where(
+            AgreementMemberConsent.agreement_id == agreement.id,
+            AgreementMemberConsent.member_id == actor.id,
+            AgreementMemberConsent.agreement_version == agreement.version,
+        ).with_for_update())
+        now = _dt.datetime.now(_dt.UTC)
+        if consent is None:
+            consent = AgreementMemberConsent(
+                id=uuid.uuid4(), agreement_id=agreement.id, member_id=actor.id,
+                agreement_version=agreement.version, attestation=consent_request.attestation,
+                attested_at=now,
+            )
+            db.add(consent)
+            await db.flush()
+        else:
+            consent.attestation = consent_request.attestation
+            consent.attested_at = now
+            if consent.withdrawn_at is not None:
+                consent.revision += 1
+            consent.withdrawn_at = None
+            consent.withdrawal_reason = None
+
+        previous_delta = await db.scalar(
+            select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
+                MemberAlignmentEvent.agreement_consent_id == consent.id
+            )
+        )
+        delta = max(0, agreement.alignment_points - int(previous_delta or 0))
+        if delta:
+            db.add(MemberAlignmentEvent(
+                id=uuid.uuid4(), member_id=actor.id, ecosystem_id=agreement.ecosystem_id,
+                agreement_consent_id=consent.id, event_kind=f"state:{consent.revision}",
+                delta=delta, recorded_at=now,
+            ))
+            actor.agreement_alignment_score += delta
+        actor.last_governance_activity_date = now.date()
+        if actor.current_status == "pending_consent":
+            pending = await missing_agreement_consents(
+                db, actor.id, agreement.ecosystem_id, "ecosystem"
+            )
+            if not pending:
+                actor.current_status = "active"
+                actor.onboarding_status = "complete"
+        await db.commit()
+        await db.refresh(agreement)
+
+        return json(await _agreement_detail_payload(db, agreement, member.user_id), status=201)
+
+
+@agreements_api_bp.delete("/<agreement_id:uuid>/consent")
+async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
+    """Withdraw the caller's personal consent and reverse its alignment credit."""
+    member, err = require_auth(request)
+    if err:
+        return err
+    try:
+        withdrawal = AgreementConsentWithdrawalRequest(**(request.json or {}))
+    except Exception as exc:
+        return json({"error": f"Invalid request: {exc}"}, status=400)
+
+    async with request.app.ctx.db() as db:
+        agreement = await db.scalar(
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
+            .where(Agreement.id == agreement_id)
+        )
+        if agreement is None:
+            return json({"error": "Agreement not found"}, status=404)
+        actor = await db.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == agreement.ecosystem_id,
+        ).with_for_update())
+        if actor is None:
+            return json({"error": "Only an ecosystem member may withdraw agreement consent"}, status=403)
+        consent = await db.scalar(select(AgreementMemberConsent).where(
+            AgreementMemberConsent.agreement_id == agreement.id,
+            AgreementMemberConsent.member_id == actor.id,
+            AgreementMemberConsent.agreement_version == agreement.version,
+            AgreementMemberConsent.withdrawn_at.is_(None),
+        ).with_for_update())
+        if consent is None:
+            return json({"error": "No current agreement consent to withdraw"}, status=404)
+
+        current_delta = int(await db.scalar(
+            select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
+                MemberAlignmentEvent.agreement_consent_id == consent.id
+            )
+        ) or 0)
+        now = _dt.datetime.now(_dt.UTC)
+        consent.revision += 1
+        consent.withdrawn_at = now
+        consent.withdrawal_reason = withdrawal.reason
+        if current_delta:
+            db.add(MemberAlignmentEvent(
+                id=uuid.uuid4(), member_id=actor.id, ecosystem_id=agreement.ecosystem_id,
+                agreement_consent_id=consent.id, event_kind=f"state:{consent.revision}",
+                delta=-current_delta, recorded_at=now,
+            ))
+            actor.agreement_alignment_score = max(0, actor.agreement_alignment_score - current_delta)
+        actor.last_governance_activity_date = now.date()
+        pending = await missing_agreement_consents(
+            db, actor.id, agreement.ecosystem_id, "ecosystem"
+        )
+        if pending:
+            actor.current_status = "pending_consent"
+            actor.onboarding_status = "agreement_consent_required"
+        await db.commit()
+        await db.refresh(agreement)
+        return json(await _agreement_detail_payload(db, agreement, member.user_id))
 
 
 @agreements_api_bp.get("/<agreement_id:uuid>/history")
@@ -485,6 +814,8 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         return err
 
     eco_ids = get_authorized_ecosystem_ids(request)
+    if not eco_ids:
+        return json({"error": "Access denied"}, status=403)
 
     async with request.app.ctx.db() as db:
         # Verify agreement exists and is in scope
@@ -598,6 +929,8 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         return json({"error": "Insufficient permissions: rollback requires active/steward/co_creator status"}, status=403)
 
     eco_ids = get_authorized_ecosystem_ids(request)
+    if not eco_ids:
+        return json({"error": "Access denied"}, status=403)
 
     async with request.app.ctx.db() as db:
         # Load current agreement
@@ -656,6 +989,10 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         agreement.review_date = target_version.review_date
         agreement.sunset_date = target_version.sunset_date
         agreement.ratification_date = target_version.ratification_date
+        agreement.requires_explicit_consent = target_version.requires_explicit_consent
+        agreement.prerequisite_scopes = target_version.prerequisite_scopes
+        agreement.prerequisite_domain_ids = target_version.prerequisite_domain_ids
+        agreement.alignment_points = target_version.alignment_points
 
         # Bump version (don't restore old version number — always move forward)
         _bump_version(agreement)
@@ -664,6 +1001,7 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
         )
+        await synchronize_agreement_requirements(db, agreement)
 
         await db.commit()
         await db.refresh(agreement)
