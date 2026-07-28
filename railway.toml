@@ -5,8 +5,8 @@ rootDirectory = "."
 watchPatterns = ["agent/**", "neos-core/**"]
 
 [deploy]
-preDeployCommand = ["alembic upgrade head", "python -m neos_agent.db.audit"]
-startCommand = "sh -c 'exec sanic neos_agent.main:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory --single-process'"
+preDeployCommand = ["alembic upgrade head"]
+startCommand = "sh -c 'python -m neos_agent.db.audit && exec sanic neos_agent.main:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory --single-process'"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
