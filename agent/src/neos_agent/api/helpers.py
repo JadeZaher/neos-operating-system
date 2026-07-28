@@ -57,10 +57,8 @@ def get_ecosystem_ids(request: Request) -> list[uuid.UUID]:
         except ValueError:
             return session_ids
         # Intersect with ALL authorized ecosystems (not just cookie-selected)
-        if authorized_ids:
-            auth_set = set(authorized_ids)
-            return [eid for eid in requested if eid in auth_set]
-        return requested
+        auth_set = set(authorized_ids)
+        return [eid for eid in requested if eid in auth_set]
 
     return session_ids
 

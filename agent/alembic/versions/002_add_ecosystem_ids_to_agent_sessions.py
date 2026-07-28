@@ -14,11 +14,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_sessions",
-        sa.Column("ecosystem_ids", sa.JSON(), nullable=True),
-    )
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_sessions"):
+        raise RuntimeError(
+            "agent_sessions is missing; apply the initial schema before this migration"
+        )
+    columns = {column["name"] for column in inspector.get_columns("agent_sessions")}
+    if "ecosystem_ids" not in columns:
+        op.add_column(
+            "agent_sessions",
+            sa.Column("ecosystem_ids", sa.JSON(), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("agent_sessions", "ecosystem_ids")
+    inspector = sa.inspect(op.get_bind())
+    if not inspector.has_table("agent_sessions"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("agent_sessions")}
+    if "ecosystem_ids" in columns:
+        op.drop_column("agent_sessions", "ecosystem_ids")

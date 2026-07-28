@@ -24,7 +24,11 @@ from neos_agent.db.models import (
     Member,
     Proposal,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import (
+    apply_ecosystem_filter,
+    get_ecosystem_ids,
+    require_auth,
+)
 from neos_agent.api.schemas import ActivityItem, DashboardSummary, SummaryCard
 
 logger = logging.getLogger(__name__)
@@ -42,9 +46,7 @@ async def _summary_counts(session, ecosystem_ids=None) -> dict:
     """Gather aggregate counts for the dashboard summary cards."""
 
     def _eco_filter(stmt, model):
-        if ecosystem_ids:
-            stmt = stmt.where(model.ecosystem_id.in_(ecosystem_ids))
-        return stmt
+        return apply_ecosystem_filter(stmt, model, ecosystem_ids or [])
 
     agreement_count = await session.scalar(
         _eco_filter(select(func.count()).select_from(Agreement), Agreement)
@@ -64,15 +66,13 @@ async def _summary_counts(session, ecosystem_ids=None) -> dict:
 
     # Proposals grouped by status
     prop_stmt = select(Proposal.status, func.count()).group_by(Proposal.status)
-    if ecosystem_ids:
-        prop_stmt = prop_stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+    prop_stmt = _eco_filter(prop_stmt, Proposal)
     proposal_by_status_rows = (await session.execute(prop_stmt)).all()
     proposals_by_status = {row[0]: row[1] for row in proposal_by_status_rows}
 
     # Agreements grouped by status
     agr_stmt = select(Agreement.status, func.count()).group_by(Agreement.status)
-    if ecosystem_ids:
-        agr_stmt = agr_stmt.where(Agreement.ecosystem_id.in_(ecosystem_ids))
+    agr_stmt = _eco_filter(agr_stmt, Agreement)
     agreement_by_status_rows = (await session.execute(agr_stmt)).all()
     agreements_by_status = {row[0]: row[1] for row in agreement_by_status_rows}
 
@@ -93,8 +93,7 @@ async def _recent_activity(session, ecosystem_ids=None, limit: int = 10) -> list
 
     # Recent proposals
     prop_stmt = select(Proposal).order_by(Proposal.created_at.desc()).limit(limit)
-    if ecosystem_ids:
-        prop_stmt = prop_stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+    prop_stmt = apply_ecosystem_filter(prop_stmt, Proposal, ecosystem_ids or [])
     proposals = (await session.execute(prop_stmt)).scalars().all()
     for p in proposals:
         activities.append({
@@ -108,8 +107,7 @@ async def _recent_activity(session, ecosystem_ids=None, limit: int = 10) -> list
 
     # Recent agreements
     agr_stmt = select(Agreement).order_by(Agreement.created_at.desc()).limit(limit)
-    if ecosystem_ids:
-        agr_stmt = agr_stmt.where(Agreement.ecosystem_id.in_(ecosystem_ids))
+    agr_stmt = apply_ecosystem_filter(agr_stmt, Agreement, ecosystem_ids or [])
     agreements = (await session.execute(agr_stmt)).scalars().all()
     for a in agreements:
         activities.append({
@@ -123,8 +121,9 @@ async def _recent_activity(session, ecosystem_ids=None, limit: int = 10) -> list
 
     # Recent decisions
     dec_stmt = select(DecisionRecord).order_by(DecisionRecord.created_at.desc()).limit(limit)
-    if ecosystem_ids:
-        dec_stmt = dec_stmt.where(DecisionRecord.ecosystem_id.in_(ecosystem_ids))
+    dec_stmt = apply_ecosystem_filter(
+        dec_stmt, DecisionRecord, ecosystem_ids or []
+    )
     decisions = (await session.execute(dec_stmt)).scalars().all()
     for d in decisions:
         activities.append({
@@ -154,6 +153,11 @@ async def dashboard_summary(request: Request) -> JSONResponse:
         return err
 
     ecosystem_ids = get_ecosystem_ids(request)
+    if not ecosystem_ids:
+        return json_response(
+            {"error": "No authorized ecosystem scope was selected"},
+            status=403,
+        )
 
     try:
         async with request.app.ctx.db() as session:
@@ -161,16 +165,10 @@ async def dashboard_summary(request: Request) -> JSONResponse:
             raw_activity = await _recent_activity(session, ecosystem_ids=ecosystem_ids, limit=10)
     except Exception:
         logger.exception("Failed to load dashboard summary data")
-        counts = {
-            "agreements": 0,
-            "members": 0,
-            "domains": 0,
-            "proposals": 0,
-            "decisions": 0,
-            "proposals_by_status": {},
-            "agreements_by_status": {},
-        }
-        raw_activity = []
+        return json_response(
+            {"error": "Dashboard summary is temporarily unavailable"},
+            status=500,
+        )
 
     cards = [
         SummaryCard(
