@@ -68,6 +68,38 @@ def _audit_to_list_item(a: GovernanceHealthAudit) -> dict:
     ).model_dump(mode="json")
 
 
+def _scores_to_list(value) -> list | None:
+    """Legacy JSON may store dict keyed by id; coerce to a list of dicts."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, dict)] or None
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            return [v for v in value["items"] if isinstance(v, dict)] or None
+        out = []
+        for k, v in value.items():
+            if isinstance(v, dict):
+                v = dict(v)
+                v.setdefault("indicator_id", k)
+                out.append(v)
+        return out or None
+    return None
+
+
+def _str_list(value) -> list | None:
+    """Coerce stored JSON to a list of strings; drop anything else."""
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str)] or None
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            return [v for v in value["items"] if isinstance(v, str)] or None
+        return [v for v in value.values() if isinstance(v, str)] or None
+    return None
+
+
 def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
     return AuditDetail(
         id=a.id,
@@ -90,9 +122,9 @@ def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
         audit_period_start=getattr(a, 'audit_period_start', None),
         audit_period_end=getattr(a, 'audit_period_end', None),
         auditor_ids=getattr(a, 'auditor_ids', None),
-        indicator_scores=getattr(a, 'indicator_scores', None),
-        triggered_safeguards=getattr(a, 'triggered_safeguards', None),
-        structured_recommendations=getattr(a, 'structured_recommendations', None),
+        indicator_scores=_scores_to_list(getattr(a, 'indicator_scores', None)),
+        triggered_safeguards=_scores_to_list(getattr(a, 'triggered_safeguards', None)),
+        structured_recommendations=_str_list(getattr(a, 'structured_recommendations', None)),
     ).model_dump(mode="json")
 
 
