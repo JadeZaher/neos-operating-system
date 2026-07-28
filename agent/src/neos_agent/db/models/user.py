@@ -44,5 +44,13 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    headline: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    website: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    social_links: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    skills: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    interests: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    projects: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     members: Mapped[list[Member]] = relationship(back_populates="user")

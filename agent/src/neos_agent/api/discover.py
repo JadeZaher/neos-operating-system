@@ -16,7 +16,7 @@ import uuid
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from neos_agent.db.course_models import Course, Quiz, QuizResult
 from neos_agent.db.models import Ecosystem, Member, SharesNeeds, Collaboration, Domain
@@ -37,6 +37,18 @@ def _escape_like(value: str) -> str:
 @discover_api_bp.get("/")
 async def discover_feed(request: Request):
     """GET /api/v1/discover -- Discover quizzes and ecosystems.
+
+def _shares_needs_stats(stats) -> dict:
+    return {
+        "total": stats.total or 0,
+        "shares": stats.shares or 0,
+        "needs": stats.needs or 0,
+        "solutions": stats.solutions or 0,
+        "active": stats.active or 0,
+        "fulfilled": stats.fulfilled or 0,
+        "withdrawn": stats.withdrawn or 0,
+    }
+
 
     Query params:
         q        – search term (matches quiz title / ecosystem name+description)
@@ -301,6 +313,7 @@ async def list_shares_needs(request: Request):
                 "type": r.type,
                 "title": r.title,
                 "description": r.description,
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "category": r.category,
                 "capacity": r.capacity,
                 "tags": r.tags if isinstance(r.tags, list) else [],
@@ -399,11 +412,12 @@ async def admin_list_shares_needs(request: Request):
         stats_row = await session.execute(
             select(
                 func.count(SharesNeeds.id).label("total"),
-                func.sum(func.case((SharesNeeds.type == "share", 1), else_=0)).label("shares"),
-                func.sum(func.case((SharesNeeds.type == "need", 1), else_=0)).label("needs"),
-                func.sum(func.case((SharesNeeds.status == "active", 1), else_=0)).label("active"),
-                func.sum(func.case((SharesNeeds.status == "fulfilled", 1), else_=0)).label("fulfilled"),
-                func.sum(func.case((SharesNeeds.status == "withdrawn", 1), else_=0)).label("withdrawn"),
+                func.sum(case((SharesNeeds.type == "share", 1), else_=0)).label("shares"),
+                func.sum(case((SharesNeeds.type == "need", 1), else_=0)).label("needs"),
+                func.sum(case((SharesNeeds.type == "solution", 1), else_=0)).label("solutions"),
+                func.sum(case((SharesNeeds.status == "active", 1), else_=0)).label("active"),
+                func.sum(case((SharesNeeds.status == "fulfilled", 1), else_=0)).label("fulfilled"),
+                func.sum(case((SharesNeeds.status == "withdrawn", 1), else_=0)).label("withdrawn"),
             )
         )
         stats = stats_row.first()
@@ -419,6 +433,7 @@ async def admin_list_shares_needs(request: Request):
                 "type": r.type,
                 "title": r.title,
                 "description": r.description,
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
                 "category": r.category,
                 "capacity": r.capacity,
                 "tags": r.tags if isinstance(r.tags, list) else [],
@@ -432,14 +447,7 @@ async def admin_list_shares_needs(request: Request):
         "total": total,
         "page": page,
         "per_page": per_page,
-        "stats": {
-            "total": stats.total or 0,
-            "shares": stats.shares or 0,
-            "needs": stats.needs or 0,
-            "active": stats.active or 0,
-            "fulfilled": stats.fulfilled or 0,
-            "withdrawn": stats.withdrawn or 0,
-        },
+        "stats": _shares_needs_stats(stats),
     })
 
 
@@ -447,8 +455,8 @@ async def _require_auth_for_shares_needs(request: Request, session, sn_uuid: uui
     """Authorise access to a SharesNeeds record.
 
     Returns (member, record, None) on success or (None, None, error_response).
-    Admins (co_creator / builder) can access any record.  Regular authenticated
-    users can access records that belong to an ecosystem they are a member of.
+    Admins (co_creator / builder) can access any record. Other users can only
+    access records authored by one of their own ecosystem member identities.
     """
     member, err = require_auth(request)
     if err:
@@ -458,19 +466,26 @@ async def _require_auth_for_shares_needs(request: Request, session, sn_uuid: uui
     if not record:
         return None, None, json({"error": "Share/Need not found"}, status=404)
 
-    # Admins can always proceed
     if member.profile in ("co_creator", "builder"):
         return member, record, None
 
-    # Regular members: must belong to the record's ecosystem
-    membership = await session.execute(
-        select(Member).where(
-            Member.ecosystem_id == record.ecosystem_id,
+    if not record.author_member_id:
+        return None, None, json(
+            {"error": "Only an admin can manage this legacy record"},
+            status=403,
+        )
+
+    is_author = await session.scalar(
+        select(Member.id).where(
+            Member.id == record.author_member_id,
             Member.user_id == member.user_id,
         )
     )
-    if not membership.scalars().first():
-        return None, None, json({"error": "You are not a member of this ecosystem"}, status=403)
+    if not is_author:
+        return None, None, json(
+            {"error": "Only the author can manage this publication"},
+            status=403,
+        )
 
     return member, record, None
 
@@ -479,7 +494,7 @@ async def _require_auth_for_shares_needs(request: Request, session, sn_uuid: uui
 async def update_share_need(request: Request, sn_id: str):
     """PUT /api/v1/discover/shares-needs/<id> -- Update a share or need.
 
-    Accessible by admins (co_creator/builder) and ecosystem members.
+    Accessible by admins (co_creator/builder) and the author.
     """
     try:
         sn_uuid = uuid.UUID(sn_id)
@@ -492,8 +507,18 @@ async def update_share_need(request: Request, sn_id: str):
     if err:
         return err
     is_admin = member.profile in ("co_creator", "builder")
-    allowed_fields = {"title", "description", "category", "capacity", "tags", "visibility"}
+    allowed_fields = {
+        "type",
+        "title",
+        "description",
+        "category",
+        "capacity",
+        "tags",
+        "visibility",
+    }
     if is_admin:
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
         allowed_fields |= {"domain_id", "ecosystem_id"}
     update_data = {k: v for k, v in body.items() if k in allowed_fields}
 
@@ -506,6 +531,47 @@ async def update_share_need(request: Request, sn_id: str):
             return auth_err
 
         for key, value in update_data.items():
+    if "type" in update_data and update_data["type"] not in ("share", "need", "solution"):
+        return json({"error": "type must be 'share', 'need', or 'solution'"}, status=400)
+    if "visibility" in update_data and update_data["visibility"] not in (
+        "public",
+        "ecosystem",
+        "private",
+    ):
+        return json({"error": "Invalid visibility"}, status=400)
+    if "title" in update_data:
+        title = update_data["title"]
+        if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
+            return json({"error": "title must be 1-255 characters"}, status=400)
+        update_data["title"] = title.strip()
+    if "tags" in update_data:
+        tags = update_data["tags"]
+        if (
+            not isinstance(tags, list)
+            or len(tags) > 50
+            or any(
+                not isinstance(tag, str)
+                or not tag.strip()
+                or len(tag.strip()) > 100
+                for tag in tags
+            )
+        ):
+            return json({"error": "tags must contain up to 50 non-empty strings"}, status=400)
+        update_data["tags"] = [tag.strip() for tag in tags]
+    for field in ("category", "capacity"):
+        if field in update_data:
+            value = update_data[field]
+            if value is not None and (
+                not isinstance(value, str) or len(value.strip()) > 100
+            ):
+                return json({"error": f"{field} must be at most 100 characters"}, status=400)
+            update_data[field] = (value.strip() or None) if isinstance(value, str) else None
+    if "description" in update_data:
+        description = update_data["description"]
+        if description is not None and (
+            not isinstance(description, str) or len(description) > 20_000
+        ):
+            return json({"error": "description must be at most 20000 characters"}, status=400)
             setattr(record, key, value)
 
         await session.commit()
@@ -520,6 +586,7 @@ async def update_share_need(request: Request, sn_id: str):
         "description": record.description,
         "category": record.category,
         "capacity": record.capacity,
+        "author_member_id": str(record.author_member_id) if record.author_member_id else None,
         "tags": record.tags if isinstance(record.tags, list) else [],
         "visibility": record.visibility,
         "status": record.status,
@@ -531,7 +598,7 @@ async def update_share_need(request: Request, sn_id: str):
 async def update_share_need_status(request: Request, sn_id: str):
     """POST /api/v1/discover/shares-needs/<id>/status -- Change status.
 
-    Accessible by admins (co_creator/builder) and ecosystem members.
+    Accessible by admins (co_creator/builder) and the author.
     """
     try:
         sn_uuid = uuid.UUID(sn_id)
@@ -546,6 +613,8 @@ async def update_share_need_status(request: Request, sn_id: str):
     async with request.app.ctx.db() as session:
         member, record, auth_err = await _require_auth_for_shares_needs(request, session, sn_uuid)
         if auth_err:
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
             return auth_err
 
         old_status = record.status
@@ -566,7 +635,7 @@ async def update_share_need_status(request: Request, sn_id: str):
 async def delete_share_need(request: Request, sn_id: str):
     """DELETE /api/v1/discover/shares-needs/<id> -- Delete a share or need.
 
-    Accessible by admins (co_creator/builder) and ecosystem members.
+    Accessible by admins (co_creator/builder) and the author.
     """
     try:
         sn_uuid = uuid.UUID(sn_id)
@@ -611,37 +680,75 @@ async def create_share_need(request: Request):
 
     if not eco_id_str or not domain_id_str or not sn_type or not title:
         return json({"error": "ecosystem_id, domain_id, type, and title are required"}, status=400)
-    if sn_type not in ("share", "need"):
-        return json({"error": "type must be 'share' or 'need'"}, status=400)
+    if not isinstance(body, dict):
+        return json({"error": "JSON object required"}, status=400)
+    if len(title) > 255:
+        return json({"error": "title must be 1-255 characters"}, status=400)
+    if sn_type not in ("share", "need", "solution"):
+        return json({"error": "type must be 'share', 'need', or 'solution'"}, status=400)
+    visibility = body.get("visibility", "public")
+    if visibility not in ("public", "ecosystem", "private"):
+        return json({"error": "Invalid visibility"}, status=400)
+    tags = body.get("tags")
+    if tags is not None:
+        if (
+            not isinstance(tags, list)
+            or len(tags) > 50
+            or any(
+                not isinstance(tag, str)
+                or not tag.strip()
+                or len(tag.strip()) > 100
+                for tag in tags
+            )
+        ):
+            return json({"error": "tags must contain up to 50 non-empty strings"}, status=400)
+        tags = [tag.strip() for tag in tags]
+    for field in ("category", "capacity"):
+        value = body.get(field)
+        if value is not None and (
+            not isinstance(value, str) or len(value.strip()) > 100
+        ):
+            return json({"error": f"{field} must be at most 100 characters"}, status=400)
+    description = body.get("description")
+    if description is not None and (
+        not isinstance(description, str) or len(description) > 20_000
+    ):
+        return json({"error": "description must be at most 20000 characters"}, status=400)
 
     try:
         eco_id = uuid.UUID(eco_id_str)
         domain_id = uuid.UUID(domain_id_str)
-    except ValueError:
+    except (AttributeError, TypeError, ValueError):
         return json({"error": "Invalid UUID in ecosystem_id or domain_id"}, status=400)
 
     async with request.app.ctx.db() as session:
         # Validate the authenticated member belongs to the requested ecosystem
-        member_check = await session.execute(
+        member_check = await session.scalar(
             select(Member).where(
                 Member.ecosystem_id == eco_id,
                 Member.user_id == member.user_id,
             )
         )
-        if not member_check.scalars().first():
+        if not member_check:
             return json({"error": "You are not a member of the specified ecosystem"}, status=403)
 
         record = SharesNeeds(
             id=uuid.uuid4(),
+                Member.current_status == "active",
             ecosystem_id=eco_id,
             domain_id=domain_id,
             type=sn_type,
             title=title,
             description=body.get("description"),
-            category=body.get("category"),
-            capacity=body.get("capacity"),
-            tags=body.get("tags"),
-            visibility=body.get("visibility", "public"),
+        domain = await session.get(Domain, domain_id)
+        if not domain or domain.ecosystem_id != eco_id:
+            return json({"error": "Domain does not belong to the specified ecosystem"}, status=400)
+
+            category=(body.get("category") or "").strip() or None,
+            capacity=(body.get("capacity") or "").strip() or None,
+            tags=tags,
+            visibility=visibility,
+            author_member_id=member_check.id,
         )
         session.add(record)
         await session.commit()
@@ -656,6 +763,7 @@ async def create_share_need(request: Request):
         "description": record.description,
         "category": record.category,
         "capacity": record.capacity,
+        "author_member_id": str(record.author_member_id),
         "tags": record.tags if isinstance(record.tags, list) else [],
         "visibility": record.visibility,
         "status": record.status,

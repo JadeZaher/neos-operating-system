@@ -547,3 +547,4 @@ async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
         ]
 
     return json({"items": items})
+                "author_member_id": str(r.author_member_id) if r.author_member_id else None,

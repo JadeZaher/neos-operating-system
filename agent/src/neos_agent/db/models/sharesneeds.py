@@ -44,13 +44,17 @@ class SharesNeeds(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_shares_needs_domain_id", "domain_id"),
         Index("ix_shares_needs_ecosystem_id", "ecosystem_id"),
+        Index("ix_shares_needs_author_member_id", "author_member_id"),
         Index("ix_shares_needs_type", "type"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
     domain_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("domains.id"), nullable=False)
-    type: Mapped[str] = mapped_column(String(10), nullable=False)  # "share" | "need"
+    author_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    type: Mapped[str] = mapped_column(String(10), nullable=False)  # share | need | solution
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # technology, resources, skills, knowledge, infrastructure, funding, space, labor, other
