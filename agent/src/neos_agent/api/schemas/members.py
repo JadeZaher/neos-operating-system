@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import uuid
 import datetime as _dt
+from typing import Literal
 
 from pydantic import BaseModel
+
+MemberRole = Literal["user", "mod", "admin", "owner"]
 
 
 class MemberListItem(BaseModel):
@@ -14,6 +17,7 @@ class MemberListItem(BaseModel):
     member_id: str
     display_name: str
     current_status: str
+    role: MemberRole = "user"
     profile: str | None = None
     phone: str | None = None
     profile_picture: str | None = None
@@ -84,6 +88,10 @@ class StatusTransitionRequest(BaseModel):
     status: str
     trigger: str | None = None
     notes: str | None = None
+
+
+class RoleUpdateRequest(BaseModel):
+    role: MemberRole
 
 
 class OnboardingChecklistItem(BaseModel):

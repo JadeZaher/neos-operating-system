@@ -36,6 +36,10 @@ class Member(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_members_ecosystem_id", "ecosystem_id"),
         UniqueConstraint("ecosystem_id", "user_id", name="uq_member_ecosystem_user"),
+        CheckConstraint(
+            "role IN ('user', 'mod', 'admin', 'owner')",
+            name="ck_members_role_tier",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
@@ -45,6 +49,7 @@ class Member(TimestampMixin, Base):
     member_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     current_status: Mapped[str] = mapped_column(String(50), nullable=False, default="prospective")
+    role: Mapped[str] = mapped_column(Text, nullable=False, default="user", server_default="user")  # per-ecosystem tier: user, mod, admin, owner
     profile: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # co_creator, builder, collaborator, townhall
     skills_offered: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     skills_needed: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

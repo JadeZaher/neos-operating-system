@@ -30,6 +30,39 @@ def require_admin(request: Request):
     return member, None
 
 
+# Per-ecosystem role tiers, ordered by privilege.
+ROLE_RANK = {"user": 0, "mod": 1, "admin": 2, "owner": 3}
+
+
+async def require_ecosystem_role(request: Request, ecosystem_id: uuid.UUID, min_role: str):
+    """Return (member, None) if the caller's Member row in `ecosystem_id` meets
+    `min_role`, or (None, 401/403_response).
+
+    Re-queries Member by (ctx.user.id, ecosystem_id) — request.ctx.member is an
+    arbitrary single row and must not be trusted for per-ecosystem role checks.
+    """
+    user = getattr(request.ctx, "user", None)
+    if user is None:
+        return None, json({"error": "Authentication required"}, status=401)
+
+    from neos_agent.db.models import Member
+
+    async with request.app.ctx.db() as session:
+        caller = await session.scalar(
+            select(Member).where(
+                Member.user_id == user.id,
+                Member.ecosystem_id == ecosystem_id,
+            )
+        )
+
+    if caller is None or ROLE_RANK.get(caller.role, 0) < ROLE_RANK[min_role]:
+        return None, json(
+            {"error": f"Ecosystem role '{min_role}' or higher required"},
+            status=403,
+        )
+    return caller, None
+
+
 def get_authorized_ecosystem_ids(request: Request) -> list[uuid.UUID]:
     """Return ALL authorized ecosystem IDs for the current user.
 

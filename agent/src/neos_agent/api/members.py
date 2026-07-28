@@ -13,7 +13,7 @@ import logging
 import re
 import uuid
 import datetime as _dt
-from typing import Optional
+from typing import Optional, cast
 
 from sanic import Blueprint, json
 from sanic.request import Request
@@ -34,13 +34,15 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.api.helpers import require_auth, require_admin, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import require_auth, require_admin, require_ecosystem_role, ROLE_RANK, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
+    MemberRole,
     MemberDetail,
     MemberListItem,
     MemberProfileResponse,
     MemberUpdateRequest,
+    RoleUpdateRequest,
     OnboardingChecklistItem,
     OnboardingSnapshot,
     StatusTransitionRequest,
@@ -73,6 +75,7 @@ def _member_to_list_item(m: Member, user: User | None = None) -> dict:
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
+        role=cast(MemberRole, m.role),
         profile=m.profile,
         phone=user.phone if user else None,
         profile_picture=user.profile_picture if user else None,
@@ -100,6 +103,7 @@ def _member_to_detail(m: Member, ob: MemberOnboarding | None = None, user: User 
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
+        role=cast(MemberRole, m.role),
         profile=m.profile,
         phone=user.phone if user else None,
         profile_picture=user.profile_picture if user else None,
@@ -133,6 +137,7 @@ def _member_to_profile(
         member_id=m.member_id,
         display_name=m.display_name,
         current_status=m.current_status,
+        role=cast(MemberRole, m.role),
         profile=m.profile,
         phone=user.phone if user else None,
         profile_picture=user.profile_picture if user else None,
@@ -468,6 +473,13 @@ async def update_member(request: Request, member_id: uuid.UUID):
         if m is None:
             return json({"error": "Member not found"}, status=404)
 
+        # self-service or >=mod in this ecosystem
+        req_user = getattr(request.ctx, "user", None)
+        if req_user is None or m.user_id != req_user.id:
+            _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "mod")
+            if role_err:
+                return role_err
+
         update_data = update_req.model_dump(exclude_none=True)
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
@@ -486,6 +498,69 @@ async def update_member(request: Request, member_id: uuid.UUID):
 
         await session.commit()
         await session.refresh(m)
+
+    return json(_member_to_detail(m, user=m.user))
+
+
+@members_api_bp.put("/<member_id:uuid>/role")
+async def update_member_role(request: Request, member_id: uuid.UUID):
+    """PUT /api/v1/members/:id/role -- Set a member's per-ecosystem role tier.
+
+    owner -> any grant; admin -> only 'user'/'mod' targets and grants;
+    self-demotion allowed; profile-admin bootstrap until owners designated.
+    """
+    auth_member, err = require_auth(request)
+    if err:
+        return err
+
+    body = request.json or {}
+    try:
+        role_req = RoleUpdateRequest(**body)
+    except Exception as e:
+        return json({"error": f"Invalid request: {e}"}, status=400)
+
+    user = getattr(request.ctx, "user", None)
+    if user is None:
+        return json({"error": "Authentication required"}, status=401)
+
+    async with request.app.ctx.db() as session:
+        result = await session.execute(
+            select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
+        )
+        m = result.scalar_one_or_none()
+        if m is None:
+            return json({"error": "Member not found"}, status=404)
+
+        caller = await session.scalar(
+            select(Member).where(
+                Member.user_id == user.id,
+                Member.ecosystem_id == m.ecosystem_id,
+            )
+        )
+        caller_rank = ROLE_RANK.get(caller.role, -1) if caller else -1
+        # transitional bootstrap until owners designated
+        is_profile_admin = caller is not None and caller.profile in ("co_creator", "builder")
+
+        target_rank = ROLE_RANK.get(m.role, 0)
+        new_rank = ROLE_RANK[role_req.role]
+
+        if is_profile_admin or caller_rank == ROLE_RANK["owner"]:
+            allowed = True
+        elif caller is not None and caller.id == m.id and new_rank <= caller_rank:
+            allowed = True  # self-demotion (checked before admin branch)
+        elif caller_rank == ROLE_RANK["admin"]:
+            allowed = target_rank < ROLE_RANK["admin"] and new_rank < ROLE_RANK["admin"]
+        else:
+            allowed = False
+
+        if not allowed:
+            return json({"error": "Ecosystem role 'admin' or higher required for this role change"}, status=403)
+
+        old_role = m.role
+        m.role = role_req.role
+        await session.commit()
+        await session.refresh(m)
+        logger.info("Member %s role: %s -> %s (by user %s)", member_id, old_role, role_req.role, getattr(user, "id", None))
 
     return json(_member_to_detail(m, user=m.user))
 
@@ -518,6 +593,10 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
         m = result.scalar_one_or_none()
         if m is None:
             return json({"error": "Member not found"}, status=404)
+
+        _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "mod")
+        if role_err:
+            return role_err
 
         old_status = m.current_status
 
@@ -586,7 +665,7 @@ async def resend_invite(request: Request, member_id: uuid.UUID):
     No email/delivery infra exists yet; this records the intent and reports
     success. Actual delivery depends on future notification infra.
     """
-    admin, err = require_admin(request)
+    auth_member, err = require_auth(request)
     if err:
         return err
 
@@ -594,6 +673,12 @@ async def resend_invite(request: Request, member_id: uuid.UUID):
         m = await session.get(Member, member_id)
         if m is None:
             return json({"error": "Member not found"}, status=404)
+        # profile-admin OR >=admin tier in this ecosystem (transitional OR)
+        _, admin_err = require_admin(request)
+        if admin_err:
+            _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "admin")
+            if role_err:
+                return role_err
         display_name = m.display_name
 
     return json({
