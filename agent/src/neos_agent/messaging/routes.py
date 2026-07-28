@@ -65,6 +65,7 @@ async def messaging_ws(request: Request, ws):
         return
 
     member = None
+    member_ids: list[uuid.UUID] = []
     try:
         async with app.ctx.db() as db:
             result = await db.execute(
@@ -81,20 +82,25 @@ async def messaging_ws(request: Request, ws):
             if not user:
                 await ws.close(code=4001, reason="User not found")
                 return
+            # A user holds one Member row per ecosystem — register ALL of them so
+            # realtime delivery works for conversations in every ecosystem.
             member_result = await db.execute(
-                select(Member).where(Member.user_id == user.id).limit(1)
+                select(Member).where(Member.user_id == user.id)
             )
-            member = member_result.scalar_one_or_none()
-            if not member:
+            members = list(member_result.scalars().all())
+            if not members:
                 await ws.close(code=4001, reason="Member not found")
                 return
+            member = members[0]
+            member_ids = [m.id for m in members]
     except Exception:
         logger.exception("WebSocket auth error")
         await ws.close(code=4001, reason="Authentication error")
         return
 
-    connection_manager.register(member.id, ws)
-    logger.info("WebSocket connected: %s (%s)", member.display_name, member.id)
+    for mid in member_ids:
+        connection_manager.register(mid, ws)
+    logger.info("WebSocket connected: %s (%d member rows)", member.display_name, len(member_ids))
 
     async def _keepalive():
         try:
@@ -120,7 +126,7 @@ async def messaging_ws(request: Request, ws):
             handler = WS_HANDLERS.get(msg_type)
             if handler:
                 try:
-                    await handler(ws, member, msg_data, app)
+                    await handler(ws, member, msg_data, app, member_ids=member_ids)
                 except Exception:
                     logger.exception("Handler error for type=%s", msg_type)
                     await ws.send('{"type":"error","data":{"message":"Internal error"}}')
@@ -130,5 +136,6 @@ async def messaging_ws(request: Request, ws):
         logger.debug("WebSocket disconnected: %s", member.id)
     finally:
         keepalive_task.cancel()
-        connection_manager.unregister(member.id, ws)
-        logger.info("WebSocket disconnected: %s (%s)", member.display_name, member.id)
+        for mid in member_ids:
+            connection_manager.unregister(mid, ws)
+        logger.info("WebSocket disconnected: %s (%d member rows)", member.display_name, len(member_ids))

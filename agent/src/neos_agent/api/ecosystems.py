@@ -24,6 +24,7 @@ from .helpers import _escape_like, require_auth
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
+    EcosystemStewardItem,
     EcosystemSummary,
     EcosystemUpdateRequest,
 )
@@ -160,6 +161,7 @@ async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Return detail for a specific ecosystem.
 
     Verifies the member belongs to this ecosystem or it is public.
+    Includes steward contacts (admin/owner members) and the caller's role.
     Returns JSON: EcosystemDetail
     """
     member, err = require_auth(request)
@@ -178,6 +180,33 @@ async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
         count = await _get_member_count(db, eco.id)
         detail = _ecosystem_to_detail(eco, count)
+
+        # Stewards: members holding admin/owner tier in this ecosystem.
+        # Public-safe minimal projection — same exposure level as contact_email.
+        steward_rows = (await db.execute(
+            select(Member.id, Member.display_name, Member.role)
+            .where(
+                Member.ecosystem_id == ecosystem_id,
+                Member.role.in_(("admin", "owner")),
+                Member.current_status == "active",
+            )
+            .order_by(Member.display_name)
+        )).all()
+        detail.stewards = [
+            EcosystemStewardItem(id=row.id, display_name=row.display_name, role=row.role)
+            for row in steward_rows
+        ]
+
+        # Caller's own role tier in this ecosystem (drives role-management UI gating)
+        user_id = getattr(member, "user_id", None)
+        if user_id:
+            caller = await db.scalar(
+                select(Member.role).where(
+                    Member.user_id == user_id,
+                    Member.ecosystem_id == ecosystem_id,
+                )
+            )
+            detail.caller_role = caller
 
     return json(detail.model_dump(mode="json"))
 

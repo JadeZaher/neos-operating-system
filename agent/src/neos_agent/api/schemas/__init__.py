@@ -21,7 +21,7 @@ from .auth import (
 )
 
 # Ecosystems
-from .ecosystems import EcosystemCreateRequest, EcosystemDetail, EcosystemUpdateRequest
+from .ecosystems import EcosystemCreateRequest, EcosystemDetail, EcosystemStewardItem, EcosystemUpdateRequest
 
 # Dashboard
 from .dashboard import ActivityItem, DashboardSummary, SummaryCard

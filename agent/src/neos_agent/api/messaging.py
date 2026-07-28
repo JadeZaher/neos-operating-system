@@ -48,29 +48,40 @@ messaging_api_bp = Blueprint("messaging_api", url_prefix="/api/v1/messaging")
 
 async def _get_current_member_id(session, member_or_did, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
     """Resolve the authenticated member to a member id within the active ecosystems."""
+    ids = await _get_current_member_ids(session, member_or_did, eco_ids)
+    return ids[0] if ids else None
+
+
+async def _get_current_member_ids(session, member_or_did, eco_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """Resolve the authenticated member to ALL their member ids within the given ecosystems.
+
+    A user holds one Member row per ecosystem. Messaging must operate across all of
+    them — resolving a single arbitrary row hides conversations and people from the
+    user's other ecosystems.
+    """
     from neos_agent.db.models import User
     if isinstance(member_or_did, str):
         if not member_or_did:
-            return None
+            return []
         # DID string — resolve via User table
         user_result = await session.execute(
             select(User.id).where(User.did == member_or_did).limit(1)
         )
         user_id = user_result.scalar_one_or_none()
         if not user_id:
-            return None
+            return []
         stmt = select(Member.id).where(Member.user_id == user_id)
     elif hasattr(member_or_did, "user_id") and member_or_did.user_id:
         stmt = select(Member.id).where(Member.user_id == member_or_did.user_id)
     elif hasattr(member_or_did, "id"):
         # No user_id — look up by member ID directly
-        return member_or_did.id
+        return [member_or_did.id]
     else:
-        return None
+        return []
     if eco_ids:
         stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
-    result = await session.execute(stmt.limit(1))
-    return result.scalar_one_or_none()
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def _load_participants(session, conversation_id: uuid.UUID) -> list[ParticipantSummary]:
@@ -105,14 +116,14 @@ async def list_conversations(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
+        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        if not member_ids:
             return json({"conversations": []})
 
-        # Get conversation ids for this member
+        # Get conversation ids for ALL of the user's member rows (one per ecosystem)
         cp_stmt = (
             select(ConversationParticipant.conversation_id, ConversationParticipant.last_read_at)
-            .where(ConversationParticipant.member_id == member_id)
+            .where(ConversationParticipant.member_id.in_(member_ids))
         )
         cp_result = await session.execute(cp_stmt)
         participant_rows = cp_result.all()
@@ -120,8 +131,15 @@ async def list_conversations(request: Request):
         if not participant_rows:
             return json({"conversations": []})
 
-        conv_ids = [row.conversation_id for row in participant_rows]
-        last_read_map = {row.conversation_id: row.last_read_at for row in participant_rows}
+        conv_ids = list({row.conversation_id for row in participant_rows})
+        # Own read state per conversation: most recent last_read across own member rows
+        last_read_map: dict[uuid.UUID, _dt.datetime] = {}
+        for row in participant_rows:
+            if row.last_read_at is None:
+                continue
+            prev = last_read_map.get(row.conversation_id)
+            if prev is None or row.last_read_at > prev:
+                last_read_map[row.conversation_id] = row.last_read_at
 
         # Load conversations
         conv_stmt = (
@@ -145,13 +163,13 @@ async def list_conversations(request: Request):
             last_msg_result = await session.execute(last_msg_stmt)
             last_msg = last_msg_result.one_or_none()
 
-            # Unread count
+            # Unread count (exclude messages sent from any of the user's own member rows)
             last_read = last_read_map.get(conv.id)
             unread_stmt = (
                 select(func.count(Message.id))
                 .where(Message.conversation_id == conv.id)
                 .where(Message.deleted_at.is_(None))
-                .where(Message.sender_id != member_id)
+                .where(Message.sender_id.notin_(member_ids))
             )
             if last_read is not None:
                 unread_stmt = unread_stmt.where(Message.created_at > last_read)
@@ -195,15 +213,15 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
+        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        if not member_ids:
             return json({"error": "Member not found"}, status=404)
 
-        # Verify participation
+        # Verify participation via any of the user's member rows
         participant_check = await session.execute(
             select(ConversationParticipant.id)
             .where(ConversationParticipant.conversation_id == conversation_id)
-            .where(ConversationParticipant.member_id == member_id)
+            .where(ConversationParticipant.member_id.in_(member_ids))
         )
         if participant_check.scalar_one_or_none() is None:
             return json({"error": "Conversation not found"}, status=404)
@@ -363,18 +381,19 @@ async def send_message(request: Request, conversation_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
+        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        if not member_ids:
             return json({"error": "Member not found"}, status=404)
 
-        # Verify participation
-        participant_check = await session.execute(
-            select(ConversationParticipant.id)
+        # Verify participation and resolve WHICH of the user's member rows is in this conversation
+        participant_row = (await session.execute(
+            select(ConversationParticipant.member_id)
             .where(ConversationParticipant.conversation_id == conversation_id)
-            .where(ConversationParticipant.member_id == member_id)
-        )
-        if participant_check.scalar_one_or_none() is None:
+            .where(ConversationParticipant.member_id.in_(member_ids))
+        )).first()
+        if participant_row is None:
             return json({"error": "Not a participant"}, status=403)
+        member_id = participant_row.member_id
 
         # Persist message
         msg = Message(
@@ -451,15 +470,15 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
+        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        if not member_ids:
             return json({"error": "Member not found"}, status=404)
 
-        # Verify participation
+        # Verify participation via any of the user's member rows
         participant_check = await session.execute(
             select(ConversationParticipant.id)
             .where(ConversationParticipant.conversation_id == conversation_id)
-            .where(ConversationParticipant.member_id == member_id)
+            .where(ConversationParticipant.member_id.in_(member_ids))
         )
         if participant_check.scalar_one_or_none() is None:
             return json({"error": "Conversation not found"}, status=404)
@@ -570,32 +589,48 @@ async def search_messages(request: Request):
 async def list_members_for_picker(request: Request):
     """GET /api/v1/messaging/members -- Member picker for starting conversations.
 
-    Returns all members in the member's ecosystems (excluding self).
+    Returns members across ALL ecosystems the user belongs to (not just the
+    currently UI-selected ones — scoping to the selection hid most users).
+    Excludes all of the user's own member rows.
     Returns JSON: {"members": [MemberPickerItem]}
     """
     member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    from neos_agent.db.models import Ecosystem
+    from neos_agent.api.helpers import get_authorized_ecosystem_ids
+
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
+        own_ids = await _get_current_member_ids(session, member, [])
 
-        stmt = select(Member.id, Member.display_name, Member.profile)
+        stmt = (
+            select(Member.id, Member.display_name, Member.profile, Member.role,
+                   Member.ecosystem_id, Ecosystem.name.label("ecosystem_name"))
+            .outerjoin(Ecosystem, Ecosystem.id == Member.ecosystem_id)
+        )
         if eco_ids:
             stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
 
-        # Exclude self
-        if member_id is not None:
-            stmt = stmt.where(Member.id != member_id)
+        # Exclude every member row belonging to the current user
+        if own_ids:
+            stmt = stmt.where(Member.id.notin_(own_ids))
 
         stmt = stmt.order_by(Member.display_name)
         result = await session.execute(stmt)
         rows = result.all()
 
         members = [
-            MemberPickerItem(id=row.id, display_name=row.display_name, profile=row.profile)
+            MemberPickerItem(
+                id=row.id,
+                display_name=row.display_name,
+                profile=row.profile,
+                ecosystem_id=row.ecosystem_id,
+                ecosystem_name=row.ecosystem_name,
+                role=row.role,
+            )
             for row in rows
         ]
 

@@ -51,3 +51,6 @@ class MemberPickerItem(BaseModel):
     id: uuid.UUID
     display_name: str
     profile: str | None = None
+    ecosystem_id: uuid.UUID | None = None
+    ecosystem_name: str | None = None
+    role: str | None = None  # per-ecosystem tier: user, mod, admin, owner

@@ -52,6 +52,23 @@ async def _verify_membership(
     return result.scalar_one_or_none() is not None
 
 
+async def _resolve_participant_member_id(
+    db: AsyncSession, conversation_id: uuid.UUID, member_ids: list[uuid.UUID]
+) -> uuid.UUID | None:
+    """Return whichever of the user's member rows participates in this conversation.
+
+    A user holds one Member row per ecosystem; the connected `member` may not be
+    the row enrolled in this conversation.
+    """
+    result = await db.execute(
+        select(ConversationParticipant.member_id).where(
+            ConversationParticipant.conversation_id == conversation_id,
+            ConversationParticipant.member_id.in_(member_ids),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 def _check_rate_limit(member_id: uuid.UUID) -> bool:
     """Return True if the member is within rate limits."""
     now = datetime.now(timezone.utc).timestamp()
@@ -62,7 +79,7 @@ def _check_rate_limit(member_id: uuid.UUID) -> bool:
     return len(times) < MAX_MESSAGES_PER_SECOND
 
 
-async def handle_message(ws, member, data: dict, app) -> None:
+async def handle_message(ws, member, data: dict, app, member_ids: list[uuid.UUID] | None = None) -> None:
     """Handle a new message: validate, persist, broadcast.
 
     Expected data: {"conversation_id": "...", "content": "..."}
@@ -91,8 +108,10 @@ async def handle_message(ws, member, data: dict, app) -> None:
         return
 
     async with app.ctx.db() as db:
-        # Verify membership
-        if not await _verify_membership(db, conversation_id, member.id):
+        # Verify membership across ALL of the user's member rows (one per ecosystem)
+        own_ids = member_ids or [member.id]
+        sender_member_id = await _resolve_participant_member_id(db, conversation_id, own_ids)
+        if sender_member_id is None:
             await ws.send('{"type":"error","data":{"message":"Not a participant"}}')
             return
 
@@ -101,10 +120,10 @@ async def handle_message(ws, member, data: dict, app) -> None:
             await ws.send('{"type":"error","data":{"message":"You have exited this ecosystem"}}')
             return
 
-        # Persist message
+        # Persist message (attributed to the member row actually in this conversation)
         msg = Message(
             conversation_id=conversation_id,
-            sender_id=member.id,
+            sender_id=sender_member_id,
             content=content,
             message_type="text",
         )
@@ -122,7 +141,7 @@ async def handle_message(ws, member, data: dict, app) -> None:
             "data": {
                 "id": str(msg.id),
                 "conversation_id": str(conversation_id),
-                "sender_id": str(member.id),
+                "sender_id": str(sender_member_id),
                 "sender_name": member.display_name,
                 "content": msg.content,
                 "message_type": "text",
@@ -137,7 +156,7 @@ async def handle_message(ws, member, data: dict, app) -> None:
         )
 
 
-async def handle_typing(ws, member, data: dict, app) -> None:
+async def handle_typing(ws, member, data: dict, app, member_ids: list[uuid.UUID] | None = None) -> None:
     """Handle typing indicator: broadcast to participants (no persistence).
 
     Expected data: {"conversation_id": "..."}
@@ -154,7 +173,8 @@ async def handle_typing(ws, member, data: dict, app) -> None:
         return
 
     async with app.ctx.db() as db:
-        if not await _verify_membership(db, conversation_id, member.id):
+        own_ids = member_ids or [member.id]
+        if await _resolve_participant_member_id(db, conversation_id, own_ids) is None:
             return
 
         participant_ids = await _get_participant_ids(db, conversation_id)
@@ -171,7 +191,7 @@ async def handle_typing(ws, member, data: dict, app) -> None:
         )
 
 
-async def handle_read_receipt(ws, member, data: dict, app) -> None:
+async def handle_read_receipt(ws, member, data: dict, app, member_ids: list[uuid.UUID] | None = None) -> None:
     """Handle read receipt: update last_read_at, broadcast to participants.
 
     Expected data: {"conversation_id": "..."}
@@ -188,11 +208,12 @@ async def handle_read_receipt(ws, member, data: dict, app) -> None:
         return
 
     async with app.ctx.db() as db:
-        # Update last_read_at
+        # Update last_read_at on whichever own member row is in this conversation
+        own_ids = member_ids or [member.id]
         result = await db.execute(
             select(ConversationParticipant).where(
                 ConversationParticipant.conversation_id == conversation_id,
-                ConversationParticipant.member_id == member.id,
+                ConversationParticipant.member_id.in_(own_ids),
             )
         )
         participant = result.scalar_one_or_none()
