@@ -98,7 +98,8 @@ async def collect_audit() -> dict:
 
 
 def main() -> None:
-    print(json.dumps(asyncio.run(collect_audit()), sort_keys=True))
+    payload = json.dumps(asyncio.run(collect_audit()), sort_keys=True)
+    print(f"DATABASE_AUDIT {payload}")
 
 
 if __name__ == "__main__":
