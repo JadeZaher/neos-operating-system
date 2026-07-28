@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from urllib.parse import parse_qs, urlencode, urlsplit
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
@@ -23,6 +24,8 @@ from neos_agent.auth.middleware import make_session_cookie, verify_session_cooki
 # ---------------------------------------------------------------------------
 ECOSYSTEM_ID = uuid.UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 SESSION_SECRET = "test-secret-for-oauth-flow-1234567890abcdef"
+ALTERNATE_FRONTEND_ORIGIN = "https://neos.primusneo.com"
+OAUTH_TRANSACTION_COOKIE = "neos_oauth_transaction"
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +59,10 @@ def _create_app(db_session_factory):
     settings.GOOGLE_CLIENT_SECRET = "google-secret"
     settings.LINKEDIN_CLIENT_ID = "linkedin-client-id"
     settings.LINKEDIN_CLIENT_SECRET = "linkedin-secret"
-    settings.CORS_ORIGINS = "https://frontend.example.com"
+    settings.CORS_ORIGINS = (
+        "https://frontend.example.com,"
+        f"{ALTERNATE_FRONTEND_ORIGIN}"
+    )
     app.ctx.settings = settings
     app.ctx.db = db_session_factory
 
@@ -66,6 +72,44 @@ def _create_app(db_session_factory):
     app.blueprint(auth_api_bp)
 
     return app
+
+
+def _bound_callback(
+    provider: str,
+    *,
+    frontend_origin: str = "https://frontend.example.com",
+    **params: str,
+) -> tuple[str, dict[str, str]]:
+    """Build a callback URL and its matching browser transaction cookie."""
+    from neos_agent.api.oauth import _create_oauth_state
+
+    state = _create_oauth_state(
+        provider,
+        frontend_origin,
+        SESSION_SECRET,
+    )
+    query = urlencode({**params, "state": state})
+    path = f"/api/v1/auth/oauth/{provider}/callback?{query}"
+    return path, {OAUTH_TRANSACTION_COOKIE: state}
+
+
+def _cookie_header(response, name: str) -> str:
+    """Return one Set-Cookie header by cookie name."""
+    return next(
+        (
+            header
+            for header in response.headers.get_list("set-cookie")
+            if header.startswith(f"{name}=")
+        ),
+        "",
+    )
+
+
+def _assert_transaction_cookie_cleared(response) -> None:
+    """Verify the browser-bound transaction was consumed."""
+    header = _cookie_header(response, OAUTH_TRANSACTION_COOKIE).lower()
+    assert "max-age=0" in header
+    assert "path=/api/v1/auth/oauth" in header
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +140,99 @@ class TestCookieSigning:
 
 
 # ---------------------------------------------------------------------------
+# OAuth destination state
+# ---------------------------------------------------------------------------
+def test_oauth_state_validates_provider_expiry_and_signature():
+    """State is provider-bound, short-lived, and tamper resistant."""
+    from neos_agent.api.oauth import _create_oauth_state, _verify_oauth_state
+
+    settings = MagicMock()
+    settings.SESSION_SECRET = SESSION_SECRET
+    settings.FRONTEND_URL = "https://frontend.example.com"
+    settings.CORS_ORIGINS = (
+        "https://frontend.example.com,"
+        f"{ALTERNATE_FRONTEND_ORIGIN}"
+    )
+    state = _create_oauth_state(
+        "google",
+        ALTERNATE_FRONTEND_ORIGIN,
+        SESSION_SECRET,
+        now=1_000,
+    )
+
+    assert (
+        _verify_oauth_state(state, "google", settings, now=1_001)
+        == ALTERNATE_FRONTEND_ORIGIN
+    )
+    assert _verify_oauth_state(state, "linkedin", settings, now=1_001) is None
+    assert _verify_oauth_state(state, "google", settings, now=1_600) is None
+
+    payload, signature = state.split(".", 1)
+    tampered_state = f"A{payload[1:]}.{signature}"
+    assert (
+        _verify_oauth_state(tampered_state, "google", settings, now=1_001)
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_oauth_initiate_accepts_allowed_origin_and_embeds_signed_state():
+    """The second configured frontend receives a state-bound provider URL."""
+    from neos_agent.api.oauth import _verify_oauth_state
+
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    query = urlencode({"origin": ALTERNATE_FRONTEND_ORIGIN})
+
+    _, response = await app.asgi_client.get(
+        f"/api/v1/auth/oauth/google?{query}",
+    )
+
+    assert response.status_code == 200
+    provider_query = parse_qs(urlsplit(response.json["url"]).query)
+    assert provider_query["redirect_uri"] == [
+        "https://backend.example.com/api/v1/auth/oauth/google/callback"
+    ]
+    assert (
+        _verify_oauth_state(
+            provider_query["state"][0],
+            "google",
+            app.ctx.settings,
+        )
+        == ALTERNATE_FRONTEND_ORIGIN
+    )
+    transaction_cookie = _cookie_header(response, OAUTH_TRANSACTION_COOKIE)
+    assert transaction_cookie.startswith(
+        f"{OAUTH_TRANSACTION_COOKIE}={provider_query['state'][0]}"
+    )
+    transaction_cookie_lower = transaction_cookie.lower()
+    assert "httponly" in transaction_cookie_lower
+    assert "secure" in transaction_cookie_lower
+    assert "samesite=none" in transaction_cookie_lower
+    assert "max-age=600" in transaction_cookie_lower
+    assert "path=/api/v1/auth/oauth" in transaction_cookie_lower
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_oauth_initiate_rejects_disallowed_origin():
+    """An arbitrary origin cannot become an OAuth callback destination."""
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    query = urlencode({"origin": "https://attacker.example.com"})
+
+    _, response = await app.asgi_client.get(
+        f"/api/v1/auth/oauth/google?{query}",
+    )
+
+    assert response.status_code == 400
+    assert response.json["error"] == "Frontend origin is not allowed"
+
+    await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
 # Integration tests: OAuth callback response
 # ---------------------------------------------------------------------------
 FAKE_GOOGLE_USER = {
@@ -114,15 +251,142 @@ FAKE_LINKEDIN_USER = {
 
 
 @pytest.mark.asyncio
+async def test_oauth_callback_redirects_to_state_frontend():
+    """A valid state selects the initiating frontend after authentication."""
+    from neos_agent.api.oauth import _create_oauth_state
+
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    state = _create_oauth_state(
+        "google",
+        ALTERNATE_FRONTEND_ORIGIN,
+        SESSION_SECRET,
+    )
+    query = urlencode({"code": "test-auth-code", "state": state})
+
+    with patch(
+        "neos_agent.api.oauth._exchange_google_code",
+        new_callable=AsyncMock,
+    ) as mock_exchange:
+        mock_exchange.return_value = FAKE_GOOGLE_USER
+        _, response = await app.asgi_client.get(
+            f"/api/v1/auth/oauth/google/callback?{query}",
+            cookies={OAUTH_TRANSACTION_COOKIE: state},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 302
+    assert (
+        response.headers.get("location")
+        == f"{ALTERNATE_FRONTEND_ORIGIN}/dashboard"
+    )
+    _assert_transaction_cookie_cleared(response)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_rejects_invalid_state_before_exchange():
+    """Invalid state fails closed to the configured fallback frontend."""
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    query = urlencode({"code": "test-auth-code", "state": "invalid.state"})
+
+    with patch(
+        "neos_agent.api.oauth._exchange_google_code",
+        new_callable=AsyncMock,
+    ) as mock_exchange:
+        _, response = await app.asgi_client.get(
+            f"/api/v1/auth/oauth/google/callback?{query}",
+            cookies={OAUTH_TRANSACTION_COOKIE: "invalid.state"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 302
+    assert response.headers.get("location") == (
+        "https://frontend.example.com/login?error=oauth_state_invalid"
+    )
+    mock_exchange.assert_not_awaited()
+    _assert_transaction_cookie_cleared(response)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_rejects_missing_state():
+    """A callback cannot use the browser cookie without the state query."""
+    from neos_agent.api.oauth import _create_oauth_state
+
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    cookie_state = _create_oauth_state(
+        "google",
+        "https://frontend.example.com",
+        SESSION_SECRET,
+    )
+
+    with patch(
+        "neos_agent.api.oauth._exchange_google_code",
+        new_callable=AsyncMock,
+    ) as mock_exchange:
+        _, response = await app.asgi_client.get(
+            "/api/v1/auth/oauth/google/callback?code=test-auth-code",
+            cookies={OAUTH_TRANSACTION_COOKIE: cookie_state},
+            follow_redirects=False,
+        )
+
+    assert response.headers.get("location") == (
+        "https://frontend.example.com/login?error=oauth_state_invalid"
+    )
+    mock_exchange.assert_not_awaited()
+    _assert_transaction_cookie_cleared(response)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_rejects_state_from_another_browser():
+    """A valid state is insufficient without its initiating browser cookie."""
+    callback_path, _ = _bound_callback(
+        "google",
+        code="test-auth-code",
+    )
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+
+    with patch(
+        "neos_agent.api.oauth._exchange_google_code",
+        new_callable=AsyncMock,
+    ) as mock_exchange:
+        _, response = await app.asgi_client.get(
+            callback_path,
+            follow_redirects=False,
+        )
+
+    assert response.headers.get("location") == (
+        "https://frontend.example.com/login?error=oauth_state_invalid"
+    )
+    mock_exchange.assert_not_awaited()
+    _assert_transaction_cookie_cleared(response)
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_oauth_callback_returns_302_with_cookie():
     """The OAuth callback should return 302 + Set-Cookie header."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="test-auth-code",
+    )
 
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=test-auth-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
@@ -130,7 +394,7 @@ async def test_oauth_callback_returns_302_with_cookie():
     assert "/dashboard" in response.headers.get("location", "")
 
     # Check that Set-Cookie header exists
-    set_cookie = response.headers.get("set-cookie", "")
+    set_cookie = _cookie_header(response, "neos_session")
     assert "neos_session" in set_cookie, f"No neos_session in Set-Cookie: {set_cookie!r}"
 
     # Verify cookie attributes
@@ -139,6 +403,7 @@ async def test_oauth_callback_returns_302_with_cookie():
     assert "secure" in set_cookie_lower, "Cookie missing Secure"
     assert "samesite=none" in set_cookie_lower, f"Cookie missing SameSite=None: {set_cookie}"
     assert "path=/" in set_cookie_lower, "Cookie missing Path=/"
+    _assert_transaction_cookie_cleared(response)
 
     await engine.dispose()
 
@@ -148,16 +413,21 @@ async def test_oauth_callback_cookie_is_valid():
     """The cookie from the OAuth callback should pass signature verification."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="test-auth-code",
+    )
 
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=test-auth-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
     # Extract cookie value from Set-Cookie header
-    set_cookie = response.headers.get("set-cookie", "")
+    set_cookie = _cookie_header(response, "neos_session")
     # Parse "neos_session=VALUE; ..." from the header
     cookie_value = None
     for part in set_cookie.split(";"):
@@ -185,19 +455,24 @@ async def test_oauth_cookie_works_with_auth_me():
     """Full flow: OAuth callback cookie → /auth/me should return 200."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="test-auth-code",
+    )
 
     # Step 1: OAuth callback — get the cookie
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, callback_response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=test-auth-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
     assert callback_response.status_code == 302
 
     # Extract cookie value
-    set_cookie = callback_response.headers.get("set-cookie", "")
+    set_cookie = _cookie_header(callback_response, "neos_session")
     cookie_value = None
     for part in set_cookie.split(";"):
         part = part.strip()
@@ -228,17 +503,23 @@ async def test_oauth_linkedin_callback_works():
     """LinkedIn OAuth callback also sets a valid cookie."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "linkedin",
+        code="test-li-code",
+    )
 
     with patch("neos_agent.api.oauth._exchange_linkedin_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_LINKEDIN_USER
         _, response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/linkedin/callback?code=test-li-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
     assert response.status_code == 302
-    set_cookie = response.headers.get("set-cookie", "")
+    set_cookie = _cookie_header(response, "neos_session")
     assert "neos_session" in set_cookie
+    _assert_transaction_cookie_cleared(response)
 
     await engine.dispose()
 
@@ -248,9 +529,14 @@ async def test_oauth_callback_error_param_redirects_to_login():
     """Callback with error param redirects to login with error."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        error="access_denied",
+    )
 
     _, response = await app.asgi_client.get(
-        "/api/v1/auth/oauth/google/callback?error=access_denied",
+        callback_path,
+        cookies=callback_cookies,
         follow_redirects=False,
     )
 
@@ -260,8 +546,9 @@ async def test_oauth_callback_error_param_redirects_to_login():
     assert "error=oauth_denied" in location
 
     # No cookie should be set on error
-    set_cookie = response.headers.get("set-cookie", "")
+    set_cookie = _cookie_header(response, "neos_session")
     assert "neos_session" not in set_cookie
+    _assert_transaction_cookie_cleared(response)
 
     await engine.dispose()
 
@@ -271,15 +558,18 @@ async def test_oauth_callback_no_code_redirects_to_login():
     """Callback without code param redirects to login with error."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback("google")
 
     _, response = await app.asgi_client.get(
-        "/api/v1/auth/oauth/google/callback",
+        callback_path,
+        cookies=callback_cookies,
         follow_redirects=False,
     )
 
     assert response.status_code == 302
     location = response.headers.get("location", "")
     assert "error=oauth_denied" in location
+    _assert_transaction_cookie_cleared(response)
 
     await engine.dispose()
 
@@ -289,17 +579,23 @@ async def test_oauth_callback_exchange_failure_redirects():
     """If token exchange fails, redirect to login with error."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="bad-code",
+    )
 
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = None  # exchange failed
         _, response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=bad-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
     assert response.status_code == 302
     location = response.headers.get("location", "")
     assert "error=oauth_failed" in location
+    _assert_transaction_cookie_cleared(response)
 
     await engine.dispose()
 
@@ -339,12 +635,17 @@ async def test_password_login_cookie_works_with_auth_me():
     """Baseline: password login sets a cookie that works with /auth/me."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="setup-code",
+    )
 
     # Create a user with password first via OAuth (to get them in the DB)
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_GOOGLE_USER
         await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=setup-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
@@ -403,16 +704,21 @@ async def test_redirect_vs_json_cookie_format():
     """Compare Set-Cookie header format between 302 (OAuth) and 200 (login)."""
     engine, sf = await _setup_db()
     app = _create_app(sf)
+    callback_path, callback_cookies = _bound_callback(
+        "google",
+        code="test-code",
+    )
 
     # OAuth callback → 302 + Set-Cookie
     with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = FAKE_GOOGLE_USER
         _, oauth_response = await app.asgi_client.get(
-            "/api/v1/auth/oauth/google/callback?code=test-code",
+            callback_path,
+            cookies=callback_cookies,
             follow_redirects=False,
         )
 
-    oauth_set_cookie = oauth_response.headers.get("set-cookie", "")
+    oauth_set_cookie = _cookie_header(oauth_response, "neos_session")
 
     # Set up password login
     from neos_agent.api.auth import _hash_password
@@ -432,7 +738,7 @@ async def test_redirect_vs_json_cookie_format():
         json={"username": "compareuser", "password": "testpass123"},
     )
 
-    login_set_cookie = login_response.headers.get("set-cookie", "")
+    login_set_cookie = _cookie_header(login_response, "neos_session")
 
     # Both should have the same cookie attributes (minus the value)
     def extract_attrs(sc: str) -> set[str]:

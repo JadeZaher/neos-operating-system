@@ -74,6 +74,33 @@ def test_create_app_default_cors():
     assert app.config.CORS_ORIGINS == "*"
 
 
+@pytest.mark.asyncio
+async def test_cors_preflight_allows_second_configured_origin():
+    """Comma-separated CORS configuration supports each frontend origin."""
+    from neos_agent.main import create_app
+
+    second_origin = "https://neos.primusneo.com"
+    settings = _make_settings(
+        CORS_ORIGINS=(
+            "https://charting.example.com,"
+            f"{second_origin}"
+        )
+    )
+    app = create_app(settings=settings)
+
+    _, response = await app.asgi_client.options(
+        "/api/v1/auth/challenge",
+        headers={
+            "origin": second_origin,
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "content-type",
+        },
+    )
+
+    assert response.headers.get("access-control-allow-origin") == second_origin
+    assert response.headers.get("access-control-allow-credentials") == "true"
+
+
 def test_create_app_has_lifecycle_listeners():
     """App has before_server_start and after_server_stop listeners."""
     from neos_agent.main import create_app

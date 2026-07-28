@@ -12,10 +12,18 @@ Flow:
 
 from __future__ import annotations
 
-import logging
-import uuid
+import base64
+import binascii
 import datetime as _dt
+import hashlib
+import hmac
+import json as _json
+import logging
+import secrets
+import time
+import uuid
 from datetime import timedelta, timezone
+from urllib.parse import urlencode, urlsplit
 
 from sanic import Blueprint, json
 from sanic.request import Request
@@ -28,6 +36,186 @@ from neos_agent.db.models import AuthSession, Ecosystem, Member, User
 logger = logging.getLogger(__name__)
 
 oauth_bp = Blueprint("oauth", url_prefix="/api/v1/auth/oauth")
+
+_OAUTH_STATE_TTL_SECONDS = 10 * 60
+_OAUTH_STATE_CLOCK_SKEW_SECONDS = 60
+_OAUTH_TRANSACTION_COOKIE = "neos_oauth_transaction"
+_OAUTH_COOKIE_PATH = "/api/v1/auth/oauth"
+
+
+def _normalize_frontend_origin(value: str) -> str | None:
+    """Return a canonical HTTP(S) origin, or None for a non-origin URL."""
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except (AttributeError, ValueError):
+        return None
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+
+    host = parsed.hostname
+    if ":" in host:
+        host = f"[{host}]"
+    default_port = (
+        (parsed.scheme == "http" and port == 80)
+        or (parsed.scheme == "https" and port == 443)
+    )
+    authority = host if port is None or default_port else f"{host}:{port}"
+    return f"{parsed.scheme}://{authority}"
+
+
+def _allowed_frontend_origins(settings) -> set[str]:
+    """Build the redirect allowlist from explicit frontend/CORS settings."""
+    configured = [
+        getattr(settings, "FRONTEND_URL", ""),
+        *str(getattr(settings, "CORS_ORIGINS", "")).split(","),
+    ]
+    return {
+        normalized
+        for value in configured
+        if value.strip() != "*"
+        if (normalized := _normalize_frontend_origin(value)) is not None
+    }
+
+
+def _fallback_frontend_origin(settings) -> str:
+    """Choose a safe configured destination for rejected callbacks."""
+    frontend = _normalize_frontend_origin(getattr(settings, "FRONTEND_URL", ""))
+    if frontend:
+        return frontend
+
+    for value in str(getattr(settings, "CORS_ORIGINS", "")).split(","):
+        origin = _normalize_frontend_origin(value)
+        if origin:
+            return origin
+
+    redirect_base = _normalize_frontend_origin(
+        getattr(settings, "OAUTH_REDIRECT_BASE", "")
+    )
+    return redirect_base or "http://localhost:5173"
+
+
+def _create_oauth_state(
+    provider: str,
+    frontend_origin: str,
+    secret: str,
+    *,
+    now: int | None = None,
+) -> str:
+    """Sign the frontend destination and OAuth request metadata."""
+    issued_at = int(time.time() if now is None else now)
+    payload = {
+        "v": 1,
+        "provider": provider,
+        "origin": frontend_origin,
+        "nonce": secrets.token_urlsafe(24),
+        "iat": issued_at,
+        "exp": issued_at + _OAUTH_STATE_TTL_SECONDS,
+    }
+    encoded_payload = base64.urlsafe_b64encode(
+        _json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).rstrip(b"=").decode()
+    signature = hmac.new(
+        secret.encode(), encoded_payload.encode(), hashlib.sha256
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+    return f"{encoded_payload}.{encoded_signature}"
+
+
+def _verify_oauth_state(
+    state: str,
+    provider: str,
+    settings,
+    *,
+    now: int | None = None,
+) -> str | None:
+    """Validate a signed state and return its allowed frontend origin."""
+    try:
+        encoded_payload, encoded_signature = state.split(".", 1)
+        expected_signature = hmac.new(
+            settings.SESSION_SECRET.encode(),
+            encoded_payload.encode(),
+            hashlib.sha256,
+        ).digest()
+        supplied_signature = base64.urlsafe_b64decode(
+            encoded_signature + "=" * (-len(encoded_signature) % 4)
+        )
+        if not hmac.compare_digest(expected_signature, supplied_signature):
+            return None
+
+        payload = _json.loads(
+            base64.urlsafe_b64decode(
+                encoded_payload + "=" * (-len(encoded_payload) % 4)
+            )
+        )
+    except (
+        AttributeError,
+        binascii.Error,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        _json.JSONDecodeError,
+    ):
+        return None
+
+    current_time = int(time.time() if now is None else now)
+    issued_at = payload.get("iat") if isinstance(payload, dict) else None
+    expires_at = payload.get("exp") if isinstance(payload, dict) else None
+    nonce = payload.get("nonce") if isinstance(payload, dict) else None
+    origin = payload.get("origin") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("v") != 1
+        or payload.get("provider") != provider
+        or type(issued_at) is not int
+        or type(expires_at) is not int
+        or expires_at <= current_time
+        or issued_at > current_time + _OAUTH_STATE_CLOCK_SKEW_SECONDS
+        or expires_at - issued_at != _OAUTH_STATE_TTL_SECONDS
+        or not isinstance(nonce, str)
+        or len(nonce) < 16
+        or not isinstance(origin, str)
+    ):
+        return None
+
+    normalized_origin = _normalize_frontend_origin(origin)
+    if (
+        normalized_origin != origin
+        or normalized_origin not in _allowed_frontend_origins(settings)
+    ):
+        return None
+    return normalized_origin
+
+
+def _frontend_redirect(frontend_origin: str, path: str, **query: str) -> str:
+    """Build an encoded redirect URL beneath a validated frontend origin."""
+    suffix = f"?{urlencode(query)}" if query else ""
+    return f"{frontend_origin}{path}{suffix}"
+
+
+def _clear_oauth_transaction_cookie(response):
+    """Expire the browser-bound OAuth transaction cookie."""
+    response.delete_cookie(
+        _OAUTH_TRANSACTION_COOKIE,
+        path=_OAUTH_COOKIE_PATH,
+    )
+    return response
+
+
+def _oauth_callback_redirect(frontend_origin: str, path: str, **query: str):
+    """Create a callback redirect that consumes the OAuth transaction."""
+    response = redirect(_frontend_redirect(frontend_origin, path, **query))
+    return _clear_oauth_transaction_cookie(response)
+
 
 # ---------------------------------------------------------------------------
 # Provider helpers
@@ -118,32 +306,59 @@ async def oauth_initiate(request: Request, provider: str):
     if provider == "google":
         if not settings.GOOGLE_CLIENT_ID:
             return json({"error": "Google OAuth not configured"}, status=503)
-        redirect_uri = f"{settings.OAUTH_REDIRECT_BASE}/api/v1/auth/oauth/google/callback"
-        url = (
-            "https://accounts.google.com/o/oauth2/v2/auth"
-            f"?client_id={settings.GOOGLE_CLIENT_ID}"
-            f"&redirect_uri={redirect_uri}"
-            "&response_type=code"
-            "&scope=openid%20email%20profile"
-            "&access_type=offline"
-            "&prompt=consent"
-        )
-        return json({"url": url})
-
     elif provider == "linkedin":
         if not settings.LINKEDIN_CLIENT_ID:
             return json({"error": "LinkedIn OAuth not configured"}, status=503)
-        redirect_uri = f"{settings.OAUTH_REDIRECT_BASE}/api/v1/auth/oauth/linkedin/callback"
-        url = (
-            "https://www.linkedin.com/oauth/v2/authorization"
-            f"?response_type=code"
-            f"&client_id={settings.LINKEDIN_CLIENT_ID}"
-            f"&redirect_uri={redirect_uri}"
-            "&scope=openid%20profile%20email"
-        )
-        return json({"url": url})
+    else:
+        return json({"error": f"Unknown provider: {provider}"}, status=400)
 
-    return json({"error": f"Unknown provider: {provider}"}, status=400)
+    requested_origin = request.args.get("origin")
+    if requested_origin is None:
+        frontend_origin = _fallback_frontend_origin(settings)
+    else:
+        frontend_origin = _normalize_frontend_origin(requested_origin)
+        if frontend_origin not in _allowed_frontend_origins(settings):
+            return json({"error": "Frontend origin is not allowed"}, status=400)
+
+    state = _create_oauth_state(
+        provider,
+        frontend_origin,
+        settings.SESSION_SECRET,
+    )
+    redirect_uri = (
+        f"{settings.OAUTH_REDIRECT_BASE}/api/v1/auth/oauth/{provider}/callback"
+    )
+    if provider == "google":
+        authorization_url = "https://accounts.google.com/o/oauth2/v2/auth"
+        params = {
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        }
+    else:
+        authorization_url = "https://www.linkedin.com/oauth/v2/authorization"
+        params = {
+            "response_type": "code",
+            "client_id": settings.LINKEDIN_CLIENT_ID,
+            "redirect_uri": redirect_uri,
+            "scope": "openid profile email",
+            "state": state,
+        }
+    response = json({"url": f"{authorization_url}?{urlencode(params)}"})
+    response.add_cookie(
+        _OAUTH_TRANSACTION_COOKIE,
+        state,
+        httponly=True,
+        secure=True,
+        samesite="None",
+        max_age=_OAUTH_STATE_TTL_SECONDS,
+        path=_OAUTH_COOKIE_PATH,
+    )
+    return response
 
 
 @oauth_bp.get("/<provider:str>/callback")
@@ -152,18 +367,44 @@ async def oauth_callback(request: Request, provider: str):
     settings = request.app.ctx.settings
     code = request.args.get("code")
     error = request.args.get("error")
-    # FRONTEND_URL is where the user's browser should land after OAuth.
-    # Falls back to OAUTH_REDIRECT_BASE for backward compat, then localhost.
-    frontend_base = settings.FRONTEND_URL or settings.OAUTH_REDIRECT_BASE or "http://localhost:5173"
+    state = request.args.get("state")
+    cookie_state = request.cookies.get(_OAUTH_TRANSACTION_COOKIE)
+    fallback_origin = _fallback_frontend_origin(settings)
+    if (
+        not state
+        or not cookie_state
+        or not hmac.compare_digest(state, cookie_state)
+    ):
+        return _oauth_callback_redirect(
+            fallback_origin,
+            "/login",
+            error="oauth_state_invalid",
+        )
+
+    frontend_origin = _verify_oauth_state(state, provider, settings)
+    if frontend_origin is None:
+        return _oauth_callback_redirect(
+            fallback_origin,
+            "/login",
+            error="oauth_state_invalid",
+        )
 
     if error or not code:
-        return redirect(f"{frontend_base}/login?error=oauth_denied")
+        return _oauth_callback_redirect(
+            frontend_origin,
+            "/login",
+            error="oauth_denied",
+        )
 
     # Exchange code for user info
     if provider == "google":
         user_info = await _exchange_google_code(code, settings)
         if not user_info:
-            return redirect(f"{frontend_base}/login?error=oauth_failed")
+            return _oauth_callback_redirect(
+                frontend_origin,
+                "/login",
+                error="oauth_failed",
+            )
         oauth_id = user_info.get("id")
         display_name = user_info.get("name", "")
         email = user_info.get("email", "")
@@ -172,17 +413,29 @@ async def oauth_callback(request: Request, provider: str):
     elif provider == "linkedin":
         user_info = await _exchange_linkedin_code(code, settings)
         if not user_info:
-            return redirect(f"{frontend_base}/login?error=oauth_failed")
+            return _oauth_callback_redirect(
+                frontend_origin,
+                "/login",
+                error="oauth_failed",
+            )
         oauth_id = user_info.get("id")
         display_name = user_info.get("name", "")
         email = user_info.get("email", "")
         picture = user_info.get("picture")
 
     else:
-        return redirect(f"{frontend_base}/login?error=unknown_provider")
+        return _oauth_callback_redirect(
+            frontend_origin,
+            "/login",
+            error="unknown_provider",
+        )
 
     if not oauth_id:
-        return redirect(f"{frontend_base}/login?error=oauth_failed")
+        return _oauth_callback_redirect(
+            frontend_origin,
+            "/login",
+            error="oauth_failed",
+        )
 
     # Find or create User, then ensure Member exists
     async with request.app.ctx.db() as session:
@@ -223,7 +476,11 @@ async def oauth_callback(request: Request, provider: str):
         eco_result = await session.execute(select(Ecosystem).limit(1))
         ecosystem = eco_result.scalar_one_or_none()
         if ecosystem is None:
-            return redirect(f"{frontend_base}/login?error=no_ecosystem")
+            return _oauth_callback_redirect(
+                frontend_origin,
+                "/login",
+                error="no_ecosystem",
+            )
 
         # Find or create Member for this user + ecosystem
         member_result = await session.execute(
@@ -260,12 +517,12 @@ async def oauth_callback(request: Request, provider: str):
 
     # Set session cookie and redirect to frontend
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
-    redirect_url = f"{frontend_base}/dashboard"
+    redirect_url = _frontend_redirect(frontend_origin, "/dashboard")
     logger.info(
         "OAuth %s callback success: user_id=%s, session_id=%s, redirect_to=%s, cookie_len=%d",
         provider, user.id, session_id, redirect_url, len(cookie_value),
     )
-    response = redirect(redirect_url)
+    response = _clear_oauth_transaction_cookie(redirect(redirect_url))
     response.add_cookie(
         "neos_session",
         cookie_value,
