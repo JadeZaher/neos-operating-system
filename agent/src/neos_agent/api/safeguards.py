@@ -20,7 +20,7 @@ from sanic.request import Request
 from sqlalchemy import func, select
 
 from neos_agent.db.models import GovernanceHealthAudit
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
+from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
 from neos_agent.api.schemas.safeguards import AuditCreateRequest, AuditDetail, AuditListItem, HealthSummary
 
 logger = logging.getLogger(__name__)
@@ -240,12 +240,17 @@ async def list_audits(request: Request):
 
 @safeguards_api_bp.get("/audits/<audit_id:uuid>")
 async def get_audit(request: Request, audit_id: uuid.UUID):
-    """GET /api/v1/safeguards/audits/:id -- audit detail."""
+    """GET /api/v1/safeguards/audits/:id -- audit detail.
+
+    Audits are readable by any member of the ecosystem the audit is tied to,
+    regardless of the current cookie selection — so this authorizes against
+    the caller's full membership scope, not the UI focus selection.
+    """
     member, err = require_auth(request)
     if err:
         return err
 
-    eco_ids = get_ecosystem_ids(request)
+    eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(GovernanceHealthAudit).where(

@@ -8,6 +8,7 @@ summaries for ecosystems. All endpoints require authentication.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 
@@ -46,7 +47,8 @@ def _summary_to_dict(s: ComplianceSummary) -> dict:
         "agreement_coverage": s.agreement_coverage,
         "domain_health": s.domain_health,
         "flagged_issues": s.flagged_issues,
-        "version_fingerprint": s.version_fingerprint,
+        # Optional: present only if the column exists (not yet migrated).
+        "version_fingerprint": getattr(s, "version_fingerprint", None),
     }
 
 
@@ -131,10 +133,15 @@ async def generate_compliance(request: Request):
                 f"Flag any issues. Respond in JSON with keys: summary (string), scores (object), flagged_issues (array)."
             )
             try:
-                ai_result = await acompletion(
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1024,
-                    temperature=0.3,
+                # Bound the AI call so a slow provider falls back to the
+                # structural summary instead of stalling the request.
+                ai_result = await asyncio.wait_for(
+                    acompletion(
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=1024,
+                        temperature=0.3,
+                    ),
+                    timeout=45,
                 )
                 if ai_result and ai_result.get("content"):
                     import json as _json

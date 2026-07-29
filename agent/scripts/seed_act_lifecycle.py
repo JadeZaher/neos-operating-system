@@ -59,6 +59,8 @@ from neos_agent.db.models import (
     DecisionRecord,
     DecisionParticipant,
     DecisionSemanticTag,
+    MemberDecision,
+    SharesNeeds,
 )
 from neos_agent.services.agreement_consent import _PARTICIPATING_MEMBER_STATUSES
 
@@ -248,24 +250,41 @@ async def purge(database_url: str) -> None:
     decision_agr_ids = ", ".join(f"'{aid}'" for aid in DECISION_AGREEMENTS.values())
 
     async with engine.begin() as conn:
-        # Decision artifacts minted by this seed (participants/tags first)
+        # Decision artifacts minted by this seed (participants/tags first).
+        # Also catch artifacts minted by ANY run (engine smokes, UI) that
+        # reference this seed's proposals/agreements — the source FKs block
+        # the parent deletes otherwise.
+        extra_dec_ids = (await conn.execute(text(
+            f'SELECT id FROM "decision_records" WHERE source_proposal_id IN ({prop_ids})'
+            f' OR source_agreement_id IN ({agr_ids}) OR source_agreement_id IN ({decision_agr_ids})'
+        ))).scalars().all()
+        all_dec = set(dec_ids.replace("'", "").split(", ")) | {str(x) for x in extra_dec_ids}
+        dec_ids_all = ", ".join(f"'{d}'" for d in all_dec)
         await conn.execute(text(
-            f'DELETE FROM "decision_participants" WHERE decision_record_id IN ({dec_ids})'
+            f'DELETE FROM "decision_participants" WHERE decision_record_id IN ({dec_ids_all})'
         ))
         await conn.execute(text(
-            f'DELETE FROM "decision_semantic_tags" WHERE decision_record_id IN ({dec_ids})'
+            f'DELETE FROM "decision_semantic_tags" WHERE decision_record_id IN ({dec_ids_all})'
         ))
         await conn.execute(text(
-            f'DELETE FROM "decision_dissent_records" WHERE decision_record_id IN ({dec_ids})'
+            f'DELETE FROM "decision_dissent_records" WHERE decision_record_id IN ({dec_ids_all})'
         ))
         await conn.execute(text(
-            f'DELETE FROM "decision_records" WHERE id IN ({dec_ids})'
+            f'DELETE FROM "decision_records" WHERE id IN ({dec_ids_all})'
         ))
 
         # Member consents added to pre-existing (decision protocol) agreements
         await conn.execute(text(
             f'DELETE FROM "agreement_member_consents" WHERE agreement_id IN ({decision_agr_ids})'
         ))
+        # Member decisions + needs created by this seed
+        md_ids = ", ".join(
+            f"'{_uid(f'memberdecision.{p}.{k}')}'"
+            for p in ("omni", "eb", "ps", "oa") for k in ("agreement", "proposal", "need")
+        )
+        sn_ids = ", ".join(f"'{_uid(f'sharesneed.{p}.need')}'" for p in ("omni", "eb", "ps", "oa"))
+        await conn.execute(text(f'DELETE FROM "member_decisions" WHERE id IN ({md_ids})'))
+        await conn.execute(text(f'DELETE FROM "shares_needs" WHERE id IN ({sn_ids})'))
         # Ceremonies added to pre-existing agreements (seed_omnione writes none)
         await conn.execute(text(
             f'DELETE FROM "agreement_ceremonies" WHERE agreement_id IN ({decision_agr_ids})'
@@ -1008,6 +1027,57 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
                 ecosystem_scope="internal",
                 urgency_at_time="standard",
             ))
+
+            # ===========================================================
+            # MEMBER DECISIONS — the user-owned substrate: decisions on an
+            # active agreement, a ratified proposal, and a need being served.
+            # ===========================================================
+            owner_a = eco_members[0]
+            owner_b = eco_members[1] if len(eco_members) > 1 else eco_members[0]
+            session.add(MemberDecision(
+                id=_uid(f"memberdecision.{prefix}.agreement"),
+                ecosystem_id=eco_id,
+                member_id=owner_a.id,
+                subject_type="agreement",
+                subject_id=DECISION_AGREEMENTS[prefix],
+                decision="I accept this protocol and will uphold it in my domain work.",
+                state="in_progress",
+                notes="Reviewing the consent-gate clauses with my circle this week.",
+            ))
+            session.add(MemberDecision(
+                id=_uid(f"memberdecision.{prefix}.proposal"),
+                ecosystem_id=eco_id,
+                member_id=owner_b.id,
+                subject_type="proposal",
+                subject_id=_uid(f"prop.{prefix}.ratified"),
+                decision="I accept this ratified proposal and will act on it.",
+                state="intended",
+            ))
+            need_id = _uid(f"sharesneed.{prefix}.need")
+            session.add(SharesNeeds(
+                id=need_id,
+                ecosystem_id=eco_id,
+                domain_id=_uid(f"dom.{prefix}.gov"),  # governance circle, matches seed_omnione
+                author_member_id=owner_b.id,
+                type="need",
+                title=f"{eco_name}: facilitator for consent rounds",
+                description="Looking for a member to facilitate upcoming consent ceremonies.",
+                category="labor",
+                visibility="ecosystem",
+                status="active",
+            ))
+            session.add(MemberDecision(
+                id=_uid(f"memberdecision.{prefix}.need"),
+                ecosystem_id=eco_id,
+                member_id=owner_a.id,
+                subject_type="need",
+                subject_id=need_id,
+                decision="I'll serve this need — I can facilitate the next two rounds.",
+                state="follow_up",
+                notes="Confirming availability dates before committing fully.",
+            ))
+            counts["member_decisions"] = counts.get("member_decisions", 0) + 3
+            counts["shares_needs"] = counts.get("shares_needs", 0) + 1
 
         await session.commit()
 

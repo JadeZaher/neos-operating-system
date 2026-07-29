@@ -11,6 +11,7 @@ from ._base import Base, GUID, TimestampMixin  # noqa: F401
 from .ecosystem import Ecosystem  # noqa: F401
 from .user import User  # noqa: F401
 from .member import Member  # noqa: F401
+from .memberdecision import MemberDecision  # noqa: F401
 from .memberonboarding import MemberOnboarding  # noqa: F401
 from .memberstatustransition import MemberStatusTransition  # noqa: F401
 from .domain import Domain  # noqa: F401
@@ -45,6 +46,7 @@ from .governancehealthaudit import GovernanceHealthAudit  # noqa: F401
 from .emergencystate import EmergencyState  # noqa: F401
 from .exitrecord import ExitRecord  # noqa: F401
 from .agentsession import AgentSession  # noqa: F401
+from .agenttoken import AgentToken  # noqa: F401
 from .authsession import AuthSession  # noqa: F401
 from .authchallenge import AuthChallenge  # noqa: F401
 from .conversation import Conversation  # noqa: F401
@@ -74,6 +76,7 @@ __all__ = [
     "Ecosystem",
     "User",
     "Member",
+    "MemberDecision",
     "MemberOnboarding",
     "MemberStatusTransition",
     "Domain",

@@ -450,7 +450,12 @@ async def create_member(request: Request):
 
 @members_api_bp.put("/<member_id:uuid>")
 async def update_member(request: Request, member_id: uuid.UUID):
-    """PUT /api/v1/members/:id -- Update non-None fields of a member."""
+    """PUT /api/v1/members/:id -- Update the caller's OWN member profile.
+
+    Binding rule: a member can only edit their own profile. Governance
+    actions on other members live on dedicated endpoints (PUT /members/:id/role,
+    POST /members/:id/status) — never through profile edits.
+    """
     auth_member, err = require_auth(request)
     if err:
         return err
@@ -473,12 +478,14 @@ async def update_member(request: Request, member_id: uuid.UUID):
         if m is None:
             return json({"error": "Member not found"}, status=404)
 
-        # self-service or >=mod in this ecosystem
+        # Self-service only: profile content belongs to the member alone.
         req_user = getattr(request.ctx, "user", None)
         if req_user is None or m.user_id != req_user.id:
-            _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "mod")
-            if role_err:
-                return role_err
+            return json(
+                {"error": "Members can only edit their own profile. "
+                          "Governance actions use PUT /members/:id/role or POST /members/:id/status."},
+                status=403,
+            )
 
         update_data = update_req.model_dump(exclude_none=True)
         if "shared_ecosystem_ids" in update_data:
