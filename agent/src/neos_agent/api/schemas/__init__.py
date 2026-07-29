@@ -31,6 +31,7 @@ from .agreements import (
     AgreementCreateRequest,
     AgreementConsentRequest,
     AgreementConsentWithdrawalRequest,
+    AgreementCeremonyEvidenceRequest,
     AgreementCeremonySchema,
     AgreementConsentSummary,
     AgreementDetail,

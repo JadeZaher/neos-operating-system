@@ -29,6 +29,11 @@ from neos_agent.db.models import (
     TestSuccessCriterion,
 )
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.services.act_gates import (
+    maybe_auto_advance_proposal,
+    normalize_act_policy,
+    proposal_gate_status,
+)
 from neos_agent.api.schemas.proposals import (
     AdviceEntryCreateRequest,
     AdviceEntrySchema,
@@ -238,6 +243,7 @@ def _proposal_to_detail(p: Proposal) -> ProposalDetail:
         consent_deadline=p.consent_deadline,
         test_duration=p.test_duration,
         updated_at=p.updated_at,
+        act_policy=normalize_act_policy(p.act_policy),
         advice_logs=[_advice_log_to_schema(log) for log in p.advice_logs],
         consent_records=[_consent_record_to_schema(cr) for cr in p.consent_records],
         test_reports=[_test_report_to_schema(tr) for tr in p.test_reports],
@@ -329,6 +335,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
 
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
+        payload["gates"] = await proposal_gate_status(session, proposal)
         payload["caller_role"] = caller.role if caller else None
         payload["caller_can_conduct"] = caller is not None
         return json(payload)
@@ -377,6 +384,9 @@ async def create_proposal(request: Request):
             rationale=create_req.rationale,
             created_date=_dt.date.today(),
             advice_deadline=create_req.advice_deadline,
+            act_policy=normalize_act_policy(
+                create_req.act_policy.model_dump() if create_req.act_policy else None
+            ),
         )
         session.add(proposal)
         await session.commit()
@@ -434,6 +444,15 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
 
         # Update non-None fields
         update_data = update_req.model_dump(exclude_none=True)
+        if "act_policy" in update_data:
+            if proposal.status not in {"draft", "advice"}:
+                return json(
+                    {"error": "ACT gates can only be redeclared while the proposal is in draft or advice"},
+                    status=409,
+                )
+            update_data["act_policy"] = normalize_act_policy(
+                update_req.act_policy.model_dump() if update_req.act_policy else None
+            )
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
@@ -511,11 +530,29 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
                     status=400,
                 )
 
+            # ACT gates: forward lifecycle moves require the gate conditions
+            # declared in the proposal's ACT policy. draft->advice opens the
+            # process and carries no gate.
+            gate_key = {"consent": "advice", "test": "consent", "ratified": "test"}.get(new_status)
+            if gate_key:
+                gates = await proposal_gate_status(session, proposal)
+                if not gates[gate_key]["met"]:
+                    return json(
+                        {
+                            "error": f"The {gate_key} gate is not satisfied — the conditions declared in the ACT policy must be met first",
+                            "gates": gates,
+                        },
+                        status=409,
+                    )
+
         proposal.status = new_status
+        # Cascade through any further gates now satisfied (mints the decision
+        # artifact when the process completes at ratified).
+        advance = await maybe_auto_advance_proposal(session, proposal)
         await session.commit()
 
         logger.info(
-            "Proposal %s status: %s -> %s", proposal_id, current, new_status
+            "Proposal %s status: %s -> %s", proposal_id, current, advance["status"]
         )
 
         # Re-load with relationships
@@ -542,6 +579,10 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
 
     detail = _proposal_to_detail(proposal)
     payload = detail.model_dump(mode="json")
+    payload["gates"] = advance["gates"]
+    payload["auto_transitions"] = advance["transitions"]
+    if advance["decision_record_id"]:
+        payload["decision_record_id"] = advance["decision_record_id"]
     payload["caller_role"] = caller.role if caller else None
     payload["caller_can_conduct"] = caller is not None
     return json(payload)
@@ -608,7 +649,8 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        # Find or create advice log
+        # Find or create advice log. ``new_round`` opens a fresh round —
+        # rounds are the unit the declared advice gate counts.
         log_stmt = (
             select(AdviceLog)
             .where(AdviceLog.proposal_id == proposal_id)
@@ -618,7 +660,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         log_result = await session.execute(log_stmt)
         advice_log = log_result.scalar_one_or_none()
 
-        if advice_log is None:
+        if advice_log is None or create_req.new_round:
             advice_log = AdviceLog(
                 id=uuid.uuid4(),
                 proposal_id=proposal_id,
@@ -641,6 +683,11 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             integration_status="pending",
         )
         session.add(entry)
+        await session.flush()
+
+        # ACT gate engine: advance automatically when the declared
+        # advice-round conditions are met.
+        advance = await maybe_auto_advance_proposal(session, proposal)
         await session.commit()
 
         # Re-load log with entries
@@ -653,7 +700,10 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         advice_log = result.scalar_one()
 
     schema = _advice_log_to_schema(advice_log)
-    return json(schema.model_dump(mode="json"), status=201)
+    payload = schema.model_dump(mode="json")
+    payload["gates"] = advance["gates"]
+    payload["auto_transitions"] = advance["transitions"]
+    return json(payload, status=201)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/consent")
@@ -750,6 +800,11 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
             reason=create_req.objection_text,
         )
         session.add(participant)
+        await session.flush()
+
+        # ACT gate engine: advance automatically when the declared
+        # consent conditions are met (quorum reached, no open objections).
+        advance = await maybe_auto_advance_proposal(session, proposal)
         await session.commit()
 
         # Re-load record with participants
@@ -762,7 +817,10 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
         consent_record = result.scalar_one()
 
     schema = _consent_record_to_schema(consent_record)
-    return json(schema.model_dump(mode="json"), status=201)
+    payload = schema.model_dump(mode="json")
+    payload["gates"] = advance["gates"]
+    payload["auto_transitions"] = advance["transitions"]
+    return json(payload, status=201)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/test")
@@ -817,10 +875,12 @@ async def submit_test_report(request: Request, proposal_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
         eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
+        p_stmt = select(Proposal).where(Proposal.id == proposal_id)
         if eco_ids:
             p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        if await session.scalar(p_stmt) is None:
+        p_result = await session.execute(p_stmt)
+        proposal = p_result.scalar_one_or_none()
+        if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
         report = TestReport(
@@ -844,6 +904,12 @@ async def submit_test_report(request: Request, proposal_id: uuid.UUID):
             )
             session.add(criterion)
 
+        await session.flush()
+
+        # ACT gate engine: advance automatically when the declared test
+        # cases all show met evidence (mints the decision artifact at
+        # ratified).
+        advance = await maybe_auto_advance_proposal(session, proposal)
         await session.commit()
 
         # Reload with criteria
@@ -855,4 +921,9 @@ async def submit_test_report(request: Request, proposal_id: uuid.UUID):
         result = await session.execute(stmt)
         report = result.scalar_one()
 
-    return json(_test_report_to_schema(report).model_dump(mode="json"), status=201)
+    payload = _test_report_to_schema(report).model_dump(mode="json")
+    payload["gates"] = advance["gates"]
+    payload["auto_transitions"] = advance["transitions"]
+    if advance["decision_record_id"]:
+        payload["decision_record_id"] = advance["decision_record_id"]
+    return json(payload, status=201)

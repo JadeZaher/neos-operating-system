@@ -64,6 +64,10 @@ class Agreement(TimestampMixin, Base):
     prerequisite_scopes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     prerequisite_domain_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     alignment_points: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    # ACT gate policy declared at the agreement level:
+    # {"min_advice_rounds": int, "consent_required": bool,
+    #  "consent_quorum": int|None, "test_cases": [str]}
+    act_policy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="agreements")
     parent_agreement: Mapped[Optional[Agreement]] = relationship(remote_side="Agreement.id")

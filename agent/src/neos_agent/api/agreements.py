@@ -43,8 +43,15 @@ from neos_agent.services.agreement_consent import (
     missing_agreement_consents,
     synchronize_agreement_requirements,
 )
+from neos_agent.services.act_gates import (
+    agreement_gate_status,
+    maybe_auto_advance_agreement,
+    normalize_act_policy,
+    record_agreement_commitment,
+)
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
+    AgreementCeremonyEvidenceRequest,
     AgreementCeremonySchema,
     AgreementConsentRequest,
     AgreementConsentWithdrawalRequest,
@@ -192,6 +199,7 @@ def _agreement_to_detail(a: Agreement) -> dict:
         alignment_points=getattr(a, "alignment_points", 5),
     ).model_dump(mode="json")
     data["version_fingerprint"] = a.version_fingerprint
+    data["act_policy"] = normalize_act_policy(getattr(a, "act_policy", None))
     return data
 
 
@@ -200,6 +208,7 @@ async def _agreement_detail_payload(db, agreement: Agreement, user_id: uuid.UUID
     payload = _agreement_to_detail(agreement)
     summary = await agreement_consent_summary(db, agreement)
     payload["consent_summary"] = AgreementConsentSummary(**summary).model_dump(mode="json")
+    payload["gates"] = await agreement_gate_status(db, agreement)
     if user_id is None:
         return payload
 
@@ -449,6 +458,9 @@ async def create_agreement(request: Request):
             prerequisite_scopes=create_req.prerequisite_scopes,
             prerequisite_domain_ids=[str(domain_id) for domain_id in create_req.prerequisite_domain_ids],
             alignment_points=create_req.alignment_points,
+            act_policy=normalize_act_policy(
+                create_req.act_policy.model_dump() if create_req.act_policy else None
+            ),
         )
         agreement.version_fingerprint = generate_fingerprint(
             agreement.title, agreement.text, agreement.version, agreement.status
@@ -533,6 +545,10 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         db.add(snapshot)
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "act_policy" in update_data:
+            update_data["act_policy"] = normalize_act_policy(
+                update_req.act_policy.model_dump() if update_req.act_policy else None
+            )
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
@@ -625,13 +641,19 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         if new_status in {"advice", "consent", "test", "active"} and len(ceremony_evidence) < 8:
             return json({"error": f"Documented evidence is required for the {new_status} ceremony"}, status=400)
 
-        if new_status == "test" and agreement.requires_explicit_consent:
-            summary = await agreement_consent_summary(db, agreement)
-            if not summary["complete"]:
-                return json({
-                    "error": "The consent ceremony is incomplete",
-                    "consent_summary": summary,
-                }, status=409)
+        # ACT gates: forward moves require the conditions declared at the
+        # agreement level. draft->advice opens the process and has no gate.
+        gate_key = {"consent": "advice", "test": "consent", "active": "test"}.get(new_status)
+        if gate_key:
+            gates = await agreement_gate_status(db, agreement)
+            if not gates[gate_key]["met"]:
+                return json(
+                    {
+                        "error": f"The {gate_key} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first",
+                        "gates": gates,
+                    },
+                    status=409,
+                )
         # Snapshot before status change
         snapshot = _snapshot_agreement(
             agreement,
@@ -659,6 +681,23 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
             agreement.title, agreement.text, agreement.version, agreement.status
         )
 
+        # Activation produces the agreement's commitment decision artifact.
+        if new_status == "active":
+            await record_agreement_commitment(db, agreement)
+
+        # Cascade through any further gates now satisfied, recording each
+        # automatic transition as a system ceremony.
+        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
+        if advance["transitions"]:
+            db.add(_snapshot_agreement(
+                agreement,
+                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
+                changed_by="ACT gate engine",
+            ))
+            agreement.version_fingerprint = generate_fingerprint(
+                agreement.title, agreement.text, agreement.version, agreement.status
+            )
+
         await db.commit()
         await db.refresh(agreement)
 
@@ -676,7 +715,102 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         result = await db.execute(stmt)
         agreement = result.scalar_one()
 
-        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
+        payload = await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None))
+        payload["auto_transitions"] = advance["transitions"]
+        if advance["decision_record_id"]:
+            payload["decision_record_id"] = advance["decision_record_id"]
+        return json(payload)
+
+
+@agreements_api_bp.post("/<agreement_id:uuid>/ceremonies")
+async def record_ceremony_evidence(request: Request, agreement_id: uuid.UUID):
+    """POST /api/v1/agreements/:id/ceremonies -- record an advice round or test evidence.
+
+    Advice rounds (stage "advice", outcome "round") and test-case evidence
+    (stage "test", outcome "evidence") are the measurable units of the ACT
+    gates declared at the agreement level. When a recording completes the
+    declared conditions the status advances automatically.
+    Accepts JSON: {"stage": "advice"|"test", "note": "..."}
+    Returns JSON: AgreementDetail with 201 status.
+    """
+    member, err = require_auth(request)
+    if err:
+        return err
+    try:
+        evidence_request = AgreementCeremonyEvidenceRequest(**(request.json or {}))
+    except Exception as exc:
+        return json({"error": f"Invalid request: {exc}"}, status=400)
+
+    eco_ids = get_authorized_ecosystem_ids(request)
+    if not eco_ids:
+        return json({"error": "Access denied"}, status=403)
+
+    async with request.app.ctx.db() as db:
+        stmt = (
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
+            .where(Agreement.id == agreement_id)
+        )
+        if eco_ids:
+            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
+        result = await db.execute(stmt)
+        agreement = result.scalar_one_or_none()
+        if agreement is None:
+            return json({"error": "Agreement not found"}, status=404)
+
+        actor = await db.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == agreement.ecosystem_id,
+            Member.current_status == "active",
+        ))
+        if actor is None:
+            return json({"error": "Only an active ecosystem member may record ceremony evidence"}, status=403)
+
+        stage = evidence_request.stage
+        if agreement.status != stage:
+            return json(
+                {"error": f"Evidence for the {stage} stage can only be recorded while the agreement is in {stage} (current: {agreement.status})"},
+                status=409,
+            )
+
+        db.add(AgreementCeremony(
+            id=uuid.uuid4(),
+            agreement_id=agreement.id,
+            stage=stage,
+            completed_by_member_id=actor.id,
+            outcome={"advice": "round", "test": "evidence"}[stage],
+            evidence=evidence_request.note.strip(),
+            completed_at=_utcnow(),
+        ))
+
+        # ACT gate engine: advance automatically when the declared
+        # conditions are now met.
+        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
+        if advance["transitions"]:
+            db.add(_snapshot_agreement(
+                agreement,
+                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
+                changed_by="ACT gate engine",
+            ))
+            agreement.version_fingerprint = generate_fingerprint(
+                agreement.title, agreement.text, agreement.version, agreement.status
+            )
+        await db.commit()
+
+        # Re-load with ceremonies
+        stmt = (
+            select(Agreement)
+            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
+            .where(Agreement.id == agreement.id)
+        )
+        result = await db.execute(stmt)
+        agreement = result.scalar_one()
+
+        payload = await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None))
+        payload["auto_transitions"] = advance["transitions"]
+        if advance["decision_record_id"]:
+            payload["decision_record_id"] = advance["decision_record_id"]
+        return json(payload, status=201)
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/consent")
@@ -751,10 +885,28 @@ async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
             if not pending:
                 actor.current_status = "active"
                 actor.onboarding_status = "complete"
+
+        # ACT gate engine: a completed consent ceremony advances the
+        # agreement automatically (and mints the commitment artifact if the
+        # test gate is already satisfied).
+        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
+        if advance["transitions"]:
+            db.add(_snapshot_agreement(
+                agreement,
+                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
+                changed_by="ACT gate engine",
+            ))
+            agreement.version_fingerprint = generate_fingerprint(
+                agreement.title, agreement.text, agreement.version, agreement.status
+            )
         await db.commit()
         await db.refresh(agreement)
 
-        return json(await _agreement_detail_payload(db, agreement, member.user_id), status=201)
+        payload = await _agreement_detail_payload(db, agreement, member.user_id)
+        payload["auto_transitions"] = advance["transitions"]
+        if advance["decision_record_id"]:
+            payload["decision_record_id"] = advance["decision_record_id"]
+        return json(payload, status=201)
 
 
 @agreements_api_bp.delete("/<agreement_id:uuid>/consent")

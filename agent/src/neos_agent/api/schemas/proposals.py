@@ -95,6 +95,14 @@ class TestReportSchema(BaseModel):
     success_criteria: list[TestSuccessCriterionSchema] = []
 
 
+class ActPolicySchema(BaseModel):
+    """ACT gate declaration made at the proposal/agreement level."""
+    min_advice_rounds: int = 1
+    consent_required: bool = True
+    consent_quorum: int | None = None
+    test_cases: list[str] = []
+
+
 class ProposalDetail(ProposalListItem):
     shared_ecosystem_ids: list[uuid.UUID] | None = None
     co_sponsors: list | dict | None = None
@@ -106,6 +114,8 @@ class ProposalDetail(ProposalListItem):
     consent_deadline: _dt.date | None = None
     test_duration: str | None = None
     updated_at: _dt.datetime
+    act_policy: dict | None = None
+    gates: dict | None = None
     advice_logs: list[AdviceLogSchema] = []
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
@@ -125,6 +135,7 @@ class ProposalCreateRequest(BaseModel):
     proposed_change: str | None = None
     rationale: str | None = None
     advice_deadline: _dt.date | None = None
+    act_policy: ActPolicySchema | None = None
 
 
 class ProposalUpdateRequest(BaseModel):
@@ -136,6 +147,7 @@ class ProposalUpdateRequest(BaseModel):
     shared_ecosystem_ids: list[uuid.UUID] | None = None
     advice_deadline: _dt.date | None = None
     consent_deadline: _dt.date | None = None
+    act_policy: ActPolicySchema | None = None
 
 
 class AdviceEntryCreateRequest(BaseModel):
@@ -145,6 +157,7 @@ class AdviceEntryCreateRequest(BaseModel):
     advice_type: str | None = None
     content: str | None = None
     concerns: str | None = None
+    new_round: bool = False  # open a fresh advice round (counts toward min_advice_rounds)
 
 
 class ConsentPositionRequest(BaseModel):

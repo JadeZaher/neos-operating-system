@@ -9,6 +9,7 @@ from neos_agent.api.agreement_vocabulary import (
     PREREQUISITE_SCOPES,
     canonical_agreement_type,
 )
+from neos_agent.api.schemas.proposals import ActPolicySchema
 
 
 class AgreementListItem(BaseModel):
@@ -75,6 +76,8 @@ class AgreementDetail(AgreementListItem):
     alignment_points: int = 5
     consent_summary: AgreementConsentSummary | None = None
     current_member_consent: AgreementMemberConsentSchema | None = None
+    act_policy: dict | None = None
+    gates: dict | None = None
     caller_role: str | None = None
     caller_can_conduct: bool = False
 
@@ -95,6 +98,7 @@ class AgreementCreateRequest(BaseModel):
     prerequisite_scopes: list[str] = Field(default_factory=list)
     prerequisite_domain_ids: list[UUID] = Field(default_factory=list)
     alignment_points: int = Field(default=5, ge=0, le=25)
+    act_policy: ActPolicySchema | None = None
 
     @field_validator("type")
     @classmethod
@@ -132,6 +136,7 @@ class AgreementUpdateRequest(BaseModel):
     prerequisite_scopes: list[str] | None = None
     prerequisite_domain_ids: list[UUID] | None = None
     alignment_points: int | None = Field(default=None, ge=0, le=25)
+    act_policy: ActPolicySchema | None = None
 
     @field_validator("type")
     @classmethod
@@ -156,6 +161,20 @@ class AgreementConsentRequest(BaseModel):
 
 class AgreementConsentWithdrawalRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
+
+
+class AgreementCeremonyEvidenceRequest(BaseModel):
+    """Record an advice round or test-case evidence against an agreement."""
+    stage: str
+    note: str = Field(min_length=3, max_length=2000)
+
+    @field_validator("stage")
+    @classmethod
+    def validate_stage(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"advice", "test"}:
+            raise ValueError("Ceremony evidence is recorded at the advice or test stage")
+        return normalized
 
 
 class AmendmentRecordSchema(BaseModel):

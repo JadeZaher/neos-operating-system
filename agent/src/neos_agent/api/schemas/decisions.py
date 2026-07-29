@@ -38,6 +38,7 @@ class DecisionListItem(BaseModel):
     holding: str | None = None
     source_skill: str | None = None
     source_layer: int | None = None
+    artifact_type: str | None = None
     domain: str | None = None
     precedent_level: str | None = None
     status: str
@@ -48,8 +49,9 @@ class DecisionDetail(DecisionListItem):
     ratio_decidendi: str | None = None
     obiter_dicta: str | None = None
     deliberation_summary: str | None = None
-    artifact_type: str | None = None
     artifact_reference: str | None = None
+    source_proposal_id: uuid.UUID | None = None
+    source_agreement_id: uuid.UUID | None = None
     overruled_by: str | None = None
     superseded_by: str | None = None
     related_records: dict | None = None

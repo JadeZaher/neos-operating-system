@@ -52,6 +52,15 @@ class DecisionRecord(TimestampMixin, Base):
     source_layer: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     artifact_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     artifact_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Relational source links — set when the artifact was produced by the ACT
+    # process: a ratified proposal (artifact_type "proposal") or an activated
+    # agreement (artifact_type "commitment").
+    source_proposal_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("proposals.id"), nullable=True
+    )
+    source_agreement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("agreements.id"), nullable=True
+    )
     domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     precedent_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")

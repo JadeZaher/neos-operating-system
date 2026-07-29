@@ -60,6 +60,7 @@ def _decision_to_list_item(d: DecisionRecord) -> dict:
         holding=d.holding,
         source_skill=d.source_skill,
         source_layer=d.source_layer,
+        artifact_type=d.artifact_type,
         domain=d.domain,
         precedent_level=d.precedent_level,
         status=d.status,
@@ -85,6 +86,8 @@ def _decision_to_detail(d: DecisionRecord) -> dict:
         deliberation_summary=d.deliberation_summary,
         artifact_type=d.artifact_type,
         artifact_reference=d.artifact_reference,
+        source_proposal_id=d.source_proposal_id,
+        source_agreement_id=d.source_agreement_id,
         overruled_by=d.overruled_by,
         superseded_by=d.superseded_by,
         related_records=d.related_records,
@@ -160,6 +163,10 @@ async def list_decisions(request: Request):
         status = request.args.get("status")
         if status:
             stmt = stmt.where(DecisionRecord.status == status)
+
+        artifact_type = request.args.get("artifact_type")
+        if artifact_type:
+            stmt = stmt.where(DecisionRecord.artifact_type == artifact_type.strip().lower())
 
         domain = request.args.get("domain")
         if domain:

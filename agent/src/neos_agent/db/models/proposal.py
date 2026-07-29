@@ -61,6 +61,10 @@ class Proposal(TimestampMixin, Base):
     test_duration: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     related_proposals: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     synergy_check: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # ACT gate policy declared at the proposal level:
+    # {"min_advice_rounds": int, "consent_required": bool,
+    #  "consent_quorum": int|None, "test_cases": [str]}
+    act_policy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="proposals")
     advice_logs: Mapped[list[AdviceLog]] = relationship(back_populates="proposal")

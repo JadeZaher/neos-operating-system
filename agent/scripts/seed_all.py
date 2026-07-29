@@ -7,7 +7,10 @@ Usage:
 Execution order:
   1. seed_omnione   — ecosystems, members, domains, agreements, proposals (advice),
                       conflicts, decisions, emergency, exit, audits, collaborations
-  2. seed_act_lifecycle — proposals in consent, test, ratified, withdrawn stages
+  2. seed_act_lifecycle — proposals across every ACT stage with declared gate
+                      policies (draft/advice/consent/test/ratified/withdrawn),
+                      mid-flight agreements with ceremony history, minted
+                      decision artifacts (proposal + commitment types)
   3. seed_quizzes   — courses, quizzes, results, progress, tags, badges, tiles
   4. seed_orientation — journey maps, ethos user access records
   5. seed_messaging — conversations, messages, links, push subscriptions
@@ -15,7 +18,8 @@ Execution order:
 
 Total seed data:
   4 ecosystems | 12 domains | 11+ members
-  20+ agreements | 20 proposals (all ACT stages) | 12+ conflicts
+  20+ agreements (8 mid-flight ACT) | 28 proposals (all ACT stages, gate-declared)
+  12+ conflicts | 8 ACT decision artifacts (proposal artifacts + agreement commitments)
   8 courses | 16 quizzes | 16 quiz results
   8 journey maps | 11 ethos access records
   8 conversations | 56+ messages | 8 push subscriptions
