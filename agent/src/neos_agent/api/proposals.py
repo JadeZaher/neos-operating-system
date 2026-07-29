@@ -21,6 +21,7 @@ from sqlalchemy.orm import selectinload
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
+    Agreement,
     ConsentParticipant,
     ConsentRecord,
     Member,
@@ -243,11 +244,45 @@ def _proposal_to_detail(p: Proposal) -> ProposalDetail:
         consent_deadline=p.consent_deadline,
         test_duration=p.test_duration,
         updated_at=p.updated_at,
-        act_policy=normalize_act_policy(p.act_policy),
+        act_policy=p.act_policy,
+        governing_agreement_id=p.governing_agreement_id,
         advice_logs=[_advice_log_to_schema(log) for log in p.advice_logs],
         consent_records=[_consent_record_to_schema(cr) for cr in p.consent_records],
         test_reports=[_test_report_to_schema(tr) for tr in p.test_reports],
     )
+
+
+async def _attach_gate_context(session, proposal: Proposal, payload: dict) -> None:
+    """Attach the effective ACT gates, policy, and governing-agreement brief."""
+    gates = await proposal_gate_status(session, proposal)
+    payload["gates"] = gates
+    # act_policy = the effective policy (own declaration, inherited, or
+    # default); own_act_policy = what is actually stored on the proposal
+    # (None means it inherits). gates.policy_source says which applies.
+    payload["own_act_policy"] = payload.get("act_policy")
+    payload["act_policy"] = gates["policy"]
+    if proposal.governing_agreement_id:
+        agreement = await session.scalar(
+            select(Agreement).where(Agreement.id == proposal.governing_agreement_id)
+        )
+        if agreement is not None:
+            payload["governing_agreement"] = {
+                "id": str(agreement.id),
+                "agreement_id": agreement.agreement_id,
+                "title": agreement.title,
+            }
+
+
+async def _validate_governing_agreement(session, proposal_ecosystem_id: uuid.UUID, agreement_id: uuid.UUID | None) -> str | None:
+    """The governing agreement must exist in the proposal's own ecosystem."""
+    if agreement_id is None:
+        return None
+    agreement = await session.scalar(select(Agreement).where(Agreement.id == agreement_id))
+    if agreement is None:
+        return "Governing agreement not found"
+    if agreement.ecosystem_id != proposal_ecosystem_id:
+        return "The governing agreement must belong to the proposal's ecosystem"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +370,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
 
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
-        payload["gates"] = await proposal_gate_status(session, proposal)
+        await _attach_gate_context(session, proposal, payload)
         payload["caller_role"] = caller.role if caller else None
         payload["caller_can_conduct"] = caller is not None
         return json(payload)
@@ -367,6 +402,11 @@ async def create_proposal(request: Request):
     proposal_id_str = f"PROP-{short_id}"
 
     async with request.app.ctx.db() as session:
+        link_error = await _validate_governing_agreement(
+            session, create_req.ecosystem_id, create_req.governing_agreement_id
+        )
+        if link_error:
+            return json({"error": link_error}, status=400)
         proposal = Proposal(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
@@ -384,9 +424,10 @@ async def create_proposal(request: Request):
             rationale=create_req.rationale,
             created_date=_dt.date.today(),
             advice_deadline=create_req.advice_deadline,
-            act_policy=normalize_act_policy(
-                create_req.act_policy.model_dump() if create_req.act_policy else None
-            ),
+            # Gates stay undeclared (NULL) unless the request declares them —
+            # undeclared proposals inherit from the governing agreement.
+            act_policy=normalize_act_policy(create_req.act_policy.model_dump()) if create_req.act_policy else None,
+            governing_agreement_id=create_req.governing_agreement_id,
         )
         session.add(proposal)
         await session.commit()
@@ -409,8 +450,10 @@ async def create_proposal(request: Request):
         result = await session.execute(stmt)
         proposal = result.scalar_one()
 
-    detail = _proposal_to_detail(proposal)
-    return json(detail.model_dump(mode="json"), status=201)
+        detail = _proposal_to_detail(proposal)
+        payload = detail.model_dump(mode="json")
+        await _attach_gate_context(session, proposal, payload)
+        return json(payload, status=201)
 
 
 @proposals_api_bp.put("/<proposal_id:uuid>")
@@ -442,17 +485,27 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        # Update non-None fields
+        # Update non-None fields. act_policy / governing_agreement_id use
+        # explicit-null semantics: present-and-null CLEARS the declaration so
+        # the proposal inherits its gates from the governing agreement.
         update_data = update_req.model_dump(exclude_none=True)
-        if "act_policy" in update_data:
-            if proposal.status not in {"draft", "advice"}:
-                return json(
-                    {"error": "ACT gates can only be redeclared while the proposal is in draft or advice"},
-                    status=409,
-                )
-            update_data["act_policy"] = normalize_act_policy(
-                update_req.act_policy.model_dump() if update_req.act_policy else None
+        if ("act_policy" in body or "governing_agreement_id" in body) and proposal.status not in {"draft", "advice"}:
+            return json(
+                {"error": "ACT gates can only be redeclared while the proposal is in draft or advice"},
+                status=409,
             )
+        if "act_policy" in body:
+            update_data["act_policy"] = (
+                normalize_act_policy(update_req.act_policy.model_dump())
+                if update_req.act_policy else None
+            )
+        if "governing_agreement_id" in body:
+            link_error = await _validate_governing_agreement(
+                session, proposal.ecosystem_id, update_req.governing_agreement_id
+            )
+            if link_error:
+                return json({"error": link_error}, status=400)
+            update_data["governing_agreement_id"] = update_req.governing_agreement_id
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
@@ -479,8 +532,10 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         result = await session.execute(stmt)
         proposal = result.scalar_one()
 
-    detail = _proposal_to_detail(proposal)
-    return json(detail.model_dump(mode="json"))
+        detail = _proposal_to_detail(proposal)
+        payload = detail.model_dump(mode="json")
+        await _attach_gate_context(session, proposal, payload)
+        return json(payload)
 
 
 @proposals_api_bp.post("/<proposal_id:uuid>/status")
@@ -577,15 +632,15 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
             Member.ecosystem_id == proposal.ecosystem_id,
         ))
 
-    detail = _proposal_to_detail(proposal)
-    payload = detail.model_dump(mode="json")
-    payload["gates"] = advance["gates"]
-    payload["auto_transitions"] = advance["transitions"]
-    if advance["decision_record_id"]:
-        payload["decision_record_id"] = advance["decision_record_id"]
-    payload["caller_role"] = caller.role if caller else None
-    payload["caller_can_conduct"] = caller is not None
-    return json(payload)
+        detail = _proposal_to_detail(proposal)
+        payload = detail.model_dump(mode="json")
+        await _attach_gate_context(session, proposal, payload)
+        payload["auto_transitions"] = advance["transitions"]
+        if advance["decision_record_id"]:
+            payload["decision_record_id"] = advance["decision_record_id"]
+        payload["caller_role"] = caller.role if caller else None
+        payload["caller_can_conduct"] = caller is not None
+        return json(payload)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/advice")

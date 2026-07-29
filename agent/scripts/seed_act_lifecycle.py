@@ -6,15 +6,16 @@ Usage:
 
 Reflects how the system is actually used:
 
-  Proposals (6 per ecosystem = 24) — every ACT stage, each with an act_policy
-  declared at the proposal level, in gate-consistent states:
-    draft     — gates declared, process not opened
-    advice    — 1 of 2 declared advice rounds complete (gate pending)
-    consent   — advice gate met; consent quorum short with one open objection
-    test      — consent achieved; 2 of 3 declared test cases evidenced
-    ratified  — all gates met; decision artifact minted (artifact_type
-                "proposal", participants = the members' recorded commitments)
-    withdrawn — withdrawn during advice with a documented reason
+  Proposals (6 per ecosystem = 24) — every ACT stage, in gate-consistent
+  states. Two gate-declaration modes are demonstrated:
+    draft + advice          — gates INHERITED from the ecosystem's decision-
+                              making protocol agreement (governing_agreement_id,
+                              no act_policy of their own)
+    consent/test/ratified/  — explicit act_policy declared at the proposal level
+    withdrawn
+  Stages: draft (not opened), advice (1 of 2 rounds), consent (quorum short
+  or open objection), test (2 of 3 cases evidenced), ratified (artifact
+  minted), withdrawn (documented reason).
 
   Agreements (2 new per ecosystem = 8) — mid-flight ACT ceremonies with gates
   declared at the agreement level:
@@ -430,7 +431,7 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
         for (eco_id, prefix, eco_name, domain, titles, agr_titles) in ECOSYSTEMS:
             members = MEMBERS[prefix]
             n_members = len(members)
-            prop_num = 2  # 001 is from seed_omnione
+            prop_num = 11  # 001-003 are from seed_omnione; ACT lifecycle takes 011+
 
             # Actual participating members of this ecosystem — agreement
             # consent completeness is evaluated against ALL of them.
@@ -444,7 +445,8 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
             )).scalars().all())
 
             # ===========================================================
-            # 1. DRAFT — gates declared, process not opened
+            # 1. DRAFT — gates inherited from the governing agreement
+            #    (no act_policy of its own), process not opened
             # ===========================================================
             title, change = titles["draft"]
             session.add(Proposal(
@@ -456,16 +458,18 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
                 proposer=members[0][0], affected_domain=domain, urgency="standard",
                 impacted_parties={"affected": ["all_members"]},
                 proposed_change=change,
-                rationale=f"Draft under preparation by the {eco_name} governance circle; ACT gates declared up front.",
+                rationale=f"Draft under preparation by the {eco_name} governance circle; ACT gates inherited from the decision-making protocol.",
                 created_date=days_ago(2),
                 advice_deadline=days_from_now(12),
-                act_policy=_policy(2, n_members, TEST_CASES["ratified"]),
+                act_policy=None,
+                governing_agreement_id=DECISION_AGREEMENTS[prefix],
             ))
             counts["proposals"] += 1
             prop_num += 1
 
             # ===========================================================
-            # 2. ADVICE — 1 of 2 declared rounds complete (gate pending)
+            # 2. ADVICE — inherited gates: 1 of the agreement's 2 declared
+            #    rounds complete (gate pending)
             # ===========================================================
             title, change = titles["advice"]
             prop_id = _uid(f"prop.{prefix}.advice")
@@ -481,7 +485,8 @@ async def seed(database_url: str) -> None:  # noqa: C901 — intentionally long
                 rationale=f"Needed to improve governance clarity in {eco_name}.",
                 created_date=days_ago(10),
                 advice_deadline=days_from_now(7),
-                act_policy=_policy(2, n_members, TEST_CASES["ratified"]),
+                act_policy=None,
+                governing_agreement_id=DECISION_AGREEMENTS[prefix],
             ))
             counts["proposals"] += 1
             prop_num += 1

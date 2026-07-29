@@ -115,7 +115,10 @@ class ProposalDetail(ProposalListItem):
     test_duration: str | None = None
     updated_at: _dt.datetime
     act_policy: dict | None = None
+    own_act_policy: dict | None = None
     gates: dict | None = None
+    governing_agreement_id: uuid.UUID | None = None
+    governing_agreement: dict | None = None
     advice_logs: list[AdviceLogSchema] = []
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
@@ -136,6 +139,7 @@ class ProposalCreateRequest(BaseModel):
     rationale: str | None = None
     advice_deadline: _dt.date | None = None
     act_policy: ActPolicySchema | None = None
+    governing_agreement_id: uuid.UUID | None = None
 
 
 class ProposalUpdateRequest(BaseModel):
@@ -148,6 +152,7 @@ class ProposalUpdateRequest(BaseModel):
     advice_deadline: _dt.date | None = None
     consent_deadline: _dt.date | None = None
     act_policy: ActPolicySchema | None = None
+    governing_agreement_id: uuid.UUID | None = None
 
 
 class AdviceEntryCreateRequest(BaseModel):

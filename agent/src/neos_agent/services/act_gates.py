@@ -87,13 +87,30 @@ def normalize_act_policy(raw: object) -> dict:
     return policy
 
 
+async def resolve_proposal_policy(session, proposal: Proposal) -> tuple[dict, str]:
+    """Return the effective ACT policy and where it came from.
+
+    The proposal's own act_policy wins; when undeclared (NULL), the gates
+    are inherited from the governing agreement's act_policy; otherwise the
+    engine defaults apply.
+    """
+    if proposal.act_policy is not None:
+        return normalize_act_policy(proposal.act_policy), "proposal"
+    governing_id = getattr(proposal, "governing_agreement_id", None)
+    if governing_id:
+        agreement = await session.scalar(select(Agreement).where(Agreement.id == governing_id))
+        if agreement is not None:
+            return normalize_act_policy(agreement.act_policy), "agreement"
+    return normalize_act_policy(None), "default"
+
+
 # ---------------------------------------------------------------------------
 # Proposal gates
 # ---------------------------------------------------------------------------
 
 async def proposal_gate_status(session, proposal: Proposal) -> dict:
     """Evaluate the declared ACT gates for a proposal against live records."""
-    policy = normalize_act_policy(proposal.act_policy)
+    policy, policy_source = await resolve_proposal_policy(session, proposal)
 
     # --- Advice gate: one AdviceLog = one completed advice round -----------
     rounds = int(await session.scalar(
@@ -160,6 +177,7 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
 
     gates = {
         "policy": policy,
+        "policy_source": policy_source,
         "advice": {
             "met": advice_met,
             "rounds": effective_rounds,
@@ -250,7 +268,12 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
     report_count = int(await session.scalar(
         select(func.count(TestReport.id)).where(TestReport.proposal_id == proposal.id)
     ) or 0)
-    policy = normalize_act_policy(proposal.act_policy)
+    policy, policy_source = await resolve_proposal_policy(session, proposal)
+    source_phrase = {
+        "proposal": "declared at the proposal level",
+        "agreement": "inherited from the governing agreement",
+        "default": "the ecosystem default",
+    }[policy_source]
 
     record = DecisionRecord(
         id=uuid.uuid4(),
@@ -264,7 +287,7 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
         ),
         ratio_decidendi=proposal.rationale,
         deliberation_summary=(
-            f"ACT process completed under the declared gate policy "
+            f"ACT process completed under the gate policy {source_phrase} "
             f"(min advice rounds: {policy['min_advice_rounds']}, consent required: "
             f"{policy['consent_required']}, test cases: {len(policy['test_cases'])}). "
             f"{advice_rounds} advice round(s), {len(participants)} consent position(s), "

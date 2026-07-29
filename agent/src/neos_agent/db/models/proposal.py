@@ -64,7 +64,12 @@ class Proposal(TimestampMixin, Base):
     # ACT gate policy declared at the proposal level:
     # {"min_advice_rounds": int, "consent_required": bool,
     #  "consent_quorum": int|None, "test_cases": [str]}
+    # NULL means the gates are inherited from the governing agreement
+    # (governing_agreement_id), falling back to engine defaults.
     act_policy: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    governing_agreement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("agreements.id"), nullable=True
+    )
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="proposals")
     advice_logs: Mapped[list[AdviceLog]] = relationship(back_populates="proposal")
