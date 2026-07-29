@@ -109,6 +109,8 @@ class ProposalDetail(ProposalListItem):
     advice_logs: list[AdviceLogSchema] = []
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
+    caller_role: str | None = None
+    caller_can_conduct: bool = False
 
 
 class ProposalCreateRequest(BaseModel):

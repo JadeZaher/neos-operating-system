@@ -111,6 +111,16 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = Non
     return stmt
 
 
+def _utcnow() -> _dt.datetime:
+    """Naive UTC now — governance timestamp columns are TIMESTAMP WITHOUT TIME ZONE.
+
+    asyncpg refuses tz-aware datetimes for those columns ("can't subtract
+    offset-naive and offset-aware datetimes"), which 500s any endpoint that
+    writes datetime.now(UTC) directly. Mirrors api/emergency.py::_utcnow.
+    """
+    return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+
+
 def _agreement_to_list_item(a: Agreement) -> dict:
     """Convert an Agreement ORM instance to a serialisable dict."""
     return AgreementListItem(
@@ -198,7 +208,13 @@ async def _agreement_detail_payload(db, agreement: Agreement, user_id: uuid.UUID
         Member.ecosystem_id == agreement.ecosystem_id,
     ))
     if member is None:
+        payload["caller_role"] = None
+        payload["caller_can_conduct"] = False
         return payload
+    payload["caller_role"] = member.role
+    payload["caller_can_conduct"] = (
+        member.current_status == "active" and member.role in {"admin", "owner"}
+    )
     consent = await db.scalar(select(AgreementMemberConsent).where(
         AgreementMemberConsent.agreement_id == agreement.id,
         AgreementMemberConsent.member_id == member.id,
@@ -595,8 +611,8 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
             Member.user_id == member.user_id,
             Member.ecosystem_id == agreement.ecosystem_id,
         ).with_for_update())
-        if actor is None or actor.current_status != "active" or actor.profile not in {"co_creator", "builder"}:
-            return json({"error": "Only an active governance steward may conduct this ceremony"}, status=403)
+        if actor is None or actor.current_status != "active" or actor.role not in {"admin", "owner"}:
+            return json({"error": "Only an active ecosystem steward (admin or owner) may conduct this ceremony"}, status=403)
 
         allowed = _VALID_TRANSITIONS.get(agreement.status, set())
         if new_status not in allowed:
@@ -636,7 +652,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
             completed_by_member_id=actor.id,
             outcome={"advice": "opened", "consent": "opened", "test": "started", "active": "passed"}.get(new_status, "completed"),
             evidence=ceremony_evidence or None,
-            completed_at=_dt.datetime.now(_dt.UTC),
+            completed_at=_utcnow(),
         ))
 
         agreement.version_fingerprint = generate_fingerprint(
@@ -697,7 +713,7 @@ async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
             AgreementMemberConsent.member_id == actor.id,
             AgreementMemberConsent.agreement_version == agreement.version,
         ).with_for_update())
-        now = _dt.datetime.now(_dt.UTC)
+        now = _utcnow()
         if consent is None:
             consent = AgreementMemberConsent(
                 id=uuid.uuid4(), agreement_id=agreement.id, member_id=actor.id,
@@ -780,7 +796,7 @@ async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
                 MemberAlignmentEvent.agreement_consent_id == consent.id
             )
         ) or 0)
-        now = _dt.datetime.now(_dt.UTC)
+        now = _utcnow()
         consent.revision += 1
         consent.withdrawn_at = now
         consent.withdrawal_reason = withdrawal.reason

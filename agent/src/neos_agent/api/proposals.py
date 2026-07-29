@@ -23,6 +23,7 @@ from neos_agent.db.models import (
     AdviceLog,
     ConsentParticipant,
     ConsentRecord,
+    Member,
     Proposal,
     TestReport,
     TestSuccessCriterion,
@@ -316,11 +317,21 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
         result = await session.execute(stmt)
         proposal = result.scalar_one_or_none()
 
-    if proposal is None:
-        return json({"error": "Proposal not found"}, status=404)
+        if proposal is None:
+            return json({"error": "Proposal not found"}, status=404)
 
-    detail = _proposal_to_detail(proposal)
-    return json(detail.model_dump(mode="json"))
+        # Caller's standing in the proposal's ecosystem — the status endpoint
+        # gates on ecosystem membership, so any member row means they may conduct.
+        caller = await session.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == proposal.ecosystem_id,
+        ))
+
+        detail = _proposal_to_detail(proposal)
+        payload = detail.model_dump(mode="json")
+        payload["caller_role"] = caller.role if caller else None
+        payload["caller_can_conduct"] = caller is not None
+        return json(payload)
 
 
 @proposals_api_bp.post("/")
@@ -524,8 +535,16 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         result = await session.execute(stmt)
         proposal = result.scalar_one()
 
+        caller = await session.scalar(select(Member).where(
+            Member.user_id == member.user_id,
+            Member.ecosystem_id == proposal.ecosystem_id,
+        ))
+
     detail = _proposal_to_detail(proposal)
-    return json(detail.model_dump(mode="json"))
+    payload = detail.model_dump(mode="json")
+    payload["caller_role"] = caller.role if caller else None
+    payload["caller_can_conduct"] = caller is not None
+    return json(payload)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/advice")

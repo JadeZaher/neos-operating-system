@@ -75,6 +75,8 @@ class AgreementDetail(AgreementListItem):
     alignment_points: int = 5
     consent_summary: AgreementConsentSummary | None = None
     current_member_consent: AgreementMemberConsentSchema | None = None
+    caller_role: str | None = None
+    caller_can_conduct: bool = False
 
 
 class AgreementCreateRequest(BaseModel):

@@ -905,7 +905,8 @@ async def activate_collaboration(request: Request, collaboration_id: uuid.UUID):
             CollaborationApproval.collaboration_id == record.id,
             CollaborationApproval.ecosystem_id == local_member.ecosystem_id,
         ).with_for_update())
-        now = _dt.datetime.now(_dt.UTC)
+        # Naive UTC — collaboration_approvals.approved_at is TIMESTAMP WITHOUT TIME ZONE
+        now = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
         if approval is None:
             session.add(CollaborationApproval(
                 id=uuid.uuid4(), collaboration_id=record.id,
