@@ -1,10 +1,11 @@
-"""Private bucket media delivery through short-lived signed redirects."""
+"""Private bucket media delivery through short-lived signed redirects, with bundled copies when no bucket is configured."""
 
 from __future__ import annotations
 
 import logging
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -12,6 +13,7 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 from sanic import Blueprint, json
 from sanic.request import Request
+from sanic.response import file as file_response
 from sanic.response import redirect
 
 
@@ -32,6 +34,8 @@ _PUBLIC_MEDIA_KEYS = frozenset(
         "ecosystems/plan-systems.webp",
     }
 )
+# The tracked originals of _PUBLIC_MEDIA_KEYS (agent/assets/media, credits in its README.md).
+_BUNDLED_MEDIA_ROOT = Path(__file__).resolve().parents[3] / "assets" / "media"
 
 
 def _is_safe_object_key(object_key: str) -> bool:
@@ -101,6 +105,9 @@ async def get_media_object(request: Request, object_key: str):
 
     storage = _storage_config(request.app.ctx.settings)
     if storage is None:
+        bundled = _BUNDLED_MEDIA_ROOT / object_key
+        if bundled.is_file():
+            return await file_response(bundled)
         return json({"error": "Media storage is unavailable"}, status=503)
 
     endpoint_url, access_key, secret_key, bucket, region, url_style = storage

@@ -195,7 +195,25 @@ async def test_unavailable_media_never_leaks_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_incomplete_media_configuration_returns_unavailable(monkeypatch):
+async def test_unconfigured_storage_serves_the_bundled_original(monkeypatch):
+    monkeypatch.setattr(
+        media,
+        "_build_s3_client",
+        lambda *args: pytest.fail("client should not be created"),
+    )
+
+    response = await media.get_media_object(
+        _request(_settings(AWS_SECRET_ACCESS_KEY="")), "ecosystems/omnione.webp"
+    )
+
+    assert response.status == 200
+    assert response.content_type == "image/webp"
+    assert response.body == (media._BUNDLED_MEDIA_ROOT / "ecosystems/omnione.webp").read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_storage_without_a_bundled_copy_is_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(media, "_BUNDLED_MEDIA_ROOT", tmp_path)
     monkeypatch.setattr(
         media,
         "_build_s3_client",
