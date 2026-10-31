@@ -6,7 +6,8 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import pool
+from alembic.script import ScriptDirectory
+from sqlalchemy import inspect, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from neos_agent.db.models import Base
@@ -61,6 +62,15 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _is_fresh_upgrade_to_head(connection, script: ScriptDirectory) -> bool:
+    """True for `upgrade head` on a database with no tables; see alembic/AGENTS.md §Fresh databases."""
+    try:
+        destination = context.get_revision_argument()
+    except KeyError:  # current/history/check carry no destination revision
+        return False
+    return destination == script.get_current_head() and not inspect(connection).get_table_names()
+
+
 def do_run_migrations(connection):
     """Run migrations using the given connection."""
     context.configure(
@@ -68,6 +78,14 @@ def do_run_migrations(connection):
         target_metadata=target_metadata,
         render_item=_render_item,
     )
+    script = ScriptDirectory.from_config(config)
+    if _is_fresh_upgrade_to_head(connection, script):
+        import neos_agent.db.course_models  # noqa: F401  registers course/quiz tables, as main.init_db does
+
+        with context.begin_transaction():
+            target_metadata.create_all(connection)
+            context.get_context().stamp(script, "head")
+        return
     with context.begin_transaction():
         context.run_migrations()
 

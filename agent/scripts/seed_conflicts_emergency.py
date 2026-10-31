@@ -7,7 +7,7 @@ Usage:
 Creates:
   8 additional conflict cases (2 per ecosystem in various states)
   4 repair agreement records
-  3 additional emergency states (1 open, 1 recovery, 1 with pending review)
+  3 additional emergency states (1 open, 1 half_open recovery, 1 closed with pending review)
   3 additional exit records in different states
 """
 
@@ -102,7 +102,7 @@ CONFLICT_IDS = [
 ]
 
 REPAIR_IDS = [
-    _uid("repair.omni.2"),
+    _uid("repair.omni.kitchen"),
     _uid("repair.eb.2"),
     _uid("repair.ps.2"),
     _uid("repair.oa.2"),
@@ -446,7 +446,7 @@ async def seed(database_url: str) -> None:  # noqa: C901
 
         # OmniOne — active, for kitchen dispute (conflict.omni.2)
         session.add(RepairAgreementRecord(
-            id=_uid("repair.omni.2"),
+            id=_uid("repair.omni.kitchen"),
             conflict_case_id=_uid("conflict.omni.2"),
             title="Kitchen Use Mediation Agreement",
             status="active",
@@ -548,11 +548,12 @@ async def seed(database_url: str) -> None:  # noqa: C901
             notes="Active emergency. Main studio and storage area affected. Plumber en route.",
         ))
 
-        # Plan Systems — RECOVERY phase (server failure)
+        # Plan Systems — recovery (half_open) phase (server failure)
         session.add(EmergencyState(
             id=_uid("emerg.ps.infra"),
             ecosystem_id=eco_ps_id,
-            state="recovery",
+            state="half_open",
+            half_open_entered_at=hours_ago(12),
             declared_at=hours_ago(18),
             declared_by="Rachel",
             criteria_met={
@@ -600,6 +601,7 @@ async def seed(database_url: str) -> None:  # noqa: C901
             },
             auto_revert_at=hours_ago(48),
             recovery_entered_at=hours_ago(72),
+            half_open_entered_at=hours_ago(72),
             closed_at=hours_ago(24),
             pre_authorized_roles=["co_creator"],
             actions_log=[
@@ -761,7 +763,7 @@ async def seed(database_url: str) -> None:  # noqa: C901
     print("Repair Agreements: 4 (active, pending, completed, active)")
     print("Emergency States: 3 additional")
     print("  Escherbridge: open (studio flood)")
-    print("  Plan Systems: recovery (server failure)")
+    print("  Plan Systems: half_open recovery (server failure)")
     print("  Oasis: closed with pending post-review (smart contract vuln)")
     print("Exit Records: 3 additional")
     print("  Escherbridge: in_progress (Kenny)")
