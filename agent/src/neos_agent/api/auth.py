@@ -24,6 +24,7 @@ from sqlalchemy import select
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie, verify_session_cookie
 from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
+from neos_agent.services.agreement_consent import missing_agreement_consents
 
 from .schemas import (
     AuthMeResponse,
@@ -73,6 +74,95 @@ def _member_to_summary(member: Member, user: User) -> MemberSummary:
     )
 
 
+def _slug(value: str) -> str:
+    """Lowercase, hyphen-joined form of a name, used to match the configured default."""
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+class SignupEcosystemNotFound(Exception):
+    """The caller named an ecosystem for the new account that does not exist."""
+
+
+def requested_ecosystem_id(body: dict) -> uuid.UUID | None:
+    """Parse the optional ``ecosystem_id`` a sign-up request names; raise if it is malformed."""
+    raw = body.get("ecosystem_id")
+    if raw in (None, ""):
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except ValueError as exc:
+        raise SignupEcosystemNotFound(str(raw)) from exc
+
+
+async def signup_ecosystem(session, settings, requested_id: uuid.UUID | None = None) -> Ecosystem | None:
+    """Ecosystem a new account joins: requested id, then SIGNUP_DEFAULT_ECOSYSTEM_SLUG, then oldest."""
+    if requested_id is not None:
+        ecosystem = await session.get(Ecosystem, requested_id)
+        if ecosystem is None:
+            raise SignupEcosystemNotFound(str(requested_id))
+        return ecosystem
+
+    ecosystems = list((await session.execute(
+        select(Ecosystem).order_by(Ecosystem.created_at.asc(), Ecosystem.id.asc())
+    )).scalars().all())
+    configured = getattr(settings, "SIGNUP_DEFAULT_ECOSYSTEM_SLUG", "")
+    if isinstance(configured, str) and configured.strip():
+        wanted = _slug(configured.strip())
+        for ecosystem in ecosystems:
+            if str(ecosystem.id) == configured.strip().lower() or _slug(ecosystem.name) == wanted:
+                return ecosystem
+        logger.warning(
+            "SIGNUP_DEFAULT_ECOSYSTEM_SLUG=%r matches no ecosystem; using the oldest", configured,
+        )
+    return ecosystems[0] if ecosystems else None
+
+
+async def create_signup_member(
+    session, *, user: User, ecosystem: Ecosystem, member_id: str, display_name: str,
+) -> tuple[Member, list]:
+    """Create a newcomer's membership behind the ecosystem's agreement-consent gate.
+
+    Same status semantics as ``POST /ecosystems/:id/join``: ``pending_consent`` until
+    every ecosystem-membership agreement is attested, otherwise ``active``.
+    """
+    member = Member(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        ecosystem_id=ecosystem.id,
+        member_id=member_id,
+        display_name=display_name,
+        current_status="active",
+    )
+    missing = await missing_agreement_consents(session, member.id, ecosystem.id, "ecosystem")
+    if missing:
+        member.current_status = "pending_consent"
+        member.onboarding_status = "agreement_consent_required"
+    session.add(member)
+    await session.flush()
+    return member, missing
+
+
+async def existing_membership(session, user_id: uuid.UUID) -> Member | None:
+    """Oldest membership a returning user already holds (login never re-enrolls them)."""
+    return (await session.execute(
+        select(Member)
+        .where(Member.user_id == user_id)
+        .order_by(Member.created_at.asc(), Member.id.asc())
+        .limit(1)
+    )).scalar_one_or_none()
+
+
+def _consent_gate_payload(missing: list) -> dict:
+    """Extra sign-up response keys mirroring the join endpoint's consent contract."""
+    return {
+        "status": "consent_required" if missing else "joined",
+        "required_agreements": [
+            {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+            for agreement in missing
+        ],
+    }
+
+
 @auth_api_bp.post("/challenge")
 async def api_challenge(request: Request):
     """Issue a random challenge for the given DID.
@@ -117,6 +207,11 @@ async def api_verify(request: Request):
     if not all([did, challenge_hex, signature_hex]):
         return json({"error": "Missing required fields"}, status=400)
 
+    try:
+        requested_id = requested_ecosystem_id(body)
+    except SignupEcosystemNotFound:
+        return json({"error": "Ecosystem not found"}, status=404)
+
     settings = request.app.ctx.settings
 
     async with request.app.ctx.db() as session:
@@ -159,31 +254,24 @@ async def api_verify(request: Request):
             session.add(user)
             await session.flush()
 
-        # Find default ecosystem
-        eco_result = await session.execute(select(Ecosystem).limit(1))
-        ecosystem = eco_result.scalar_one_or_none()
-        if ecosystem is None:
-            return json({"error": "No ecosystem configured"}, status=500)
-
-        # Find or create Member for this user + ecosystem
-        member_result = await session.execute(
-            select(Member).where(
-                Member.user_id == user.id,
-                Member.ecosystem_id == ecosystem.id,
-            )
-        )
-        member = member_result.scalar_one_or_none()
-
+        # Returning users keep their memberships; only a user with none is placed.
+        consent_gate = None
+        member = await existing_membership(session, user.id)
         if member is None:
-            member = Member(
-                user_id=user.id,
-                ecosystem_id=ecosystem.id,
+            try:
+                ecosystem = await signup_ecosystem(session, settings, requested_id)
+            except SignupEcosystemNotFound:
+                return json({"error": "Ecosystem not found"}, status=404)
+            if ecosystem is None:
+                return json({"error": "No ecosystem configured"}, status=500)
+            member, missing = await create_signup_member(
+                session,
+                user=user,
+                ecosystem=ecosystem,
                 member_id=f"did-{did[-12:]}",
                 display_name=display_name,
-                current_status="active",
             )
-            session.add(member)
-            await session.flush()
+            consent_gate = _consent_gate_payload(missing)
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -207,7 +295,10 @@ async def api_verify(request: Request):
         display_name=member.display_name,
         member=member_summary,
     )
-    response = json(response_data.model_dump(mode="json"), status=200)
+    payload = response_data.model_dump(mode="json")
+    if consent_gate is not None:
+        payload.update(consent_gate)
+    response = json(payload, status=200)
     response.add_cookie(
         "neos_session",
         cookie_value,
@@ -427,8 +518,9 @@ async def api_login(request: Request):
 async def api_register(request: Request):
     """Register a new member with username and password (no DID required).
 
-    Accepts JSON: {"username": "...", "password": "...", "display_name": "..."}
-    Returns JSON: AuthVerifyResponse with member info + sets neos_session cookie.
+    Accepts JSON: {"username": "...", "password": "...", "display_name": "...", "ecosystem_id": optional}
+    Returns JSON: AuthVerifyResponse with member info plus the consent-gate keys of
+    POST /ecosystems/:id/join (status, required_agreements); sets neos_session cookie.
     """
     body = request.json or {}
     username = (body.get("username") or "").strip()
@@ -450,6 +542,11 @@ async def api_register(request: Request):
     if not display_name:
         display_name = username
 
+    try:
+        requested_id = requested_ecosystem_id(body)
+    except SignupEcosystemNotFound:
+        return json({"error": "Ecosystem not found"}, status=404)
+
     settings = request.app.ctx.settings
 
     async with request.app.ctx.db() as session:
@@ -460,9 +557,10 @@ async def api_register(request: Request):
         if existing.scalar_one_or_none() is not None:
             return json({"error": "Username already taken"}, status=409)
 
-        # Find default ecosystem
-        eco_result = await session.execute(select(Ecosystem).limit(1))
-        ecosystem = eco_result.scalar_one_or_none()
+        try:
+            ecosystem = await signup_ecosystem(session, settings, requested_id)
+        except SignupEcosystemNotFound:
+            return json({"error": "Ecosystem not found"}, status=404)
         if ecosystem is None:
             return json({"error": "No ecosystem configured"}, status=500)
 
@@ -475,16 +573,13 @@ async def api_register(request: Request):
         session.add(user)
         await session.flush()
 
-        # Create Member with user_id
-        member = Member(
-            user_id=user.id,
-            ecosystem_id=ecosystem.id,
+        member, missing = await create_signup_member(
+            session,
+            user=user,
+            ecosystem=ecosystem,
             member_id=f"usr-{username[:12]}",
             display_name=display_name,
-            current_status="active",
         )
-        session.add(member)
-        await session.flush()
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -507,7 +602,9 @@ async def api_register(request: Request):
         display_name=member.display_name,
         member=member_summary,
     )
-    response = json(response_data.model_dump(mode="json"), status=200)
+    payload = response_data.model_dump(mode="json")
+    payload.update(_consent_gate_payload(missing))
+    response = json(payload, status=200)
     response.add_cookie(
         "neos_session",
         cookie_value,

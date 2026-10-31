@@ -37,7 +37,10 @@ from ._base import Base, GUID, TimestampMixin
 
 class Proposal(TimestampMixin, Base):
     __tablename__ = "proposals"
-    __table_args__ = (Index("ix_proposals_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_proposals_ecosystem_id", "ecosystem_id"),
+        Index("ix_proposals_proposer_member_id", "proposer_member_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
@@ -48,7 +51,12 @@ class Proposal(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.0")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
-    proposer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    proposer: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # display text; may name someone else
+    # The authoring member (the caller who created it). NULL = legacy, steward-managed only.
+    # See api/AGENTS.md "Proposal authorship and manage rule".
+    proposer_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
     co_sponsors: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     affected_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     impacted_parties: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

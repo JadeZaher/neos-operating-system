@@ -29,7 +29,7 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.helpers import ROLE_RANK, require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
 from neos_agent.services.act_gates import (
     maybe_auto_advance_proposal,
     normalize_act_policy,
@@ -77,6 +77,45 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 def _escape_like(value: str) -> str:
     """Escape special characters for SQL LIKE patterns."""
     return value.replace("%", "\\%").replace("_", "\\_")
+
+
+# Manage rule: see api/AGENTS.md "Proposal authorship and manage rule".
+MANAGE_DENIED = "Only the proposer or an ecosystem steward can change this proposal"
+SELF_ADVICE_DENIED = "The proposer gathers advice and cannot advise their own proposal"
+
+
+async def _caller_member(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
+    """The caller's Member row in one ecosystem (request.ctx.member is an arbitrary row)."""
+    if user_id is None:
+        return None
+    return await session.scalar(select(Member).where(
+        Member.user_id == user_id,
+        Member.ecosystem_id == ecosystem_id,
+    ))
+
+
+def is_proposal_author(caller: Member | None, proposal: Proposal) -> bool:
+    """True when the caller's member row is the proposal's recorded author."""
+    return (
+        caller is not None
+        and proposal.proposer_member_id is not None
+        and caller.id == proposal.proposer_member_id
+    )
+
+
+def can_manage_proposal(caller: Member | None, proposal: Proposal) -> bool:
+    """Author or ecosystem steward (mod+); a proposal with no author link is steward-only."""
+    if caller is None:
+        return False
+    return is_proposal_author(caller, proposal) or ROLE_RANK.get(caller.role, 0) >= ROLE_RANK["mod"]
+
+
+def _attach_caller_flags(payload: dict, caller: Member | None, proposal: Proposal) -> None:
+    """Caller standing in the proposal's ecosystem: participate vs manage."""
+    payload["caller_role"] = caller.role if caller else None
+    payload["caller_can_conduct"] = caller is not None
+    payload["caller_can_manage"] = can_manage_proposal(caller, proposal)
+    payload["caller_is_proposer"] = is_proposal_author(caller, proposal)
 
 
 
@@ -128,6 +167,7 @@ def _proposal_to_list_item(p: Proposal) -> ProposalListItem:
         version=p.version,
         status=p.status,
         proposer=p.proposer,
+        proposer_member_id=getattr(p, "proposer_member_id", None),
         affected_domain=p.affected_domain,
         urgency=p.urgency,
         created_at=p.created_at,
@@ -230,6 +270,7 @@ def _proposal_to_detail(p: Proposal) -> ProposalDetail:
         version=p.version,
         status=p.status,
         proposer=p.proposer,
+        proposer_member_id=getattr(p, "proposer_member_id", None),
         affected_domain=p.affected_domain,
         urgency=p.urgency,
         created_at=p.created_at,
@@ -361,18 +402,14 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        # Caller's standing in the proposal's ecosystem — the status endpoint
-        # gates on ecosystem membership, so any member row means they may conduct.
-        caller = await session.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == proposal.ecosystem_id,
-        ))
+        # Any member row may participate (advice/consent/test); editing and
+        # manual status moves need the manage rule (author or mod+).
+        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
 
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
         await _attach_gate_context(session, proposal, payload)
-        payload["caller_role"] = caller.role if caller else None
-        payload["caller_can_conduct"] = caller is not None
+        _attach_caller_flags(payload, caller, proposal)
         return json(payload)
 
 
@@ -407,6 +444,10 @@ async def create_proposal(request: Request):
         )
         if link_error:
             return json({"error": link_error}, status=400)
+        # The caller is the author; the proposer text may still name someone
+        # else (proposing on their behalf) and defaults to the caller's name.
+        author = await _caller_member(session, member.user_id, create_req.ecosystem_id)
+        proposer_text = (create_req.proposer or "").strip() or (author.display_name if author else None)
         proposal = Proposal(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
@@ -417,7 +458,8 @@ async def create_proposal(request: Request):
             title=create_req.title,
             version="1.0",
             status="draft",
-            proposer=create_req.proposer,
+            proposer=proposer_text,
+            proposer_member_id=author.id if author else None,
             affected_domain=create_req.affected_domain,
             urgency=create_req.urgency or "standard",
             proposed_change=create_req.proposed_change,
@@ -453,6 +495,7 @@ async def create_proposal(request: Request):
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
         await _attach_gate_context(session, proposal, payload)
+        _attach_caller_flags(payload, author, proposal)
         return json(payload, status=201)
 
 
@@ -484,6 +527,10 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         proposal = result.scalar_one_or_none()
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
+
+        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        if not can_manage_proposal(caller, proposal):
+            return json({"error": MANAGE_DENIED}, status=403)
 
         # Update non-None fields. act_policy / governing_agreement_id use
         # explicit-null semantics: present-and-null CLEARS the declaration so
@@ -535,6 +582,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
         await _attach_gate_context(session, proposal, payload)
+        _attach_caller_flags(payload, caller, proposal)
         return json(payload)
 
 
@@ -566,6 +614,10 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         proposal = result.scalar_one_or_none()
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
+
+        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        if not can_manage_proposal(caller, proposal):
+            return json({"error": MANAGE_DENIED}, status=403)
 
         current = proposal.status
 
@@ -627,19 +679,13 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         result = await session.execute(stmt)
         proposal = result.scalar_one()
 
-        caller = await session.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == proposal.ecosystem_id,
-        ))
-
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
         await _attach_gate_context(session, proposal, payload)
         payload["auto_transitions"] = advance["transitions"]
         if advance["decision_record_id"]:
             payload["decision_record_id"] = advance["decision_record_id"]
-        payload["caller_role"] = caller.role if caller else None
-        payload["caller_can_conduct"] = caller is not None
+        _attach_caller_flags(payload, caller, proposal)
         return json(payload)
 
 
@@ -692,6 +738,11 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         create_req = AdviceEntryCreateRequest(**body)
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
+    advice_text = (create_req.content or "").strip()
+    if not advice_text:
+        # A blank entry would still count toward the advice gate and could
+        # auto-advance the proposal.
+        return json({"error": "Advice text is required"}, status=400)
 
     async with request.app.ctx.db() as session:
         # Verify proposal exists and is accessible
@@ -703,6 +754,13 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         proposal = result.scalar_one_or_none()
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
+
+        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        if is_proposal_author(caller, proposal):
+            return json({"error": SELF_ADVICE_DENIED}, status=409)
+        # Advisor identity comes from the caller, never the request body. A
+        # shared-ecosystem advisor has no row here, so use their session member.
+        advisor_name = (caller or member).display_name
 
         # Find or create advice log. ``new_round`` opens a fresh round —
         # rounds are the unit the declared advice gate counts.
@@ -730,11 +788,11 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         entry = AdviceEntry(
             id=uuid.uuid4(),
             advice_log_id=advice_log.id,
-            advisor=create_req.advisor,
+            advisor=advisor_name,
             role=create_req.role,
             ethos=create_req.ethos,
             date=_dt.date.today(),
-            advice_text=create_req.content,
+            advice_text=advice_text,
             integration_status="pending",
         )
         session.add(entry)

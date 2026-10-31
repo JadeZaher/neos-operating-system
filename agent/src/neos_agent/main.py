@@ -411,10 +411,12 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             return redirect("/dashboard")
         return redirect("/auth/login")
 
-    # Catch-all: redirect unknown paths to the dashboard
+    # Catch-all: unknown API paths are JSON 404s; unknown browser paths go to the dashboard
     from sanic.exceptions import NotFound
     @app.exception(NotFound)
     async def catch_not_found(request, exception):
+        if request.path.startswith("/api/"):
+            return json_response({"error": "Not found"}, status=404)
         return redirect("/dashboard")
 
     return app

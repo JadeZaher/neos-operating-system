@@ -23,6 +23,7 @@ class ProposalListItem(BaseModel):
     version: str
     status: str
     proposer: str | None = None
+    proposer_member_id: uuid.UUID | None = None
     affected_domain: str | None = None
     urgency: str | None = None
     created_at: _dt.datetime
@@ -123,7 +124,9 @@ class ProposalDetail(ProposalListItem):
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
     caller_role: str | None = None
-    caller_can_conduct: bool = False
+    caller_can_conduct: bool = False  # may participate (advice/consent/test)
+    caller_can_manage: bool = False  # may edit and make manual status moves
+    caller_is_proposer: bool = False
 
 
 class ProposalCreateRequest(BaseModel):
@@ -156,7 +159,7 @@ class ProposalUpdateRequest(BaseModel):
 
 
 class AdviceEntryCreateRequest(BaseModel):
-    advisor: str
+    advisor: str | None = None  # ignored: the server records the caller's member name
     role: str | None = None
     ethos: str | None = None
     advice_type: str | None = None

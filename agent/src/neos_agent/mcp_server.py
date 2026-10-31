@@ -31,6 +31,12 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from neos_agent.config import get_settings
 from neos_agent.api.agreements import _snapshot_agreement
+from neos_agent.api.proposals import (
+    MANAGE_DENIED,
+    SELF_ADVICE_DENIED,
+    can_manage_proposal,
+    is_proposal_author,
+)
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
@@ -626,6 +632,7 @@ async def create_proposal(
             version="1.0",
             status="draft",
             proposer=member.display_name,
+            proposer_member_id=member.id,
             affected_domain=affected_domain,
             urgency="standard",
             proposed_change=proposed_change,
@@ -660,6 +667,8 @@ async def record_proposal_advice(proposal_id: str, advice_text: str, ctx: Contex
         if proposal is None:
             raise ValueError("Proposal not found")
         member = await _member(s, caller.user.id, proposal.ecosystem_id)
+        if is_proposal_author(member, proposal):
+            raise ValueError(SELF_ADVICE_DENIED)
         if proposal.status != "advice":
             raise ValueError(f"Advice can only be recorded while the proposal is in advice (currently '{proposal.status}')")
         log = await s.scalar(
@@ -790,20 +799,24 @@ async def submit_test_report(
 @mcp.tool()
 async def transition_proposal(proposal_id: str, status: str, ctx: Context) -> dict:
     """Move a proposal through the ACT sequence. Forward moves require the
-    declared (or inherited) gates to be met; withdrawals stay free."""
+    declared (or inherited) gates to be met. Withdrawing and opening for
+    advice are manual moves reserved to the proposer or an ecosystem steward."""
     caller = await _caller(ctx)
     target = status.strip().lower()
     async with _db()() as s:
         proposal = await _resolve(s, Proposal, proposal_id, "proposal_id")
         if proposal is None:
             raise ValueError("Proposal not found")
-        await _member(s, caller.user.id, proposal.ecosystem_id)
+        member = await _member(s, caller.user.id, proposal.ecosystem_id)
         chain = ["draft", "advice", "consent", "test", "ratified"]
         if target not in chain and target != "withdrawn":
             raise ValueError(f"status must be one of {chain + ['withdrawn']}")
         current = proposal.status
         if target == current:
             return {"proposal_id": proposal.proposal_id, "status": current, "auto_transitions": []}
+        is_manual_move = target == "withdrawn" or (current == "draft" and target == "advice")
+        if is_manual_move and not can_manage_proposal(member, proposal):
+            raise ValueError(MANAGE_DENIED)
         if target == "withdrawn":
             proposal.status = "withdrawn"
             await s.commit()

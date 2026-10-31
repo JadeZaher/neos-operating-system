@@ -41,6 +41,9 @@ _MAX_TOOL_ROUNDS = 8
 # The frontend should warn before hitting this; the backend enforces it.
 _MAX_CONVERSATION_MESSAGES = 20
 
+# Member-facing text when the provider call fails; details stay in the server log.
+_ASSISTANT_UNAVAILABLE = "The assistant is unavailable right now. Please try again later."
+
 # Shared router instance
 _skill_router = SkillRouter()
 
@@ -706,10 +709,10 @@ async def send_message(request: Request):
             await response.write(_sse_event("usage", json.dumps(total_usage)))
             await response.write(_sse_event("done", ""))
 
-        except Exception as exc:
+        except Exception:
+            # Provider exceptions carry internals (model ids, key hints); members get a plain message.
             logger.exception("Chat streaming failed")
-            err_msg = str(exc).replace("\n", " ")
-            await response.write(_sse_event("append", f"Chat error: {err_msg}"))
+            await response.write(_sse_event("append", _ASSISTANT_UNAVAILABLE))
             await response.write(_sse_event("done", ""))
 
     return ResponseStream(

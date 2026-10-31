@@ -31,7 +31,9 @@ from sanic.response import redirect
 from sqlalchemy import select
 
 from neos_agent.auth.middleware import make_session_cookie
-from neos_agent.db.models import AuthSession, Ecosystem, Member, User
+from neos_agent.db.models import AuthSession, User
+
+from .auth import create_signup_member, existing_membership, signup_ecosystem
 
 logger = logging.getLogger(__name__)
 
@@ -472,35 +474,23 @@ async def oauth_callback(request: Request, provider: str):
             session.add(user)
             await session.flush()
 
-        # Find default ecosystem
-        eco_result = await session.execute(select(Ecosystem).limit(1))
-        ecosystem = eco_result.scalar_one_or_none()
-        if ecosystem is None:
-            return _oauth_callback_redirect(
-                frontend_origin,
-                "/login",
-                error="no_ecosystem",
-            )
-
-        # Find or create Member for this user + ecosystem
-        member_result = await session.execute(
-            select(Member).where(
-                Member.user_id == user.id,
-                Member.ecosystem_id == ecosystem.id,
-            )
-        )
-        member = member_result.scalar_one_or_none()
-
+        # Returning users keep their memberships; only a user with none is placed.
+        member = await existing_membership(session, user.id)
         if member is None:
-            member = Member(
-                user_id=user.id,
-                ecosystem_id=ecosystem.id,
+            ecosystem = await signup_ecosystem(session, settings)
+            if ecosystem is None:
+                return _oauth_callback_redirect(
+                    frontend_origin,
+                    "/login",
+                    error="no_ecosystem",
+                )
+            member, _missing = await create_signup_member(
+                session,
+                user=user,
+                ecosystem=ecosystem,
                 member_id=f"oauth-{provider}-{oauth_id[:12]}",
                 display_name=display_name or f"User-{oauth_id[:8]}",
-                current_status="active",
             )
-            session.add(member)
-            await session.flush()
 
         # Create auth session
         session_id = uuid.uuid4()

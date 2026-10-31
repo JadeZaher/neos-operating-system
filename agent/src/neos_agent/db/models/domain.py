@@ -39,6 +39,8 @@ class Domain(TimestampMixin, Base):
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
     shared_ecosystem_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # additional ecosystems for cross-ecosystem work
     domain_id: Mapped[str] = mapped_column(String(100), nullable=False)  # business key
+    # Human name. NULL on legacy rows; the API derives display_name (see api/AGENTS.md).
+    name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     version: Mapped[str] = mapped_column(String(20), nullable=False, default="1.0")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
     purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -26,6 +26,7 @@ from neos_agent.api.schemas.domains import (
     DomainElementSchema,
     DomainListItem,
     DomainMetricSchema,
+    DomainParticipantSchema,
     DomainUpdateRequest,
 )
 from neos_agent.db.models import (
@@ -37,7 +38,7 @@ from neos_agent.db.models import (
     SharesNeeds,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.helpers import ROLE_RANK, require_auth, require_ecosystem_role, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
 
@@ -61,11 +62,54 @@ def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
 
 
-def _domain_to_list_item(d: Domain) -> dict:
+# Naming and caller flags: see api/AGENTS.md "Domain naming and participation flags".
+NAME_SEPARATOR = " — "
+MAX_DERIVED_NAME = 120
+CREATE_DENIED = "Only an ecosystem steward (moderator or above) can create a domain"
+EDIT_DENIED = "Only this domain's steward or an ecosystem steward can edit this domain"
+
+
+def domain_display_name(d) -> str:
+    """name -> the purpose's leading "Name — " segment -> the generated domain_id."""
+    name = (getattr(d, "name", None) or "").strip()
+    if name:
+        return name
+    purpose = d.purpose or ""
+    if NAME_SEPARATOR in purpose:
+        head = purpose.split(NAME_SEPARATOR, 1)[0].strip()
+        if 1 <= len(head) <= MAX_DERIVED_NAME:
+            return head
+    return d.domain_id
+
+
+def _clean_name(value: str | None) -> str | None:
+    return (value or "").strip() or None
+
+
+async def _member_in_ecosystem(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
+    """The caller's Member row in one ecosystem (request.ctx.member is an arbitrary row)."""
+    if user_id is None:
+        return None
+    return await session.scalar(select(Member).where(
+        Member.user_id == user_id,
+        Member.ecosystem_id == ecosystem_id,
+    ))
+
+
+def _can_edit_domain(caller: Member | None, d: Domain) -> bool:
+    """The domain's steward, or an ecosystem steward (mod+)."""
+    if caller is None:
+        return False
+    return d.steward_id == caller.id or ROLE_RANK.get(caller.role, 0) >= ROLE_RANK["mod"]
+
+
+def _domain_to_list_item(d: Domain, *, is_participant: bool = False, is_steward: bool = False) -> dict:
     return DomainListItem(
         id=d.id,
         ecosystem_id=d.ecosystem_id,
         domain_id=d.domain_id,
+        name=getattr(d, "name", None),
+        display_name=domain_display_name(d),
         version=d.version,
         status=d.status,
         purpose=d.purpose,
@@ -73,13 +117,25 @@ def _domain_to_list_item(d: Domain) -> dict:
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
         version_fingerprint=d.version_fingerprint,
+        caller_is_participant=is_participant,
+        caller_is_steward=is_steward,
     ).model_dump(mode="json")
 
 
-def _domain_to_detail(d: Domain) -> dict:
+def _domain_to_detail(
+    d: Domain,
+    *,
+    is_participant: bool = False,
+    is_steward: bool = False,
+    can_edit: bool = False,
+    participants: list[DomainParticipantSchema] | None = None,
+) -> dict:
+    participants = participants or []
     return DomainDetail(
         id=d.id,
         domain_id=d.domain_id,
+        name=getattr(d, "name", None),
+        display_name=domain_display_name(d),
         version=d.version,
         status=d.status,
         purpose=d.purpose,
@@ -87,6 +143,11 @@ def _domain_to_detail(d: Domain) -> dict:
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
         version_fingerprint=d.version_fingerprint,
+        caller_is_participant=is_participant,
+        caller_is_steward=is_steward,
+        caller_can_edit=can_edit,
+        participants=participants,
+        participant_count=len(participants),
         ecosystem_id=d.ecosystem_id,
         shared_ecosystem_ids=d.shared_ecosystem_ids,
         steward_id=d.steward_id,
@@ -114,6 +175,28 @@ def _domain_to_detail(d: Domain) -> dict:
     ).model_dump(mode="json")
 
 
+async def _domain_detail_payload(session, d: Domain, user_id: uuid.UUID | None) -> dict:
+    """Detail JSON plus the caller's standing and the active participant roster."""
+    caller = await _member_in_ecosystem(session, user_id, d.ecosystem_id)
+    rows = (await session.execute(
+        select(CircleMembership.member_id, CircleMembership.role, Member.display_name)
+        .join(Member, Member.id == CircleMembership.member_id)
+        .where(CircleMembership.domain_id == d.id, CircleMembership.status == "active")
+        .order_by(Member.display_name)
+    )).all()
+    participants = [
+        DomainParticipantSchema(member_id=row.member_id, display_name=row.display_name, role=row.role)
+        for row in rows
+    ]
+    return _domain_to_detail(
+        d,
+        is_participant=caller is not None and any(p.member_id == caller.id for p in participants),
+        is_steward=caller is not None and d.steward_id == caller.id,
+        can_edit=_can_edit_domain(caller, d),
+        participants=participants,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -123,8 +206,10 @@ def _domain_to_detail(d: Domain) -> dict:
 async def list_domains(request: Request):
     """GET /api/v1/domains -- Paginated domain list with filtering.
 
-    Query params: status, q (search domain_id/purpose),
+    Query params: status, q (search name/domain_id/purpose),
     page (default 1), per_page (default 25, max 100).
+    Items carry caller_is_participant / caller_is_steward; the envelope
+    carries caller_can_create (mod+ in a scoped ecosystem).
     """
     member, err = require_auth(request)
     if err:
@@ -150,7 +235,7 @@ async def list_domains(request: Request):
         search = request.args.get("q")
         if search:
             stmt = stmt.where(build_search_filter(
-                Domain, search, Domain.domain_id, Domain.purpose
+                Domain, search, Domain.name, Domain.domain_id, Domain.purpose
             ))
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -160,11 +245,42 @@ async def list_domains(request: Request):
         result = await session.execute(stmt)
         domains = result.scalars().all()
 
+        # Caller standing: one query for the caller's member rows, one IN
+        # query for their active participation across this page.
+        caller_rows = []
+        if member.user_id is not None:
+            caller_rows = (await session.execute(
+                select(Member.id, Member.ecosystem_id, Member.role).where(Member.user_id == member.user_id)
+            )).all()
+        caller_member_ids = {row.id for row in caller_rows}
+        participating: set[uuid.UUID] = set()
+        if caller_member_ids and domains:
+            participating = set((await session.execute(
+                select(CircleMembership.domain_id).where(
+                    CircleMembership.domain_id.in_([d.id for d in domains]),
+                    CircleMembership.member_id.in_(caller_member_ids),
+                    CircleMembership.status == "active",
+                )
+            )).scalars())
+        scope = set(eco_ids) if eco_ids else {row.ecosystem_id for row in caller_rows}
+        caller_can_create = any(
+            row.ecosystem_id in scope and ROLE_RANK.get(row.role, 0) >= ROLE_RANK["mod"]
+            for row in caller_rows
+        )
+
     return json({
-        "items": [_domain_to_list_item(d) for d in domains],
+        "items": [
+            _domain_to_list_item(
+                d,
+                is_participant=d.id in participating,
+                is_steward=d.steward_id is not None and d.steward_id in caller_member_ids,
+            )
+            for d in domains
+        ],
         "total": total,
         "page": page,
         "per_page": per_page,
+        "caller_can_create": caller_can_create,
     })
 
 
@@ -191,11 +307,12 @@ async def get_domain(request: Request, domain_id: uuid.UUID):
 
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()
+        if d is None:
+            return json({"error": "Domain not found"}, status=404)
 
-    if d is None:
-        return json({"error": "Domain not found"}, status=404)
+        payload = await _domain_detail_payload(session, d, member.user_id)
 
-    return json(_domain_to_detail(d))
+    return json(payload)
 
 
 @domains_api_bp.post("/")
@@ -219,6 +336,12 @@ async def create_domain(request: Request):
     if eco_ids and create_req.ecosystem_id not in eco_ids:
         return json({"error": "Access denied: ecosystem not in scope"}, status=403)
 
+    _, role_err = await require_ecosystem_role(request, create_req.ecosystem_id, "mod")
+    if role_err is not None:
+        if role_err.status == 403:
+            return json({"error": CREATE_DENIED}, status=403)
+        return role_err
+
     short_id = uuid.uuid4().hex[:8].upper()
     domain_id_str = f"DOM-{short_id}"
 
@@ -228,6 +351,7 @@ async def create_domain(request: Request):
             ecosystem_id=create_req.ecosystem_id,
             shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
             domain_id=domain_id_str,
+            name=_clean_name(create_req.name),
             version="1.0",
             status="active",
             purpose=create_req.purpose,
@@ -255,8 +379,9 @@ async def create_domain(request: Request):
         )
         result = await session.execute(stmt)
         domain = result.scalar_one()
+        payload = await _domain_detail_payload(session, domain, auth_member.user_id)
 
-    return json(_domain_to_detail(domain), status=201)
+    return json(payload, status=201)
 
 
 @domains_api_bp.put("/<domain_id:uuid>")
@@ -284,7 +409,14 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         if d is None:
             return json({"error": "Domain not found"}, status=404)
 
+        caller = await _member_in_ecosystem(session, auth_member.user_id, d.ecosystem_id)
+        if not _can_edit_domain(caller, d):
+            return json({"error": EDIT_DENIED}, status=403)
+
         update_data = update_req.model_dump(exclude_none=True)
+        if "name" in body:
+            # Present-and-empty (or null) clears the name back to the derived label.
+            update_data["name"] = _clean_name(update_req.name)
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
@@ -309,8 +441,9 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         )
         result = await session.execute(stmt)
         d = result.scalar_one()
+        payload = await _domain_detail_payload(session, d, auth_member.user_id)
 
-    return json(_domain_to_detail(d))
+    return json(payload)
 
 
 # ---------------------------------------------------------------------------
