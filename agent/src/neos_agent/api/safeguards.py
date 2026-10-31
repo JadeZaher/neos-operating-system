@@ -115,8 +115,10 @@ def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
         audit_scope=getattr(a, 'audit_scope', None),
         trigger_type=getattr(a, 'trigger_type', None),
         capture_risk_indicators=a.capture_risk_indicators,
-        findings=a.findings,
-        recommendations=a.recommendations,
+        # Requested-but-pending audits store {} placeholders in text columns —
+        # coerce to None so detail consumers never render a raw object.
+        findings=a.findings if isinstance(a.findings, str) else None,
+        recommendations=a.recommendations if isinstance(a.recommendations, str) else None,
         next_audit_due=getattr(a, 'next_audit_due', None) or a.next_audit_date,
         updated_at=a.updated_at,
         audit_period_start=getattr(a, 'audit_period_start', None),
