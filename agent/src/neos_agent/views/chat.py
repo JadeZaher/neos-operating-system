@@ -561,6 +561,7 @@ async def send_message(request: Request):
                         result = await execute_tool(
                             block.name, block.input, db,
                             ecosystem_ids=selected_eco_ids or None,
+                            caller_user_id=getattr(member, "user_id", None),
                         )
 
                         # Emit rich indicator with link

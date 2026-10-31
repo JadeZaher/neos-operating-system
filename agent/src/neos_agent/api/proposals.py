@@ -67,6 +67,7 @@ proposals_api_bp = Blueprint("proposals_api", url_prefix="/api/v1/proposals")
 
 # Valid status transitions: current_status -> set of allowed next statuses
 _VALID_TRANSITIONS: dict[str, set[str]] = {
+    "created": {"advice", "withdrawn"},  # legacy chat-assistant drafts
     "draft": {"advice", "withdrawn"},
     "advice": {"consent", "withdrawn"},
     "consent": {"test", "withdrawn"},
@@ -84,7 +85,7 @@ MANAGE_DENIED = "Only the proposer or an ecosystem steward can change this propo
 SELF_ADVICE_DENIED = "The proposer gathers advice and cannot advise their own proposal"
 
 
-async def _caller_member(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
+async def caller_member(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
     """The caller's Member row in one ecosystem (request.ctx.member is an arbitrary row)."""
     if user_id is None:
         return None
@@ -117,6 +118,35 @@ def _attach_caller_flags(payload: dict, caller: Member | None, proposal: Proposa
     payload["caller_can_manage"] = can_manage_proposal(caller, proposal)
     payload["caller_is_proposer"] = is_proposal_author(caller, proposal)
 
+
+# The ACT gate a forward move must clear (draft -> advice opens the process, ungated).
+_GATE_FOR_TARGET = {"consent": "advice", "test": "consent", "ratified": "test"}
+
+
+async def manual_transition_error(session, proposal: Proposal, new_status: str) -> tuple[int, dict] | None:
+    """Why a manual status move is refused as (HTTP status, body); None when it may proceed.
+
+    Shared by REST POST /status and the chat assistant's update_proposal_status;
+    the manage rule is checked separately by the caller.
+    """
+    if new_status == "withdrawn":
+        return None
+    current = proposal.status
+    allowed = _VALID_TRANSITIONS.get(current, set())
+    if new_status not in allowed:
+        return 400, {
+            "error": f"Invalid transition from '{current}' to '{new_status}'",
+            "allowed": sorted(allowed | {"withdrawn"}),
+        }
+    gate_key = _GATE_FOR_TARGET.get(new_status)
+    if gate_key:
+        gates = await proposal_gate_status(session, proposal)
+        if not gates[gate_key]["met"]:
+            return 409, {
+                "error": f"The {gate_key} gate is not satisfied — the conditions declared in the ACT policy must be met first",
+                "gates": gates,
+            }
+    return None
 
 
 
@@ -404,7 +434,7 @@ async def get_proposal(request: Request, proposal_id: uuid.UUID):
 
         # Any member row may participate (advice/consent/test); editing and
         # manual status moves need the manage rule (author or mod+).
-        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
 
         detail = _proposal_to_detail(proposal)
         payload = detail.model_dump(mode="json")
@@ -446,7 +476,7 @@ async def create_proposal(request: Request):
             return json({"error": link_error}, status=400)
         # The caller is the author; the proposer text may still name someone
         # else (proposing on their behalf) and defaults to the caller's name.
-        author = await _caller_member(session, member.user_id, create_req.ecosystem_id)
+        author = await caller_member(session, member.user_id, create_req.ecosystem_id)
         proposer_text = (create_req.proposer or "").strip() or (author.display_name if author else None)
         proposal = Proposal(
             id=uuid.uuid4(),
@@ -528,7 +558,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
         if not can_manage_proposal(caller, proposal):
             return json({"error": MANAGE_DENIED}, status=403)
 
@@ -615,42 +645,17 @@ async def transition_status(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
         if not can_manage_proposal(caller, proposal):
             return json({"error": MANAGE_DENIED}, status=403)
 
         current = proposal.status
 
-        # Validate transition
-        if new_status == "withdrawn":
-            pass  # Any status can transition to withdrawn
-        else:
-            allowed = _VALID_TRANSITIONS.get(current, set())
-            if new_status not in allowed:
-                return json(
-                    {
-                        "error": f"Invalid transition from '{current}' to '{new_status}'",
-                        "allowed": sorted(
-                            _VALID_TRANSITIONS.get(current, set()) | {"withdrawn"}
-                        ),
-                    },
-                    status=400,
-                )
-
-            # ACT gates: forward lifecycle moves require the gate conditions
-            # declared in the proposal's ACT policy. draft->advice opens the
-            # process and carries no gate.
-            gate_key = {"consent": "advice", "test": "consent", "ratified": "test"}.get(new_status)
-            if gate_key:
-                gates = await proposal_gate_status(session, proposal)
-                if not gates[gate_key]["met"]:
-                    return json(
-                        {
-                            "error": f"The {gate_key} gate is not satisfied — the conditions declared in the ACT policy must be met first",
-                            "gates": gates,
-                        },
-                        status=409,
-                    )
+        # Transition table + ACT gates (any status may move to withdrawn).
+        refusal = await manual_transition_error(session, proposal, new_status)
+        if refusal is not None:
+            status_code, body = refusal
+            return json(body, status=status_code)
 
         proposal.status = new_status
         # Cascade through any further gates now satisfied (mints the decision
@@ -755,7 +760,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
         if proposal is None:
             return json({"error": "Proposal not found"}, status=404)
 
-        caller = await _caller_member(session, member.user_id, proposal.ecosystem_id)
+        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
         if is_proposal_author(caller, proposal):
             return json({"error": SELF_ADVICE_DENIED}, status=409)
         # Advisor identity comes from the caller, never the request body. A

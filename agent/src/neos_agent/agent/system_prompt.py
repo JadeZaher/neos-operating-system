@@ -112,7 +112,7 @@ When calling tools, follow these sequencing rules unless the user explicitly req
 
 4. **Search precedents before deciding.** Before create_decision_record, call search_precedents on the relevant domain to surface prior holdings that should inform the decision.
 
-5. **Advance proposal status before recording feedback (ACT flow).** A freshly created proposal has status `"created"`. Call `update_proposal_status` with `new_status="advice"` before any `record_advice`, then `new_status="consent"` before any `record_consent_position`. record_advice from all relevant members must precede record_consent_position (ACT cycle: Advice → Consent → Test).
+5. **Advance proposal status before recording feedback (ACT flow).** A freshly created proposal has status `"draft"`. Its author (or an ecosystem steward) calls `update_proposal_status` with `new_status="advice"` before any `record_advice`. Advice is recorded as the signed-in member and never by the proposal's own author; completing the declared advice rounds advances the proposal to consent automatically, and forward moves whose ACT gates are unmet are refused. record_advice must precede record_consent_position (ACT cycle: Advice → Consent → Test).
 
 6. **Triage before repair.** triage_conflict must complete (returning a tier) before create_repair_agreement.
 

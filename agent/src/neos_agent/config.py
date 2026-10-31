@@ -65,7 +65,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = ""  # Frontend URL for post-OAuth redirect (if different from OAUTH_REDIRECT_BASE)
 
     # Ecosystem a self-registered account joins when the request names none.
-    # Matches an ecosystem id or the slug of its name (e.g. "omnione"); empty = oldest ecosystem.
+    # Matches an ecosystem id or the slug of its name (e.g. "omnione"); empty = oldest ecosystem
+    # (created_at, then founded_date). Set it in every deployment; see api/AGENTS.md "Sign-up placement".
     SIGNUP_DEFAULT_ECOSYSTEM_SLUG: str = ""
 
     model_config = SettingsConfigDict(

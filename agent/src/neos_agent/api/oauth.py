@@ -37,6 +37,9 @@ from .auth import create_signup_member, existing_membership, signup_ecosystem
 
 logger = logging.getLogger(__name__)
 
+# Client route listing the agreements a pending newcomer must consent to.
+CONSENT_GATE_PATH = "/welcome/consent"
+
 oauth_bp = Blueprint("oauth", url_prefix="/api/v1/auth/oauth")
 
 _OAUTH_STATE_TTL_SECONDS = 10 * 60
@@ -475,6 +478,8 @@ async def oauth_callback(request: Request, provider: str):
             await session.flush()
 
         # Returning users keep their memberships; only a user with none is placed.
+        # A newcomer behind the agreement-consent gate lands on the gate page.
+        landing_path = "/dashboard"
         member = await existing_membership(session, user.id)
         if member is None:
             ecosystem = await signup_ecosystem(session, settings)
@@ -484,13 +489,15 @@ async def oauth_callback(request: Request, provider: str):
                     "/login",
                     error="no_ecosystem",
                 )
-            member, _missing = await create_signup_member(
+            member, missing = await create_signup_member(
                 session,
                 user=user,
                 ecosystem=ecosystem,
                 member_id=f"oauth-{provider}-{oauth_id[:12]}",
                 display_name=display_name or f"User-{oauth_id[:8]}",
             )
+            if missing:
+                landing_path = CONSENT_GATE_PATH
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -507,7 +514,7 @@ async def oauth_callback(request: Request, provider: str):
 
     # Set session cookie and redirect to frontend
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
-    redirect_url = _frontend_redirect(frontend_origin, "/dashboard")
+    redirect_url = _frontend_redirect(frontend_origin, landing_path)
     logger.info(
         "OAuth %s callback success: user_id=%s, session_id=%s, redirect_to=%s, cookie_len=%d",
         provider, user.id, session_id, redirect_url, len(cookie_value),

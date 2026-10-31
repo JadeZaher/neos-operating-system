@@ -64,7 +64,22 @@ class EcosystemSummary(BaseModel):
     member_count: int = 0
 
 
+class RequiredAgreementSummary(BaseModel):
+    id: UUID
+    title: str
+    version: str | None = None
+
+
+class PendingConsentGate(BaseModel):
+    """A membership still waiting on the ecosystem's agreement-consent gate."""
+
+    ecosystem_id: UUID
+    ecosystem_name: str
+    required_agreements: list[RequiredAgreementSummary] = []
+
+
 class AuthMeResponse(BaseModel):
     user: UserSummary
     member: MemberSummary | None = None
     ecosystems: list[EcosystemSummary]
+    pending_consents: list[PendingConsentGate] = []

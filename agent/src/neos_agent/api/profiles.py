@@ -11,6 +11,7 @@ from sanic.request import Request
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from neos_agent.api.domains import domain_display_name
 from neos_agent.api.schemas.profiles import ProfileProject, ProfileUpdateRequest
 from neos_agent.db.course_models import Course, Quiz, QuizResult
 from neos_agent.db.models import (
@@ -138,6 +139,7 @@ async def _build_profile_response(
             {
                 "id": str(domain.id),
                 "domain_id": domain.domain_id,
+                "display_name": domain_display_name(domain),
                 "purpose": domain.purpose,
                 "status": domain.status,
                 "role": (
@@ -228,6 +230,7 @@ async def _build_profile_response(
                         {
                             "id": str(domain.id),
                             "domain_id": domain.domain_id,
+                            "display_name": domain_display_name(domain),
                             "purpose": domain.purpose,
                         }
                         if domain
@@ -274,7 +277,7 @@ async def _build_profile_response(
                 "ecosystem_id": str(ecosystem.id),
                 "ecosystem_name": ecosystem.name,
                 "domain_id": str(domain.id),
-                "domain_name": domain.domain_id,
+                "domain_name": domain_display_name(domain),
                 "type": record.type,
                 "title": record.title,
                 "description": record.description,
@@ -286,6 +289,7 @@ async def _build_profile_response(
                 "domain": {
                     "id": str(domain.id),
                     "domain_id": domain.domain_id,
+                    "display_name": domain_display_name(domain),
                     "purpose": domain.purpose,
                 },
                 "ecosystem": {

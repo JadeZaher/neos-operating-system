@@ -10,6 +10,8 @@ All tests use the ``seeded_db`` fixture from conftest.py which provides:
 
 from __future__ import annotations
 
+import uuid
+
 from neos_agent.agent.governance_tools import (
     check_authority,
     check_quorum,
@@ -27,6 +29,10 @@ from neos_agent.agent.governance_tools import (
     search_precedents,
     update_agreement_status,
 )
+
+# conftest seeds these users behind Kai's and Lani's member rows.
+USER_KAI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.kai")
+USER_LANI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.lani")
 
 
 # ===================================================================
@@ -189,24 +195,25 @@ class TestCheckAuthority:
 
 class TestCreateProposal:
     async def test_create_proposal(self, seeded_db, ecosystem_ids):
-        """Creates a proposal with generated ID and auto-set consent mode."""
+        """Creates a draft authored by the caller, with generated ID and auto-set consent mode."""
         result = await create_proposal(
             {
                 "title": "Expand kitchen hours to 10pm",
                 "type": "agreement",
-                "proposer": "Kai",
                 "affected_domain": "SHUR-KITCHEN",
                 "proposed_change": "Extend evening kitchen hours from 9pm to 10pm.",
                 "rationale": "Community demand and noise assessment confirmed feasibility.",
             },
             seeded_db,
             ecosystem_ids=ecosystem_ids,
+            caller_user_id=USER_KAI_ID,
         )
         assert result["success"] is True
         data = result["data"]
         assert data["proposal_id"].startswith("PROP-")
         assert data["consent_mode"] == "consent"
-        assert data["status"] == "created"
+        assert data["status"] == "draft"
+        assert data["proposer"] == "Kai"
 
 
 # ===================================================================
@@ -220,10 +227,10 @@ class TestRecordAdvice:
         result = await record_advice(
             {
                 "proposal_id": "PROP-2026-001",
-                "advisor": "Lani",
                 "advice_text": "Consider noise impact on nearby sleeping areas.",
             },
             seeded_db,
+            caller_user_id=USER_LANI_ID,
         )
         assert result["success"] is True
         data = result["data"]

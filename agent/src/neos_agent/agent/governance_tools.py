@@ -8,7 +8,8 @@ Returns {"success": True, "data": {...}} or {"success": False, "error": "..."}.
 The module also exports:
 - GOVERNANCE_TOOLS: list[ToolDef] with all 29 tool definitions
 - get_tool_definitions(): tool defs in Claude API format
-- execute_tool(name, args, db_session): dispatch by name
+- execute_tool(name, args, db_session, ecosystem_ids, caller_user_id): dispatch by name;
+  CALLER_SCOPED_TOOLS act as (and refuse without) the signed-in member
 """
 
 from __future__ import annotations
@@ -48,6 +49,20 @@ from neos_agent.db.models import (
     Proposal,
     RepairAgreementRecord,
 )
+from neos_agent.api.domains import CREATE_DENIED as DOMAIN_CREATE_DENIED
+from neos_agent.api.helpers import ROLE_RANK
+from neos_agent.api.proposals import (
+    MANAGE_DENIED,
+    SELF_ADVICE_DENIED,
+    can_manage_proposal,
+    caller_member,
+    is_proposal_author,
+    manual_transition_error,
+)
+from neos_agent.services.act_gates import maybe_auto_advance_proposal
+
+# Caller-scoped tools act as the signed-in member; see api/AGENTS.md "Chat assistant tools".
+CALLER_REQUIRED = "This action needs a signed-in member."
 
 
 # ---------------------------------------------------------------------------
@@ -632,9 +647,13 @@ async def get_member_roles(args: dict, db: AsyncSession, ecosystem_ids: list | N
 # TOOL 7: create_proposal
 # ===================================================================
 
-async def create_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create an ACT proposal."""
-    required = ("title", "type", "proposer", "proposed_change", "rationale")
+async def create_proposal(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a draft ACT proposal authored by the calling member."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    required = ("title", "type", "proposed_change", "rationale")
     for field in required:
         if not args.get(field):
             return {"success": False, "error": f"'{field}' is required."}
@@ -642,14 +661,14 @@ async def create_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | No
     eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    eco_id = uuid.UUID(str(eco_id))
 
-    # Validate proposer
-    proposer = await _resolve_member(db, args["proposer"], ecosystem_ids)
-    if proposer is None:
-        return {
-            "success": False,
-            "error": f"Proposer '{args['proposer']}' is not an active member.",
-        }
+    # The caller is the author (manage rule); `proposer` is display text that
+    # may name someone else and defaults to the caller's name.
+    author = await caller_member(db, caller_user_id, eco_id)
+    if author is None:
+        return {"success": False, "error": "Only a member of this ecosystem can create a proposal here."}
+    proposer_text = str(args.get("proposer") or "").strip() or author.display_name
 
     # Generate proposal ID using MAX approach
     year = _today().year
@@ -695,8 +714,9 @@ async def create_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | No
         decision_type=consent_mode,
         title=args["title"],
         version="1.0",
-        status="created",
-        proposer=args["proposer"],
+        status="draft",
+        proposer=proposer_text,
+        proposer_member_id=author.id,
         co_sponsors=args.get("co_sponsors"),
         affected_domain=args.get("affected_domain"),
         impacted_parties=args.get("impacted_parties"),
@@ -716,8 +736,9 @@ async def create_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | No
             "id": str(prop.id),
             "proposal_id": proposal_id,
             "consent_mode": consent_mode,
-            "status": "created",
-            "message": f"Proposal '{proposal_id}' created.",
+            "status": "draft",
+            "proposer": proposer_text,
+            "message": f"Proposal '{proposal_id}' created as a draft. Open it for advice when ready.",
         },
     }
 
@@ -726,21 +747,23 @@ async def create_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | No
 # TOOL 8: record_advice
 # ===================================================================
 
-async def record_advice(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Record an advice entry for a proposal."""
+async def record_advice(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Record the calling member's advice on a proposal (never on their own)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     proposal_id = args.get("proposal_id", "")
-    advisor = args.get("advisor", "")
-    advice_text = args.get("advice_text", "")
+    advice_text = str(args.get("advice_text") or "").strip()
 
-    if not proposal_id or not advisor:
-        return {"success": False, "error": "proposal_id and advisor are required."}
+    if not proposal_id:
+        return {"success": False, "error": "proposal_id is required."}
+    if not advice_text:
+        # A blank entry would still count toward the advice gate.
+        return {"success": False, "error": "Advice text is required."}
 
     # Find proposal
-    prop_stmt = (
-        select(Proposal)
-        .options(selectinload(Proposal.advice_logs))
-        .where(Proposal.proposal_id == proposal_id)
-    )
+    prop_stmt = select(Proposal).where(Proposal.proposal_id == proposal_id)
     if ecosystem_ids:
         prop_stmt = prop_stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
     result = await db.execute(prop_stmt)
@@ -754,18 +777,27 @@ async def record_advice(args: dict, db: AsyncSession, ecosystem_ids: list | None
             "error": f"Proposal is in '{prop.status}' phase, not 'advice'.",
         }
 
-    # Validate advisor has standing
-    advisor_member = await _resolve_member(db, advisor, ecosystem_ids)
+    # The advisor is the caller: their row in the proposal's ecosystem, else
+    # (shared-ecosystem advice, as in REST) their row in a scoped ecosystem.
+    advisor_member = await caller_member(db, caller_user_id, prop.ecosystem_id)
+    if is_proposal_author(advisor_member, prop):
+        return {"success": False, "error": SELF_ADVICE_DENIED}
     if advisor_member is None:
-        return {
-            "success": False,
-            "error": f"Advisor '{advisor}' is not an active member.",
-        }
+        fallback = select(Member).where(Member.user_id == caller_user_id, Member.current_status == "active")
+        if ecosystem_ids:
+            fallback = fallback.where(Member.ecosystem_id.in_(ecosystem_ids))
+        advisor_member = (await db.execute(fallback.order_by(Member.created_at, Member.id))).scalars().first()
+    if advisor_member is None:
+        return {"success": False, "error": "Only a member can give advice on this proposal."}
 
-    # Get or create AdviceLog
-    if prop.advice_logs:
-        advice_log = prop.advice_logs[0]
-    else:
+    # Latest advice round (the unit the advice gate counts), or open the first.
+    advice_log = (await db.execute(
+        select(AdviceLog)
+        .where(AdviceLog.proposal_id == prop.id)
+        .order_by(AdviceLog.created_at.desc())
+        .limit(1)
+    )).scalars().first()
+    if advice_log is None:
         advice_log = AdviceLog(
             id=uuid.uuid4(),
             proposal_id=prop.id,
@@ -777,20 +809,24 @@ async def record_advice(args: dict, db: AsyncSession, ecosystem_ids: list | None
     entry = AdviceEntry(
         id=uuid.uuid4(),
         advice_log_id=advice_log.id,
-        advisor=advisor,
+        advisor=advisor_member.display_name,
         role=advisor_member.profile,
         date=_today(),
         advice_text=advice_text,
+        integration_status="pending",
     )
     db.add(entry)
     await db.flush()
+    advance = await maybe_auto_advance_proposal(db, prop)
 
     return {
         "success": True,
         "data": {
             "proposal_id": proposal_id,
-            "advisor": advisor,
+            "advisor": advisor_member.display_name,
             "recorded_date": str(_today()),
+            "status": prop.status,
+            "auto_transitions": advance["transitions"],
             "message": "Advice recorded successfully.",
         },
     }
@@ -1452,8 +1488,12 @@ async def create_exit_record(args: dict, db: AsyncSession, ecosystem_ids: list |
 # TOOL 20: create_domain_draft
 # ===================================================================
 
-async def create_domain_draft(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a new domain contract in draft status."""
+async def create_domain_draft(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a new domain contract in draft status (ecosystem stewards, mod+, only)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     domain_id = args.get("domain_id", "")
     purpose = args.get("purpose", "")
     if not domain_id or not purpose:
@@ -1472,6 +1512,12 @@ async def create_domain_draft(args: dict, db: AsyncSession, ecosystem_ids: list 
     eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    eco_id = uuid.UUID(str(eco_id))
+
+    # Same rule as REST POST /domains: the caller's own row must be mod+ here.
+    creator = await caller_member(db, caller_user_id, eco_id)
+    if creator is None or ROLE_RANK.get(creator.role, 0) < ROLE_RANK["mod"]:
+        return {"success": False, "error": DOMAIN_CREATE_DENIED}
 
     # Check for duplicates
     existing = await db.execute(
@@ -1512,11 +1558,12 @@ async def create_domain_draft(args: dict, db: AsyncSession, ecosystem_ids: list 
         domain_id=domain_id,
         version="0.1",
         status="draft",
+        name=str(args.get("name") or "").strip() or None,
         purpose=purpose,
         current_steward=steward_name,
         steward_id=steward_id,
         parent_domain_id=parent_uuid,
-        created_by=args.get("created_by"),
+        created_by=args.get("created_by") or creator.display_name,
         metric_definitions=args.get("metric_definitions"),
         elements=args.get("elements"),
     )
@@ -2007,22 +2054,18 @@ async def get_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None 
 # TOOL 28: update_proposal_status
 # ===================================================================
 
-async def update_proposal_status(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Transition a proposal through the ACT lifecycle: created→advice→consent→test→ratified→implemented."""
-    PROPOSAL_TRANSITIONS = {
-        "created": ["advice", "withdrawn"],
-        "advice": ["consent", "withdrawn"],
-        "consent": ["test", "ratified", "rejected", "withdrawn"],
-        "test": ["ratified", "rejected", "implemented", "withdrawn"],
-        "ratified": ["implemented", "archived"],
-        "implemented": ["archived"],
-        "rejected": ["created"],  # can be re-submitted
-        "withdrawn": ["created"],
-        "archived": [],
-    }
+async def update_proposal_status(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Manual ACT move (draft→advice, gated forward moves, withdraw) by the author or a steward.
 
+    Same rules as REST POST /proposals/:id/status: manage rule, transition
+    table, then the declared ACT gates; satisfied gates cascade.
+    """
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     proposal_id = args.get("proposal_id", "")
-    new_status = args.get("new_status", "")
+    new_status = str(args.get("new_status") or "").strip().lower()
     if not proposal_id or not new_status:
         return {"success": False, "error": "'proposal_id' and 'new_status' are required."}
 
@@ -2035,23 +2078,19 @@ async def update_proposal_status(args: dict, db: AsyncSession, ecosystem_ids: li
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
 
+    caller = await caller_member(db, caller_user_id, prop.ecosystem_id)
+    if not can_manage_proposal(caller, prop):
+        return {"success": False, "error": MANAGE_DENIED}
+
     current = prop.status
-    allowed = PROPOSAL_TRANSITIONS.get(current, [])
-    if new_status not in allowed:
-        return {
-            "success": False,
-            "error": (
-                f"Cannot transition from '{current}' to '{new_status}'. "
-                f"Valid transitions from '{current}': {allowed}."
-            ),
-        }
+    refusal = await manual_transition_error(db, prop, new_status)
+    if refusal is not None:
+        _, body = refusal
+        allowed = f" Allowed: {', '.join(body['allowed'])}." if body.get("allowed") else ""
+        return {"success": False, "error": body["error"] + "." + allowed}
 
     prop.status = new_status
-
-    # Increment version on significant transitions
-    if new_status in ("consent", "ratified", "implemented"):
-        prop.version = _increment_version(prop.version)
-
+    advance = await maybe_auto_advance_proposal(db, prop)
     await db.flush()
 
     return {
@@ -2059,8 +2098,9 @@ async def update_proposal_status(args: dict, db: AsyncSession, ecosystem_ids: li
         "data": {
             "proposal_id": proposal_id,
             "previous_status": current,
-            "new_status": new_status,
-            "version": prop.version,
+            "new_status": prop.status,
+            "auto_transitions": advance["transitions"],
+            "decision_record_id": advance["decision_record_id"],
         },
     }
 
@@ -2231,13 +2271,13 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 7
     ToolDef(
         name="create_proposal",
-        description="Create a new ACT (Advice-Consent-Test) proposal. Auto-sets consent mode to consensus for OSC/UAF scope, consent otherwise.",
+        description="Create a new ACT (Advice-Consent-Test) proposal as a draft authored by the signed-in member. Auto-sets consent mode to consensus for OSC/UAF scope, consent otherwise.",
         parameters={
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Proposal title."},
                 "type": {"type": "string", "description": "Proposal type."},
-                "proposer": {"type": "string", "description": "Proposer name or member_id."},
+                "proposer": {"type": "string", "description": "Optional display name of who the proposal is on behalf of; defaults to the signed-in member. The signed-in member is always the author."},
                 "proposed_change": {"type": "string", "description": "3-10 sentences describing exactly what changes (policy, allocation, structure). Concrete and actionable, not aspirational."},
                 "rationale": {"type": "string", "description": "3-10 sentences explaining WHY this change is needed, what problem it solves, and the expected impact."},
                 "scope": {"type": "string", "description": "Decision scope (used for consent-mode auto-detection)."},
@@ -2249,22 +2289,21 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "advice_deadline": {"type": "string", "description": "When advice-gathering closes (ISO date, YYYY-MM-DD)."},
                 "consent_deadline": {"type": "string", "description": "When consent voting closes (ISO date, YYYY-MM-DD)."},
             },
-            "required": ["title", "type", "proposer", "proposed_change", "rationale"],
+            "required": ["title", "type", "proposed_change", "rationale"],
         },
         handler=create_proposal,
     ),
     # 8
     ToolDef(
         name="record_advice",
-        description="Record an advice entry for a proposal in the advice phase. Validates advisor standing and creates an AdviceLog if needed.",
+        description="Record the signed-in member's advice on a proposal in the advice phase. The advisor is always the signed-in member; the proposal's author cannot advise their own proposal. Completing the declared advice rounds advances it to consent.",
         parameters={
             "type": "object",
             "properties": {
                 "proposal_id": {"type": "string", "description": "Proposal business key."},
-                "advisor": {"type": "string", "description": "Advisor name or member_id."},
-                "advice_text": {"type": "string", "description": "The advice content."},
+                "advice_text": {"type": "string", "description": "The advice content (required, not blank)."},
             },
-            "required": ["proposal_id", "advisor"],
+            "required": ["proposal_id", "advice_text"],
         },
         handler=record_advice,
     ),
@@ -2474,11 +2513,12 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 20
     ToolDef(
         name="create_domain_draft",
-        description="Create a new domain contract in draft status. Validates steward as active member and checks for duplicate domain IDs.",
+        description="Create a new domain contract in draft status. Only an ecosystem steward (moderator or above) can create domains. Validates steward as active member and checks for duplicate domain IDs.",
         parameters={
             "type": "object",
             "properties": {
                 "domain_id": {"type": "string", "description": "Unique domain identifier (business key, e.g. 'operations', 'governance')."},
+                "name": {"type": "string", "description": "Human name of the domain, shown instead of the business key."},
                 "purpose": {"type": "string", "description": "Purpose statement for the domain."},
                 "steward": {"type": "string", "description": "Name or member_id of the domain steward (must be active member)."},
                 "parent_domain_id": {"type": "string", "description": "Parent domain business key (for nested domains)."},
@@ -2649,12 +2689,12 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 28
     ToolDef(
         name="update_proposal_status",
-        description="Transition a proposal through the ACT lifecycle: created → advice → consent → test → ratified → implemented → archived. Supports rejected/withdrawn states with re-submission. Auto-increments version on significant transitions.",
+        description="Move a proposal through the ACT lifecycle (draft → advice → consent → test → ratified) or withdraw it. Only the proposal's author or an ecosystem steward may do this, and forward moves require the declared ACT gates to be met.",
         parameters={
             "type": "object",
             "properties": {
                 "proposal_id": {"type": "string", "description": "The proposal business key."},
-                "new_status": {"type": "string", "description": "Target status (created, advice, consent, test, ratified, implemented, rejected, withdrawn, archived)."},
+                "new_status": {"type": "string", "description": "Target status (advice, consent, test, ratified, withdrawn)."},
             },
             "required": ["proposal_id", "new_status"],
         },
@@ -2735,13 +2775,31 @@ def _sanitize_db_error(s: str) -> str:
 
 _TOOL_HANDLERS: dict[str, Callable] = {t.name: t.handler for t in GOVERNANCE_TOOLS}
 
+# Tools that act as the signed-in member; they refuse to run without one.
+CALLER_SCOPED_TOOLS = frozenset({
+    "create_proposal",
+    "record_advice",
+    "update_proposal_status",
+    "create_domain_draft",
+})
 
-async def execute_tool(name: str, args: dict, db_session: AsyncSession, ecosystem_ids: list | None = None) -> dict:
+
+async def execute_tool(
+    name: str,
+    args: dict,
+    db_session: AsyncSession,
+    ecosystem_ids: list | None = None,
+    caller_user_id: uuid.UUID | None = None,
+) -> dict:
     """Execute a governance tool by name with friendly error mapping."""
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"success": False, "error": f"Unknown tool: {name}"}
+    if not isinstance(args, dict):
+        args = {}
     try:
+        if name in CALLER_SCOPED_TOOLS:
+            return await handler(args, db_session, ecosystem_ids=ecosystem_ids, caller_user_id=caller_user_id)
         return await handler(args, db_session, ecosystem_ids=ecosystem_ids)
     except IntegrityError as e:
         msg = _friendly_integrity_error(e)

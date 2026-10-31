@@ -120,6 +120,7 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
         id=uuid.uuid4(),
         ecosystem_id=ecosystem.id,
         domain_id="SHUR-KITCHEN",
+        name="Community Kitchen",
         status="active",
         purpose="Coordinate the community kitchen",
     )
@@ -220,6 +221,9 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
     assert "phone" not in response["profile"]
     assert "notes" not in response["ecosystems"][0]["membership"]
     assert response["domains"][0]["domain_id"] == "SHUR-KITCHEN"
+    # Members see the domain's name; the generated code stays secondary.
+    assert response["domains"][0]["display_name"] == "Community Kitchen"
+    assert response["quiz_results"][0]["domain"]["display_name"] == "Community Kitchen"
     assert response["quiz_results"][0]["quiz"]["title"] == "Kitchen Orientation"
     assert "survey_results" not in response["quiz_results"][0]["results"][0]
     assert response["quiz_results"][0]["results"][0]["result_metadata"] == {}
@@ -228,7 +232,7 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
         "Kitchen scheduling"
     ]
     assert response["publications"][0]["ecosystem_name"] == "OmniOne"
-    assert response["publications"][0]["domain_name"] == "SHUR-KITCHEN"
+    assert response["publications"][0]["domain_name"] == "Community Kitchen"
 
 
 @pytest.mark.asyncio

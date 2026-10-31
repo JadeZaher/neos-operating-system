@@ -43,8 +43,8 @@ payload.
 ## Proposal authorship and manage rule
 
 `proposals.proposer_member_id` records the member who authored a proposal: the
-caller's own `Member` row in the proposal's ecosystem, set on REST and MCP
-create. The free-text `proposer` is display text only. It defaults to the
+caller's own `Member` row in the proposal's ecosystem, set on REST, MCP and
+chat-assistant create. The free-text `proposer` is display text only. It defaults to the
 author's display name, may name someone else when proposing on their behalf,
 and is fixed after creation (`ProposalUpdateRequest` has no proposer field).
 
@@ -58,17 +58,19 @@ Participation and management are separate:
   A proposal with a NULL author link (legacy, or created by a path that does not
   set it) is steward-only, the same rule `discover.py` applies to legacy
   shares and needs. MCP `transition_proposal` applies the rule to withdrawing
-  and to `draft -> advice`; its forward moves only run the gate engine.
+  and to `draft -> advice`; its forward moves only run the gate engine. The
+  transition table and gate check live in `manual_transition_error`, shared by
+  REST `POST /status` and the chat tool `update_proposal_status`.
 
 Advice integrity: blank advice is rejected with 400, because a blank entry would
 still count toward the advice gate. The author cannot advise their own proposal
-(409 `SELF_ADVICE_DENIED`, REST and MCP), so they cannot advance it to consent
-alone. The advisor name always comes from the caller's member row, never from
+(409 `SELF_ADVICE_DENIED`, REST, MCP and chat), so they cannot advance it to
+consent alone. The advisor name always comes from the caller's member row, never from
 the request body.
 
 The migration `n6a1d4f8b2c5` backfilled the link only where the proposer text
 matched exactly one member's display name in the same ecosystem. Always
-resolve the caller per ecosystem (`_caller_member`); `request.ctx.member` is
+resolve the caller per ecosystem (`caller_member`); `request.ctx.member` is
 an arbitrary row.
 
 ## Domain naming and participation flags
@@ -78,6 +80,8 @@ business key and must only appear as secondary text. Serializers emit
 `display_name` = `name`, else the purpose's leading `"Name — "` segment (1-120
 characters), else `domain_id` (`domain_display_name`). The fallback keeps
 legacy rows and fresh `create_all` databases readable without the backfill.
+Profile payloads (`profiles.py`: domain participation, quiz scopes,
+publications) carry the same `display_name`, and `domain_name` is that label.
 
 Caller flags are computed on the server so the UI survives reloads:
 
@@ -94,3 +98,45 @@ participation. Creating a domain requires `require_ecosystem_role(..., "mod")`.
 Updating requires the domain's steward or mod+ (403 `EDIT_DENIED`). Moving
 `require_admin` to per-ecosystem checks is deferred to the role-tiers phase of
 `governance_matching_ux_enforcement_20260727`.
+
+## Chat assistant tools (caller-scoped)
+
+The in-app assistant (`api/chat.py`, legacy `views/chat.py`) runs
+`agent/governance_tools.execute_tool` with `caller_user_id` = the signed-in
+user. Tools in `CALLER_SCOPED_TOOLS` act as that member and return
+`CALLER_REQUIRED` without one, so a model-chosen argument can never stand in
+for identity:
+
+- `create_proposal`: author = the caller's row in the scoped ecosystem
+  (`proposer_member_id`); `proposer` is optional display text; status `draft`.
+- `record_advice`: advisor = the caller (no `advisor` argument); blank advice
+  and self-advice are refused; the advice gate auto-advances as in REST.
+- `update_proposal_status`: `can_manage_proposal`, then
+  `manual_transition_error` (same table and ACT gates as REST), then cascade.
+  `created` is accepted as a legacy alias of `draft`.
+- `create_domain_draft`: caller's row must be mod+ (`CREATE_DENIED`).
+
+Other mutating chat tools (consent positions, agreement drafts/status,
+decisions, emergencies, exits, ecosystems) still take identities from model
+arguments; bring each under `CALLER_SCOPED_TOOLS` before relying on it.
+
+## Sign-up placement and the consent gate
+
+Password register, DID verify and OAuth callback share `auth.py` helpers. A
+returning user keeps their oldest membership (`existing_membership`); a new
+one is placed by `signup_ecosystem`: the requested `ecosystem_id`, else
+`SIGNUP_DEFAULT_ECOSYSTEM_SLUG` (an id or the slug of a name), else the oldest
+ecosystem ordered by `created_at`, `founded_date` (nulls last), `id`. Seeds
+insert every ecosystem in one transaction, so `created_at` ties and
+`founded_date` decides; never rely on the id tie-break. Set
+`SIGNUP_DEFAULT_ECOSYSTEM_SLUG=omnione` in every deployment (Railway agent
+service, the uxqa stack `uxqa/adapter/stack.sh`, local `.env`).
+
+`create_signup_member` applies the ecosystem-membership agreement gate exactly
+like `POST /ecosystems/:id/join`: `pending_consent` until each required
+agreement is attested. Register/verify responses add `status`
+(`consent_required` | `joined`) and `required_agreements`; OAuth redirects a
+gated newcomer to the client route `/welcome/consent` (`CONSENT_GATE_PATH`);
+`GET /auth/me` returns `pending_consents` (ecosystem + missing agreements per
+pending membership) so the client can show the gate after any sign-in path.
+

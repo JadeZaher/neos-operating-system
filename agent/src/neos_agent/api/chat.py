@@ -598,7 +598,11 @@ async def send_message(request: Request):
                         db_factory = getattr(request.app.ctx, "db", None)
                         if db_factory:
                             async with db_factory() as db:
-                                result = await execute_tool(tool_name, tool_args, db, ecosystem_ids=validated_eco_ids or None)
+                                result = await execute_tool(
+                                    tool_name, tool_args, db,
+                                    ecosystem_ids=validated_eco_ids or None,
+                                    caller_user_id=getattr(member, "user_id", None),
+                                )
                                 if result.get("success"):
                                     await db.commit()
                         else:

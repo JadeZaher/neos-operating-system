@@ -95,7 +95,11 @@ def requested_ecosystem_id(body: dict) -> uuid.UUID | None:
 
 
 async def signup_ecosystem(session, settings, requested_id: uuid.UUID | None = None) -> Ecosystem | None:
-    """Ecosystem a new account joins: requested id, then SIGNUP_DEFAULT_ECOSYSTEM_SLUG, then oldest."""
+    """Ecosystem a new account joins: requested id, then SIGNUP_DEFAULT_ECOSYSTEM_SLUG, then oldest.
+
+    "Oldest" breaks created_at ties (a seed inserts every ecosystem in one
+    transaction) by founded_date before id; see api/AGENTS.md "Sign-up placement".
+    """
     if requested_id is not None:
         ecosystem = await session.get(Ecosystem, requested_id)
         if ecosystem is None:
@@ -103,7 +107,11 @@ async def signup_ecosystem(session, settings, requested_id: uuid.UUID | None = N
         return ecosystem
 
     ecosystems = list((await session.execute(
-        select(Ecosystem).order_by(Ecosystem.created_at.asc(), Ecosystem.id.asc())
+        select(Ecosystem).order_by(
+            Ecosystem.created_at.asc(),
+            Ecosystem.founded_date.asc().nulls_last(),
+            Ecosystem.id.asc(),
+        )
     )).scalars().all())
     configured = getattr(settings, "SIGNUP_DEFAULT_ECOSYSTEM_SLUG", "")
     if isinstance(configured, str) and configured.strip():
@@ -152,15 +160,36 @@ async def existing_membership(session, user_id: uuid.UUID) -> Member | None:
     )).scalar_one_or_none()
 
 
+def _agreement_brief(agreement) -> dict:
+    """The {id, title, version} shape every consent-gate payload uses."""
+    return {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
+
+
 def _consent_gate_payload(missing: list) -> dict:
     """Extra sign-up response keys mirroring the join endpoint's consent contract."""
     return {
         "status": "consent_required" if missing else "joined",
-        "required_agreements": [
-            {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
-            for agreement in missing
-        ],
+        "required_agreements": [_agreement_brief(agreement) for agreement in missing],
     }
+
+
+async def pending_consent_gates(session, user_id: uuid.UUID) -> list[dict]:
+    """Every membership of the user still behind its ecosystem's agreement-consent gate."""
+    rows = (await session.execute(
+        select(Member, Ecosystem)
+        .join(Ecosystem, Ecosystem.id == Member.ecosystem_id)
+        .where(Member.user_id == user_id, Member.current_status == "pending_consent")
+        .order_by(Member.created_at.asc(), Member.id.asc())
+    )).all()
+    gates = []
+    for member, ecosystem in rows:
+        missing = await missing_agreement_consents(session, member.id, ecosystem.id, "ecosystem")
+        gates.append({
+            "ecosystem_id": str(ecosystem.id),
+            "ecosystem_name": ecosystem.name,
+            "required_agreements": [_agreement_brief(agreement) for agreement in missing],
+        })
+    return gates
 
 
 @auth_api_bp.post("/challenge")
@@ -356,15 +385,13 @@ async def api_me(request: Request):
         )
         eco_ids = list(member_records.scalars().all())
 
-        # Load a primary member for the summary
-        primary_member_result = await db.execute(
-            select(Member).where(Member.user_id == user.id).limit(1)
-        )
-        member = primary_member_result.scalar_one_or_none()
+        # The primary member is the oldest membership (the one sign-up created).
+        member = await existing_membership(db, user.id)
         if not member:
             return json({"error": "Member not found"}, status=401)
 
         member_summary = _member_to_summary(member, user)
+        pending_consents = await pending_consent_gates(db, user.id)
 
         ecosystems = []
         if eco_ids:
@@ -403,6 +430,7 @@ async def api_me(request: Request):
         user=user_summary,
         member=member_summary,
         ecosystems=ecosystems,
+        pending_consents=pending_consents,
     )
     return json(response_data.model_dump(mode="json"))
 

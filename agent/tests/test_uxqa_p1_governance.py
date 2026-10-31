@@ -1,9 +1,11 @@
 """UX-QA pass 01 (first week), lane 1: governance integrity flows.
 
-Drives the real proposals/domains blueprints (and the MCP tool functions) over
-an in-memory SQLite DB, acting as different members through an injected
-session. Rules under test live in src/neos_agent/api/AGENTS.md:
-"Proposal authorship and manage rule" and "Domain naming and participation flags".
+Drives the real proposals/domains blueprints and the chat assistant's tool
+dispatch over an in-memory SQLite DB, acting as different members through an
+injected session. Rules under test live in src/neos_agent/api/AGENTS.md:
+"Proposal authorship and manage rule", "Domain naming and participation flags"
+and "Chat assistant tools (caller-scoped)". The MCP parity test lives in
+test_uxqa_p1_mcp_parity.py so these collect without the `mcp` package.
 """
 
 from __future__ import annotations
@@ -19,10 +21,10 @@ from sanic import Sanic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from neos_agent import mcp_server
-from neos_agent.api.domains import domain_display_name, domains_api_bp
+from neos_agent.agent.governance_tools import CALLER_REQUIRED, execute_tool
+from neos_agent.api.domains import CREATE_DENIED, domain_display_name, domains_api_bp
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED, proposals_api_bp
-from neos_agent.db.models import Base, Domain, Ecosystem, Member, Proposal, User
+from neos_agent.db.models import Base, Domain, DomainElement, Ecosystem, Member, Proposal, User
 
 ECO = uuid.UUID("0000000a-0000-0000-0000-000000000001")
 STEWARDED_DOMAIN = uuid.UUID("0000000a-0000-0000-0000-0000000000d1")
@@ -69,6 +71,11 @@ async def _seed(session: AsyncSession) -> None:
         id=STEWARDED_DOMAIN, ecosystem_id=ECO, domain_id="DOM-1A2B3C4D", version="1.0",
         status="active", purpose="Newcomer Garden — a shared garden for first-month members",
         current_steward="Sol", steward_id=PEOPLE["sol"].member_id,
+    ))
+    # A list-valued S3 element (element_value is any JSON, not only an object).
+    session.add(DomainElement(
+        id=uuid.uuid4(), domain_id=STEWARDED_DOMAIN, element_name="drivers",
+        element_value=["Newcomers need a first task"],
     ))
     # Legacy row: free-text proposer that happens to match Ben, but no author link.
     session.add(Proposal(
@@ -288,43 +295,110 @@ async def test_joining_a_domain_is_reflected_in_detail_and_list(env):
     assert steward_view["caller_is_steward"] is True
     assert steward_view["caller_can_edit"] is True
     assert steward_view["caller_is_participant"] is False
+    assert steward_view["domain_elements"][0]["element_value"] == ["Newcomers need a first task"]
+
+
+@pytest.mark.parametrize("actor, is_steward, can_create", [
+    ("sol", True, False),  # this domain's steward, plain ecosystem role
+    ("mo", False, True),  # ecosystem steward (mod)
+    ("ben", False, False),
+])
+async def test_domain_list_flags_reflect_the_caller(env, actor, is_steward, can_create):
+    listed = (await _call(env.app, "get", actor, "/api/v1/domains")).json
+    item = next(i for i in listed["items"] if i["id"] == str(STEWARDED_DOMAIN))
+    assert item["caller_is_steward"] is is_steward
+    assert listed["caller_can_create"] is can_create
+
+
+async def test_clearing_a_domain_name_falls_back_to_the_purpose_label(env):
+    url = f"/api/v1/domains/{STEWARDED_DOMAIN}"
+    named = await _call(env.app, "put", "mo", url, json={"name": "Garden Commons"})
+    assert named.json["display_name"] == "Garden Commons"
+
+    # An update that omits "name" keeps it.
+    kept = await _call(env.app, "put", "mo", url, json={"purpose": "Newcomer Garden — beds for first-month members"})
+    assert kept.status == 200, kept.text
+    assert kept.json["name"] == "Garden Commons"
+
+    # Present-and-empty clears it back to the derived label.
+    cleared = await _call(env.app, "put", "mo", url, json={"name": "  "})
+    assert cleared.status == 200, cleared.text
+    assert cleared.json["name"] is None
+    assert cleared.json["display_name"] == "Newcomer Garden"
 
 
 # ---------------------------------------------------------------------------
-# MCP parity: the agent tools apply the same authorship rules
+# Chat assistant parity: the in-app tools act as the signed-in member
 # ---------------------------------------------------------------------------
 
 
-async def test_mcp_tools_apply_authorship_rules(env, monkeypatch):
-    acting: dict[str, Person] = {}
-
-    async def fake_caller(ctx):
-        p = acting["who"]
-        return mcp_server.Caller(user=User(id=p.user_id, display_name=p.name), token=None)
-
-    monkeypatch.setattr(mcp_server, "_caller", fake_caller)
-    monkeypatch.setattr(mcp_server, "_db", lambda: env.db)
-
-    acting["who"] = PEOPLE["ada"]
-    created = await mcp_server.create_proposal(str(ECO), "Shared tool shed", ctx=None)
+async def _tool(env, who: str | None, tool_name: str, /, **args) -> dict:
+    """Run a chat tool the way api/chat.py does: scoped ids as strings, commit on success."""
+    caller = PEOPLE[who].user_id if who else None
     async with env.db() as session:
-        stored = await session.scalar(select(Proposal).where(Proposal.proposal_id == created["proposal_id"]))
-    assert stored.proposer_member_id == PEOPLE["ada"].member_id
+        result = await execute_tool(tool_name, args, session, ecosystem_ids=[str(ECO)], caller_user_id=caller)
+        if result.get("success"):
+            await session.commit()
+    return result
 
-    acting["who"] = PEOPLE["ben"]
-    with pytest.raises(ValueError, match=MANAGE_DENIED):
-        await mcp_server.transition_proposal(created["id"], "advice", ctx=None)
 
-    acting["who"] = PEOPLE["ada"]
-    assert (await mcp_server.transition_proposal(created["id"], "advice", ctx=None))["status"] == "advice"
-    with pytest.raises(ValueError, match=SELF_ADVICE_DENIED):
-        await mcp_server.record_proposal_advice(created["id"], "Looks right to me", ctx=None)
+@pytest.mark.parametrize("name, args", [
+    ("create_proposal", {"title": "T", "type": "policy", "proposed_change": "C", "rationale": "R"}),
+    ("record_advice", {"proposal_id": "PROP-LEGACY", "advice_text": "Advice"}),
+    ("update_proposal_status", {"proposal_id": "PROP-LEGACY", "new_status": "withdrawn"}),
+    ("create_domain_draft", {"domain_id": "tools", "purpose": "Lend tools"}),
+])
+async def test_chat_tools_refuse_to_act_without_a_signed_in_member(env, name, args):
+    result = await _tool(env, None, name, **args)
+    assert result == {"success": False, "error": CALLER_REQUIRED}
 
-    acting["who"] = PEOPLE["ben"]
-    advised = await mcp_server.record_proposal_advice(created["id"], "Add a sign-out sheet", ctx=None)
-    assert advised["auto_transitions"] == ["advice->consent"]
-    with pytest.raises(ValueError, match=MANAGE_DENIED):
-        await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None)
 
-    acting["who"] = PEOPLE["mo"]
-    assert (await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None))["status"] == "withdrawn"
+async def test_chat_tools_apply_authorship_advice_and_manage_rules(env):
+    created = await _tool(
+        env, "ada", "create_proposal",
+        title="Seed library", type="policy", proposed_change="Open a seed library", rationale="Share seeds",
+        proposer="Spoofed Steward",
+    )
+    assert created["success"] is True, created
+    proposal_key = created["data"]["proposal_id"]
+    async with env.db() as session:
+        stored = await session.scalar(select(Proposal).where(Proposal.proposal_id == proposal_key))
+    assert (stored.status, stored.proposer_member_id) == ("draft", PEOPLE["ada"].member_id)
+    assert stored.proposer == "Spoofed Steward"  # display text only; Ada stays the author
+
+    # Another member cannot open, advance or withdraw it.
+    denied = await _tool(env, "ben", "update_proposal_status", proposal_id=proposal_key, new_status="advice")
+    assert denied == {"success": False, "error": MANAGE_DENIED}
+    opened = await _tool(env, "ada", "update_proposal_status", proposal_id=proposal_key, new_status="advice")
+    assert opened["data"]["new_status"] == "advice"
+    gated = await _tool(env, "ada", "update_proposal_status", proposal_id=proposal_key, new_status="consent")
+    assert gated["success"] is False and "advice gate is not satisfied" in gated["error"]
+
+    # Advice integrity: no self-advice, no blank advice, advisor is the caller.
+    self_advice = await _tool(env, "ada", "record_advice", proposal_id=proposal_key, advice_text="Agree with myself")
+    assert self_advice == {"success": False, "error": SELF_ADVICE_DENIED}
+    blank = await _tool(env, "ben", "record_advice", proposal_id=proposal_key, advice_text="   ")
+    assert blank == {"success": False, "error": "Advice text is required."}
+    advised = await _tool(
+        env, "ben", "record_advice", proposal_id=proposal_key, advice_text="Add a swap shelf", advisor="Mo",
+    )
+    assert advised["data"]["advisor"] == "Ben"
+    assert advised["data"]["auto_transitions"] == ["advice->consent"]
+
+    withdrawn = await _tool(env, "mo", "update_proposal_status", proposal_id=proposal_key, new_status="withdrawn")
+    assert withdrawn["data"]["new_status"] == "withdrawn"
+
+
+@pytest.mark.parametrize("actor, expected", [("ben", False), ("mo", True)])
+async def test_chat_domain_creation_requires_an_ecosystem_steward(env, actor, expected):
+    result = await _tool(
+        env, actor, "create_domain_draft", domain_id="tool-library", purpose="Lend tools", name="Tool Library",
+    )
+    assert result["success"] is expected, result
+    if not expected:
+        assert result["error"] == CREATE_DENIED
+    async with env.db() as session:
+        created = await session.scalar(select(Domain).where(Domain.domain_id == "tool-library"))
+    assert (created is not None) is expected
+    if expected:
+        assert domain_display_name(created) == "Tool Library"
