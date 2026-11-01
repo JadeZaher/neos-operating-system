@@ -218,12 +218,15 @@ async def test_items_leave_the_queue_once_done_and_the_owner_decisions_shape_the
     await _advise(env, "ben", proposal_id)
     assert ADVISE not in await _items(env, "ben") and ADVISE in await _items(env, "cy")
 
-    # Advice closes on the proposer's call: no prompt before the deadline, and none for a steward.
+    # Advice closes on the proposer's call: prompted as soon as the gate is met (the deadline only firms the words),
+    # and never a steward's prompt.
+    deadline = dt.date.today() + dt.timedelta(days=3)
     async with env.db() as session:
-        await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id))
-                              .values(advice_deadline=dt.date.today() + dt.timedelta(days=3)))
+        await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id)).values(advice_deadline=deadline))
         await session.commit()
-    assert await _items(env, "ada", "proposal") == set()
+    [early] = [i for i in (await _queue(env, "ada"))["items"] if i["kind"] == "proposal"]
+    assert (early["action"], early["what"], early["due"], early["overdue"]) == (
+        "close_advice", ADVICE_READY_PROMPT, deadline.isoformat(), False)
     async with env.db() as session:
         await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id))
                               .values(advice_deadline=dt.date.today() - dt.timedelta(days=1)))
@@ -301,7 +304,8 @@ async def test_explain_offers_exactly_the_moves_the_engine_accepts(env):
         explained = (await _explain(env, who, "proposal", world.proposal)).json
         assert [m["move"] for m in explained["your_moves"]] == [m["to"] for m in detail.get("allowed_next") or []], who
     explained = (await _explain(env, "ada", "proposal", world.proposal)).json
-    assert (explained["state"], explained["decided_by"]) == ("Advice", "Ada or a steward")
+    # The proposer closes advice (owner decision); the current manage rule lets a steward act for her.
+    assert (explained["state"], explained["decided_by"]) == ("Advice", "Ada, who wrote it (a steward can act for them)")
 
     # Emergency: what each member may do with a pending declaration, then the move itself.
     moves = {who: [m["move"] for m in (await _explain(env, who, "emergency", world.emergency)).json["your_moves"]]

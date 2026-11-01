@@ -133,8 +133,13 @@ def can_create_domain(member: Member | None) -> bool:
 # BE-ACT
 
 def can_participate(member: Member | None, resource) -> bool:
-    """Advise, record a consent position or report a test on `resource`: any member row in its ecosystem."""
-    return _same_ecosystem(member, resource)
+    """Advise, record a consent position or report a test on `resource`: an ACTIVE member row in its ecosystem."""
+    return _same_ecosystem(member, resource) and member.current_status == "active"
+
+
+def is_consent_pending_in(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """The row waits on the consent gate in `ecosystem_id` (owner rule: a pending newcomer reads, never acts)."""
+    return member is not None and member.ecosystem_id == ecosystem_id and member.current_status == "pending_consent"
 
 
 def is_active_member_in(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:

@@ -32,7 +32,13 @@ from neos_agent.db.models import (
 from neos_agent.api.errors import ApiError, get_scoped_or_404
 from neos_agent.api.guards import authenticated, caller_in
 from neos_agent.api.helpers import apply_ecosystem_name_filter, build_search_filter, get_ecosystem_ids, parse_pagination, serialize_shared_ecosystem_ids
-from neos_agent.api.policy import can_manage_proposal, can_participate, can_register_agreement, is_proposal_author
+from neos_agent.api.policy import (
+    can_manage_proposal,
+    can_participate,
+    can_register_agreement,
+    is_consent_pending_in,
+    is_proposal_author,
+)
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.act_gates import (
     MANAGE_DENIED,
@@ -40,10 +46,14 @@ from neos_agent.services.act_gates import (
     consent_position,
     current_position,
     created_after_newest,
+    latest_revision_log,
     normalize_act_policy,
     proposal_gate_status,
     proposal_next_moves,
+    ratification_confirmers,
     record_consent_position,
+    refuse_pending_member,
+    require_participant,
     transition_proposal,
     withdraw_consent_position,
 )
@@ -105,6 +115,8 @@ def _attach_caller_flags(payload: dict, caller: Member | None, proposal: Proposa
     payload["caller_can_conduct"] = can_participate(caller, proposal)
     payload["caller_can_manage"] = can_manage_proposal(caller, proposal)
     payload["caller_is_proposer"] = is_proposal_author(caller, proposal)
+    # Reads but cannot take part until they consent to the ecosystem's agreements (the page says so).
+    payload["caller_consent_pending"] = is_consent_pending_in(caller, proposal.ecosystem_id)
 
 
 def _detail_options() -> tuple:
@@ -354,6 +366,26 @@ async def _caller_position(session, proposal: Proposal, caller: Member | None) -
     return None if row is None else {"position": consent_position(row.position), "reason": row.reason}
 
 
+async def _caller_contributions(session, proposal: Proposal, caller: Member | None) -> tuple[bool, bool]:
+    """(advised in the current advice round, filed a test report since the latest send-back): the page's done states."""
+    if caller is None:
+        return False, False
+    latest_log = await session.scalar(
+        select(AdviceLog.id).where(AdviceLog.proposal_id == proposal.id).order_by(AdviceLog.created_at.desc()).limit(1)
+    )
+    advised = latest_log is not None and bool(await session.scalar(select(func.count(AdviceEntry.id)).where(
+        AdviceEntry.advice_log_id == latest_log, AdviceEntry.member_id == caller.id,
+    )))
+    filed = (await session.scalars(select(TestReport.created_at).where(
+        TestReport.proposal_id == proposal.id, TestReport.reporter_member_id == caller.id,
+    ))).all()
+    revision = await latest_revision_log(session, proposal)
+    # A report on an earlier version is history; the round's updated_at is when the send-back happened.
+    # Compared in Python: SQLite stores server and client timestamps in different text forms.
+    since = revision.updated_at if revision is not None else None
+    return advised, any(since is None or (created is not None and created >= since) for created in filed)
+
+
 async def _proposal_detail_payload(session, proposal: Proposal, caller: Member | None,
                                    outcome: ActOutcome | None = None) -> dict:
     """Detail JSON: gates and linked agreements, the ACT outcome when one ran, caller standing, position and moves."""
@@ -365,11 +397,17 @@ async def _proposal_detail_payload(session, proposal: Proposal, caller: Member |
     _attach_caller_flags(payload, caller, proposal)
     payload["allowed_next"] = proposal_next_moves(proposal, payload["gates"], caller)
     payload["caller_position"] = await _caller_position(session, proposal, caller)
+    payload["caller_has_advised"], payload["caller_has_reported"] = await _caller_contributions(session, proposal, caller)
     payload["caller_can_register"] = (
         proposal.status == "ratified"
         and proposal.registered_agreement_id is None
         and can_register_agreement(caller, proposal)
     )
+    # Who confirms ratification, so the page names them instead of "another steward".
+    payload["ratification_confirmers"] = [
+        {"id": str(member.id), "display_name": member.display_name}
+        for member in (await ratification_confirmers(session, proposal) if proposal.status == "test" else [])
+    ]
     return payload
 
 
@@ -445,14 +483,16 @@ async def create_proposal(request: Request):
     except Exception as e:
         raise ApiError(400, f"Invalid request: {e}") from None
 
-    if create_req.ecosystem_id not in get_ecosystem_ids(request):
-        raise ApiError(403, "Access denied to this ecosystem")
-
     proposal_id_str = f"PROP-{uuid.uuid4().hex[:8].upper()}"
 
     _validate_decision_type(create_req.decision_type)
 
     async with request.app.ctx.db() as session:
+        if create_req.ecosystem_id not in get_ecosystem_ids(request):
+            # A pending newcomer is told why (CONSENT_PENDING) instead of a bare "access denied".
+            await refuse_pending_member(session, await caller_in(session, request, create_req.ecosystem_id),
+                                        create_req.ecosystem_id)
+            raise ApiError(403, "Access denied to this ecosystem")
         for agreement_id, label in ((create_req.governing_agreement_id, "Governing agreement"),
                                     (create_req.amends_agreement_id, "Amended agreement")):
             link_error = await _validate_linked_agreement(session, create_req.ecosystem_id, agreement_id, label)
@@ -622,6 +662,8 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
         caller = await caller_in(session, request, proposal.ecosystem_id)
+        # A row here must be active (403 CONSENT_PENDING for a pending one); no row keeps the shared-ecosystem path.
+        await require_participant(session, proposal, caller, row_optional=True)
         if is_proposal_author(caller, proposal):
             raise ApiError(409, SELF_ADVICE_DENIED)
         if proposal.status != "advice":
@@ -789,6 +831,7 @@ async def submit_test_report(request: Request, proposal_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
         caller = await caller_in(session, request, proposal.ecosystem_id)
+        await require_participant(session, proposal, caller, row_optional=True)  # as advice: a pending row is 403
         if proposal.status != "test":
             raise ApiError(409, TEST_CLOSED, {"status": proposal.status})
 

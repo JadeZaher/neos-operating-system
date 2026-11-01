@@ -71,7 +71,6 @@ from neos_agent.api.policy import (
     can_conduct_agreement_ceremony,
     can_declare_emergency,
     can_manage_proposal,
-    can_participate,
     can_record_decision,
     can_triage_conflict,
     can_view_conflict,
@@ -95,6 +94,8 @@ from neos_agent.services.act_gates import (
     current_position,
     proposal_gate_status,
     proposal_next_moves,
+    refuse_pending_member,
+    require_participant,
     transition_proposal,
 )
 from neos_agent.services.act_gates import record_consent_position as engine_record_consent_position
@@ -105,6 +106,7 @@ from neos_agent.services.next_steps import (
     agreement_next_step,
     agreement_standing,
     explain_record,
+    proposal_facts,
     proposal_next_step,
     waiting_for,
 )
@@ -337,6 +339,24 @@ def _refusal_text(refusal: TransitionRefused) -> str:
     """The engine's REST refusal as one assistant-readable sentence."""
     allowed = refusal.extra.get("allowed")
     return refusal.message + (f". Allowed: {', '.join(allowed)}." if allowed else "")
+
+
+def _refused(refusal: TransitionRefused, fallback: str | None = None) -> dict:
+    """A tool failure from an engine refusal; a coded one (CONSENT_PENDING, ...) keeps its words and its code."""
+    code = refusal.extra.get("code")
+    if code:
+        return {"success": False, "error": refusal.message, "code": code}
+    return {"success": False, "error": fallback or _refusal_text(refusal)}
+
+
+async def _participation_refusal(db: AsyncSession, prop: Proposal, member: Member | None, *,
+                                 row_optional: bool = False, denied: str | None = None) -> dict | None:
+    """act_gates.require_participant for the assistant: a pending row is CONSENT_PENDING, any other non-active one `denied`."""
+    try:
+        await require_participant(db, prop, member, row_optional=row_optional)
+    except TransitionRefused as refusal:
+        return _refused(refusal, denied)
+    return None
 
 
 def _is_true(value) -> bool:
@@ -854,6 +874,12 @@ async def create_proposal(
     author = await _caller_row(db, caller_user_id, eco_id)
     if author is None:
         return {"success": False, "error": "Only a member of this ecosystem can create a proposal here."}
+    try:
+        await refuse_pending_member(db, author, eco_id)  # REST and MCP refuse a pending newcomer the same way
+    except TransitionRefused as refusal:
+        return _refused(refusal)
+    if author.current_status != "active":
+        return {"success": False, "error": MEMBER_REQUIRED}
     proposer_text = str(args.get("proposer") or "").strip() or author.display_name
 
     # Generate proposal ID using MAX approach
@@ -964,6 +990,9 @@ async def record_advice(
     # The advisor is the caller: their row in the proposal's ecosystem, else
     # (shared-ecosystem advice, as in REST) their row in a scoped ecosystem.
     advisor_member = await _caller_row(db, caller_user_id, prop.ecosystem_id)
+    refused = await _participation_refusal(db, prop, advisor_member, row_optional=True)
+    if refused:
+        return refused
     if is_proposal_author(advisor_member, prop):
         return {"success": False, "error": SELF_ADVICE_DENIED}
     if advisor_member is None:
@@ -1017,7 +1046,7 @@ async def record_advice(
             "gates": _compact_gates(outcome.gates),
             "link": _link("proposal", prop.id),
             "message": "Advice recorded.",
-            "next_step": proposal_next_step(prop, outcome.gates, you),
+            "next_step": proposal_next_step(prop, outcome.gates, you, await proposal_facts(db, prop)),
         },
     }
 
@@ -1047,8 +1076,11 @@ async def record_consent_position(
 
     # The participant is always the caller; any name argument is ignored.
     participant = await _caller_row(db, caller_user_id, prop.ecosystem_id)
-    if not can_participate(participant, prop):
-        return {"success": False, "error": "Only a member of this proposal's ecosystem can record a consent position."}
+    refused = await _participation_refusal(
+        db, prop, participant, denied="Only an active member of this proposal's ecosystem can record a consent position.",
+    )
+    if refused:
+        return refused
     try:
         _, outcome = await engine_record_consent_position(
             db, prop, member=participant, position=position, reason=args.get("reason"),
@@ -1069,7 +1101,7 @@ async def record_consent_position(
             "gates": _compact_gates(outcome.gates),
             "link": _link("proposal", prop.id),
             "message": f"Your position '{_POSITION_WORDS.get(position, position)}' is recorded; it replaces any earlier one.",
-            "next_step": proposal_next_step(prop, outcome.gates, you),
+            "next_step": proposal_next_step(prop, outcome.gates, you, await proposal_facts(db, prop)),
         },
     }
 
@@ -1090,7 +1122,7 @@ async def withdraw_consent_position(
     try:
         _, outcome = await engine_withdraw_consent_position(db, prop, member=member)
     except TransitionRefused as refusal:
-        return {"success": False, "error": _refusal_text(refusal)}
+        return _refused(refusal)
     you = await _proposal_standing(db, prop, member)
     return {"success": True, "data": {
         "proposal_id": prop.proposal_id,
@@ -1100,7 +1132,7 @@ async def withdraw_consent_position(
         "gates": _compact_gates(outcome.gates),
         "link": _link("proposal", prop.id),
         "message": "Your position is withdrawn.",
-        "next_step": proposal_next_step(prop, outcome.gates, you),
+        "next_step": proposal_next_step(prop, outcome.gates, you, await proposal_facts(db, prop)),
     }}
 
 
@@ -2341,7 +2373,7 @@ async def get_proposal(
 
     data = {
         **_proposal_brief(prop, prop.ecosystem.name if prop.ecosystem else None),
-        "next_step": proposal_next_step(prop, gates, you),
+        "next_step": proposal_next_step(prop, gates, you, await proposal_facts(db, prop)),
         "you": you,
         "your_moves": proposal_next_moves(prop, gates, caller),
         "gates": _compact_gates(gates),
@@ -2445,7 +2477,7 @@ async def update_proposal_status(
             "auto_transitions": outcome.auto_transitions,
             "decision_record_id": outcome.decision_record_id,
             "link": _link("proposal", prop.id),
-            "next_step": proposal_next_step(prop, outcome.gates, you),
+            "next_step": proposal_next_step(prop, outcome.gates, you, await proposal_facts(db, prop)),
         },
     }
 
@@ -2577,8 +2609,11 @@ async def submit_test_report(
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
     reporter = await _caller_row(db, caller_user_id, prop.ecosystem_id)
-    if not can_participate(reporter, prop):
-        return {"success": False, "error": "Only a member of this proposal's ecosystem can file a test report."}
+    refused = await _participation_refusal(
+        db, prop, reporter, denied="Only an active member of this proposal's ecosystem can file a test report.",
+    )
+    if refused:
+        return refused
     if PROPOSAL_LIFECYCLE.canonical(prop.status) != "test":
         return {"success": False, "error": f"Test reports can only be filed while the proposal is in test (it is in {prop.status})."}
 
@@ -2612,7 +2647,7 @@ async def submit_test_report(
         "gates": _compact_gates(outcome.gates),
         "link": _link("proposal", prop.id),
         "message": "Test report filed.",
-        "next_step": proposal_next_step(prop, outcome.gates, you),
+        "next_step": proposal_next_step(prop, outcome.gates, you, await proposal_facts(db, prop)),
     }}
 
 

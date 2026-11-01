@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Mapping
@@ -36,9 +37,11 @@ from sqlalchemy import func, select
 
 from neos_agent.api.errors import ApiError
 from neos_agent.api.policy import (
+    ROLE_RANK,
     can_confirm_ratification,
     can_manage_proposal,
     can_participate,
+    is_consent_pending_in,
     is_proposal_author,
     is_steward_in,
 )
@@ -53,6 +56,7 @@ from neos_agent.db.models import (
     DecisionParticipant,
     DecisionRecord,
     DecisionSemanticTag,
+    Ecosystem,
     Member,
     Proposal,
     TestReport,
@@ -208,6 +212,39 @@ NEEDS_ANOTHER_STEWARD = (
 )
 NOTE_REQUIRED = "Say what will change: sending a proposal back for revision needs a note"
 
+# Machine code for a membership still waiting on the consent gate (owner rule: a pending newcomer reads, never acts).
+CONSENT_PENDING = "CONSENT_PENDING"
+INACTIVE_PARTICIPANT = "Only an active member of this proposal's ecosystem can take part in it"
+
+
+def consent_pending_message(ecosystem_name: str | None) -> str:
+    """Plain words for a pending_consent caller who tried to act (REST, MCP and the assistant say the same)."""
+    where = ecosystem_name or "this ecosystem"
+    return (f"Your membership in {where} is still waiting for your consent to its agreements. Until you give it, "
+            f"you can read {where}'s proposals but not give advice, record a position, file a test report or "
+            f"write a proposal. Consent to its agreements to finish joining.")
+
+
+async def refuse_pending_member(session, member: Member | None, ecosystem_id: uuid.UUID | None) -> None:
+    """403 CONSENT_PENDING when `member` is a pending_consent row in `ecosystem_id`, naming the ecosystem."""
+    if not is_consent_pending_in(member, ecosystem_id):
+        return
+    name = await session.scalar(select(Ecosystem.name).where(Ecosystem.id == ecosystem_id))
+    raise TransitionRefused(403, consent_pending_message(name), {"code": CONSENT_PENDING})
+
+
+async def require_participant(session, proposal: Proposal, member: Member | None, *, row_optional: bool = False) -> None:
+    """The participation rule for advice, positions and test reports: an ACTIVE row in the proposal's ecosystem.
+
+    `row_optional` keeps the shared-ecosystem path (a caller with no row there advises or reports as their
+    session member, as before); a row that exists must be active either way.
+    """
+    if member is None and row_optional:
+        return
+    await refuse_pending_member(session, member, proposal.ecosystem_id)
+    if not can_participate(member, proposal):
+        raise TransitionRefused(403, INACTIVE_PARTICIPANT if row_optional else PARTICIPATE_DENIED)
+
 
 @dataclass(frozen=True)
 class Transition:
@@ -293,6 +330,35 @@ async def created_after_newest(session, model, proposal_id) -> dict:
     return {} if newest is None else {"created_at": newest + _dt.timedelta(microseconds=1)}
 
 
+# One wording for a revision round's summary, written by _open_revision and read back by revision_round.
+_REVISION_SUMMARY = re.compile(r"^Sent back from (?P<source>\w+) for revision by (?P<by>.+) \(v(?P<version>[^)]+)\)$")
+
+
+def revision_round(log: AdviceLog | None) -> dict | None:
+    """A send-back round as {by, source, version, note}; None for an ordinary advice round."""
+    note = (getattr(log, "proposer_modifications", None) or "").strip()
+    if log is None or not note:
+        return None
+    parsed = _REVISION_SUMMARY.match((log.summary or "").strip())
+    return {
+        "by": parsed["by"] if parsed else None,
+        "source": parsed["source"] if parsed else None,
+        "version": parsed["version"] if parsed else None,
+        "note": note,
+    }
+
+
+async def latest_revision_log(session, proposal: Proposal) -> AdviceLog | None:
+    """The newest advice round opened by a send-back (it carries the note), or None."""
+    return (await session.execute(
+        select(AdviceLog)
+        .where(AdviceLog.proposal_id == proposal.id, AdviceLog.proposer_modifications.is_not(None),
+               AdviceLog.proposer_modifications != "")
+        .order_by(AdviceLog.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+
+
 async def _open_revision(session, proposal: Proposal, source: str, *, actor: Member | None, note: str | None) -> None:
     """Send-back side effects: a minor version, a fresh advice round carrying the note, a fresh consent record."""
     proposal.version = _bump_minor(proposal.version)
@@ -325,7 +391,7 @@ async def _enter_proposal_stage(session, proposal: Proposal, target: str, *, act
         return None
     # The text the steward confirmed; registering copies this, never the live proposed_change.
     proposal.ratified_text = (proposal.proposed_change or "").strip() or None
-    record = await record_proposal_decision(session, proposal)
+    record = await record_proposal_decision(session, proposal, confirmed_by=actor)
     return str(record.id) if record else None
 
 
@@ -577,9 +643,21 @@ async def current_position(session, proposal: Proposal, member: Member | None) -
     return (active or rows or [None])[-1]
 
 
-def _require_open_consent(proposal: Proposal, member: Member | None) -> None:
-    if not can_participate(member, proposal):
-        raise TransitionRefused(403, PARTICIPATE_DENIED)
+async def open_objections(session, proposal: Proposal) -> list[ConsentParticipant]:
+    """The objections the consent gate waits on (latest consent record, classified as the gate does), oldest first."""
+    record = await _latest_consent_record(session, proposal)
+    if record is None:
+        return []
+    rows = (await session.execute(
+        select(ConsentParticipant)
+        .where(ConsentParticipant.consent_record_id == record.id)
+        .order_by(ConsentParticipant.created_at, ConsentParticipant.id)
+    )).scalars().all()
+    return [row for row in rows if consent_position(row.position) in _BLOCKING_POSITIONS]
+
+
+async def _require_open_consent(session, proposal: Proposal, member: Member | None) -> None:
+    await require_participant(session, proposal, member)
     if PROPOSAL_LIFECYCLE.canonical(proposal.status) != "consent":
         raise TransitionRefused(409, CONSENT_CLOSED)
 
@@ -591,7 +669,7 @@ async def record_consent_position(session, proposal: Proposal, *, member: Member
     `member` is the authenticated caller's row in the proposal's ecosystem (`can_participate`,
     403 otherwise). Legacy duplicates the member owns are withdrawn, so one position counts. The caller commits.
     """
-    _require_open_consent(proposal, member)
+    await _require_open_consent(session, proposal, member)
     position = consent_position(position)
     reason = (reason or "").strip() or None
     if position not in CONSENT_POSITIONS:
@@ -626,7 +704,7 @@ async def record_consent_position(session, proposal: Proposal, *, member: Member
 
 async def withdraw_consent_position(session, proposal: Proposal, *, member: Member | None) -> tuple[ConsentRecord, ActOutcome]:
     """Withdraw `member`'s own position (an objection's author lifts it); the row stays as history."""
-    _require_open_consent(proposal, member)
+    await _require_open_consent(session, proposal, member)
     record = await _latest_consent_record(session, proposal)
     rows = await _members_rows(session, record, member) if record is not None else []
     active = [row for row in rows if consent_position(row.position) not in _WITHDRAWN_POSITIONS]
@@ -671,12 +749,30 @@ def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None) 
     return moves
 
 
-async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecord | None:
-    """Mint the browsable decision artifact for a ratified proposal.
+_STEWARD_ROLES = tuple(role for role, rank in ROLE_RANK.items() if rank >= ROLE_RANK["mod"])
+
+
+async def ratification_confirmers(session, proposal: Proposal) -> list[Member]:
+    """Active stewards who may confirm this proposal's ratification (`can_confirm_ratification`: never its author), by name."""
+    rows = (await session.execute(select(Member).where(
+        Member.ecosystem_id == proposal.ecosystem_id,
+        Member.current_status == "active",
+        Member.role.in_(_STEWARD_ROLES),
+    ).order_by(Member.display_name, Member.id))).scalars().all()
+    return [member for member in rows if can_confirm_ratification(member, proposal)]
+
+
+def counted(number: int, singular: str, plural: str | None = None) -> str:
+    """'1 advice round', '2 advice rounds': a count with its noun in the right number."""
+    return f"{number} {singular if number == 1 else plural or singular + 's'}"
+
+
+async def record_proposal_decision(session, proposal: Proposal, *, confirmed_by: Member | None = None) -> DecisionRecord | None:
+    """Mint the browsable decision artifact for a ratified proposal; `confirmed_by` is the steward who confirmed it.
 
     Idempotent: one artifact per proposal. Consent participants become
     decision participants — the recorded commitments by members to the
-    proposal.
+    proposal. Counts match the gates (advice rounds since the latest revision).
     """
     existing = await session.scalar(
         select(DecisionRecord.id).where(DecisionRecord.source_proposal_id == proposal.id)
@@ -696,18 +792,24 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
             select(ConsentParticipant).where(ConsentParticipant.consent_record_id == latest_consent.id)
         )).scalars().all())
 
-    advice_rounds = int(await session.scalar(
-        select(func.count(AdviceLog.id)).where(AdviceLog.proposal_id == proposal.id)
-    ) or 0)
+    advice_rounds = await _advice_rounds_since_revision(session, proposal)  # what the advice gate counted
+    positions = [p for p in participants if consent_position(p.position) not in _WITHDRAWN_POSITIONS]
     report_count = int(await session.scalar(
         select(func.count(TestReport.id)).where(TestReport.proposal_id == proposal.id)
     ) or 0)
     policy, policy_source = await resolve_proposal_policy(session, proposal)
     source_phrase = {
-        "proposal": "declared at the proposal level",
-        "agreement": "inherited from the governing agreement",
-        "default": "the ecosystem default",
+        "proposal": "set on the proposal",
+        "agreement": "taken from the agreement that governs it",
+        "default": "the usual ones (none were set)",
     }[policy_source]
+    advice_rule = (f"{counted(policy['min_advice_rounds'], 'advice round')} with advice"
+                   if policy["min_advice_rounds"] else "no advice round needed")
+    consent_rule = (f"at least {counted(consent_quorum_required(policy), 'position')} and no open objection"
+                    if policy["consent_required"] else "no consent round needed")
+    cases = policy["test_cases"]
+    test_rule = f"evidence for {counted(len(cases), 'named test case')}" if cases else "one passed test report"
+    steward = confirmed_by.display_name if confirmed_by is not None else "a steward"
 
     record = DecisionRecord(
         id=uuid.uuid4(),
@@ -721,12 +823,12 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
         ),
         ratio_decidendi=proposal.rationale,
         deliberation_summary=(
-            f"ACT process completed under the gate policy {source_phrase} "
-            f"(min advice rounds: {policy['min_advice_rounds']}, consent required: "
-            f"{policy['consent_required']}, test cases: {len(policy['test_cases'])}). "
-            f"{advice_rounds} advice round(s), {len(participants)} consent position(s), "
-            f"{report_count} test report(s). The proposer closed advice, consent "
-            f"advanced when its gate was met, and a steward confirmed ratification."
+            f"It went through advice, consent and test. The gates were {source_phrase}: {advice_rule}, "
+            f"{consent_rule}, and {test_rule}. On the version that was decided (v{proposal.version}), "
+            f"{counted(advice_rounds, 'advice round')} had advice, {counted(len(positions), 'member')} "
+            f"recorded a position, and {counted(report_count, 'test report')} "
+            f"{'was' if report_count == 1 else 'were'} filed. Advice was closed by hand, consent moved on by "
+            f"itself once its gate was met, and {steward}, a steward who did not write it, confirmed ratification."
         ),
         source_skill="act-process",
         artifact_type="proposal",
@@ -735,8 +837,9 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
         domain=proposal.affected_domain,
         precedent_level="binding",
         status="active",
-        recorder=proposal.proposer,
-        recorder_role="proposer",
+        # The record is the confirming steward's act (owner decision: a steward confirms), not the proposer's.
+        recorder=confirmed_by.display_name if confirmed_by is not None else proposal.proposer,
+        recorder_role="steward who confirmed ratification" if confirmed_by is not None else "proposer",
     )
     session.add(record)
     await session.flush()

@@ -15,7 +15,7 @@ import datetime as _dt
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from neos_agent.api import conflicts as conflict_api
 from neos_agent.api import emergency as emergency_api
@@ -29,6 +29,7 @@ from neos_agent.api.policy import (
     can_finish_audit,
     can_manage_proposal,
     can_participate,
+    can_register_agreement,
     can_triage_conflict,
     can_view_conflict,
     is_proposal_author,
@@ -56,10 +57,15 @@ from neos_agent.services.act_gates import (
     agreement_gate_status,
     consent_mode,
     consent_position,
+    counted,
     current_position,
+    latest_revision_log,
     normalize_act_policy,
+    open_objections,
     proposal_gate_status,
     proposal_next_moves,
+    ratification_confirmers,
+    revision_round,
 )
 from neos_agent.services.agreement_consent import _PARTICIPATING_MEMBER_STATUSES
 
@@ -72,10 +78,12 @@ ROUTES = {
 EXPLAIN_KINDS = ("proposal", "agreement", "conflict", "emergency", "exit")
 # Queue order among items with the same urgency.
 _KIND_ORDER = {"emergency": 0, "conflict": 1, "proposal": 2, "agreement": 3, "exit": 4, "audit": 5}
+# Acts only this caller's role can take, which hold a record up until taken: after overdue items, these come first.
+OWNER_ACTIONS = frozenset({"close_advice", "revise", "answer_objection", "confirm_ratification", "register_agreement"})
 
 # The proposer's prompt, word for word as the proposal page (client lib/proposal-vocab.ts adviceClosePrompt).
 ADVICE_DEADLINE_PROMPT = "Advice deadline passed: move to consent?"
-ADVICE_READY_PROMPT = "Enough advice to move on"  # the page's wording when the gate is met and there is no deadline
+ADVICE_READY_PROMPT = "Close advice and move to consent: enough advice is in"  # names the act (deadline not passed)
 
 # Plain stage names, as the client labels them (proposal-vocab, agreement-status, emergency-phase, exit-status).
 PROPOSAL_STATES = {"draft": "Draft", "advice": "Advice", "consent": "Consent", "test": "Test",
@@ -202,7 +210,32 @@ async def proposal_standing(session, prop: Proposal, caller: Member | None) -> d
         "can_take_part": can_participate(caller, prop),
         "has_advised_this_round": advised,
         "my_position": consent_position(row.position) if row is not None and row.position else None,
+        "can_confirm": can_confirm_ratification(caller, prop),
+        "can_register": can_register_agreement(caller, prop),
     }
+
+
+async def proposal_facts(session, prop: Proposal) -> dict:
+    """Who and what the next-step sentences name at this stage: the revision round, open objections,
+    the stewards who may confirm ratification, and the agreement it is (or will be) registered as."""
+    stage = PROPOSAL_LIFECYCLE.canonical(prop.status)
+    facts: dict = {"revision": None, "objections": [], "confirmers": [], "registered": None, "amends": None}
+    if stage == "advice":
+        facts["revision"] = revision_round(await latest_revision_log(session, prop))
+    elif stage == "consent":
+        facts["objections"] = [
+            {"id": str(row.id), "name": row.name or "A member", "reason": row.reason,
+             "member_id": str(row.member_id) if row.member_id else None}
+            for row in await open_objections(session, prop)
+        ]
+    elif stage == "test":
+        facts["confirmers"] = [{"id": str(member.id), "display_name": member.display_name}
+                               for member in await ratification_confirmers(session, prop)]
+    elif stage == "ratified":
+        linked = prop.registered_agreement_id or prop.amends_agreement_id
+        title = await session.scalar(select(Agreement.title).where(Agreement.id == linked)) if linked else None
+        facts["registered" if prop.registered_agreement_id else "amends"] = title
+    return facts
 
 
 async def agreement_standing(session, agr: Agreement, caller: Member | None) -> dict:
@@ -222,13 +255,29 @@ async def agreement_standing(session, agr: Agreement, caller: Member | None) -> 
     }
 
 
+def _verb(number: int, one: str, many: str) -> str:
+    return one if number == 1 else many
+
+
+def _names(people: list[dict] | None) -> str:
+    """'Mo', 'Mo or Sol', 'Mo, Sol or Ari'."""
+    names = [person["display_name"] for person in people or []]
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} or {names[-1]}" if names else ""
+
+
 def _gate_condition(stage: str, gates: dict) -> str:
     """What the gate out of `stage` waits for, in plain words."""
     if stage == "advice":
-        return f"{gates['advice']['required_rounds']} advice round(s) have advice"
+        rounds = gates["advice"]["required_rounds"]
+        return f"{counted(rounds, 'advice round')} {_verb(rounds, 'has', 'have')} advice"
     if stage == "consent":
-        quorum = gates["consent"].get("quorum")
-        return f"{quorum} position(s) are recorded and no objection is open" if quorum else "consent is complete"
+        consent = gates["consent"]
+        quorum = consent.get("quorum")
+        if "consented" in consent:  # agreements count member attestations
+            return (f"{counted(quorum, 'member')} {_verb(quorum, 'has', 'have')} consented" if quorum
+                    else "every member who takes part has consented")
+        return (f"{counted(quorum, 'position')} {_verb(quorum, 'is', 'are')} recorded and no objection is open"
+                if quorum else "consent is complete")
     return "the test evidence is in"
 
 
@@ -258,7 +307,7 @@ def _decider(lifecycle: Lifecycle, stage: str, gates: dict, who_moves: str) -> s
     if move is None:
         return None
     if move.automatic and move.gate:
-        return f"Nobody by hand: it moves on by itself once {_gate_condition(stage, gates)}"
+        return f"It moves on by itself once {_gate_condition(stage, gates)}"
     if move.steward_only:
         return "A steward who did not write it"
     return who_moves[:1].upper() + who_moves[1:]
@@ -271,8 +320,144 @@ def _proposal_managers(prop: Proposal) -> str:
     return f"{prop.proposer or 'the author'} or a steward"
 
 
-def proposal_next_step(prop: Proposal, gates: dict, you: dict) -> str:
-    """Plain sentences: where the proposal stands, what the caller can do, and what happens next."""
+def _proposal_decider(prop: Proposal, stage: str, gates: dict, facts: dict) -> str | None:
+    """'Who decides' for the banner: the advice close is the author's (a steward may act for them), names the confirmers."""
+    if stage == "advice":
+        if prop.proposer_member_id is None:
+            return "A steward of this ecosystem"
+        return f"{prop.proposer or 'The author'}, who wrote it (a steward can act for them)"
+    if stage == "test" and facts.get("confirmers"):
+        return f"A steward who did not write it: {_names(facts['confirmers'])}"
+    if stage == "ratified" and prop.registered_agreement_id is None and (prop.ratified_text or "").strip():
+        return "Any steward of this ecosystem, by registering it as an agreement"
+    return _decider(PROPOSAL_LIFECYCLE, stage, gates, _proposal_managers(prop))
+
+
+def _capitalized(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def _advice_step(prop: Proposal, gates: dict, you: dict, facts: dict) -> list[str]:
+    """The advice stage per viewer: the author closes advice; anyone else is told who does and whether they advised."""
+    advice = gates["advice"]
+    required = advice["required_rounds"]
+    parts = [f"Advice stage: {advice['rounds']} of {counted(required, 'advice round')} {_verb(required, 'has', 'have')} advice."
+             if required else "Advice stage: no advice round is needed before consent."]
+    revision = facts.get("revision")
+    if revision:
+        parts.append(f"{_capitalized(revision['by'] or 'someone')} sent it back for revision with this note: "
+                     f"“{_clip(revision['note'], 200)}”. This is version {prop.version}; advice, positions and "
+                     "test reports on earlier versions are kept as history.")
+    author = prop.proposer or "the author"
+    if you.get("is_author"):
+        parts.append("You wrote it, so you gather advice; you cannot advise on it yourself.")
+        if revision:
+            parts.append("Change the text if the note calls for it, then gather advice on this version.")
+        parts.append("You decide when to close advice and move it to consent: nothing moves by itself.")
+    else:
+        if you.get("can_take_part"):
+            parts.append("You already gave advice in this round." if you.get("has_advised_this_round")
+                         else "You can give advice.")
+        if prop.proposer_member_id is None:  # legacy, no author link: steward-managed
+            parts.append("A steward of this ecosystem closes advice and moves it to consent"
+                         + (": you can, as a steward." if you.get("can_manage") else "."))
+        elif you.get("can_manage"):
+            parts.append(f"{author} wrote it and decides when to close advice; as a steward you can also close it for them.")
+        else:
+            parts.append(f"{author} wrote it and decides when to close advice and move it to consent.")
+    if advice.get("deadline_passed") and you.get("can_manage"):
+        parts.append("The advice deadline has passed: it is time to decide whether to move it to consent.")
+    return parts
+
+
+def _consent_step(prop: Proposal, gates: dict, you: dict, facts: dict) -> list[str]:
+    """The consent stage: positions against the quorum, each open objection by name, and who answers it."""
+    consent = gates["consent"]
+    parts = []
+    if consent.get("required"):
+        parts.append(f"Consent stage: {counted(consent['positions'], 'position')} recorded, {consent['quorum']} needed.")
+    open_count = consent.get("open_objections") or 0
+    objections = facts.get("objections") or []
+    if open_count:
+        parts.extend(f"{row['name']} objected: “{_clip(row['reason'], 160)}”." for row in objections)
+        if not objections:
+            parts.append(f"{counted(open_count, 'objection')} {_verb(open_count, 'is', 'are')} open.")
+        held = f"It cannot move on while {_verb(open_count, 'this objection is', 'these objections are')} open."
+        answers_it = you.get("is_author") or (prop.proposer_member_id is None and you.get("can_manage"))
+        if answers_it:
+            parts.append(f"{held} Answer it: send it back for revision with a note on what will change, "
+                         "or wait for the objection to be withdrawn.")
+        elif you.get("my_position") == "object":
+            parts.append(f"{held} You objected: once your concern is answered, you can withdraw your objection.")
+        elif you.get("can_manage"):
+            parts.append(f"{held} {prop.proposer or 'The author'} answers it, usually by sending it back for revision; "
+                         "as a steward you can send it back too.")
+        else:
+            parts.append(f"{held} {prop.proposer or 'The author'} answers it.")
+    if you.get("can_take_part"):
+        mine = you.get("my_position")
+        choices = "consent or object" if consent.get("mode") == "consensus" else "consent, stand aside or object"
+        parts.append(f"Your position: {_POSITION_WORDS.get(mine, mine)}." if mine and mine != "withdrawn"
+                     else f"You can record your position: {choices} (objecting needs a reason).")
+    note = _move_note(PROPOSAL_LIFECYCLE, "consent", gates, _proposal_managers(prop))
+    if note:
+        parts.append(note)
+    return parts
+
+
+def _test_step(gates: dict, you: dict, facts: dict) -> list[str]:
+    """The test stage: evidence so far; once it is in, which stewards confirm (and stop inviting reports)."""
+    test = gates["test"]
+    if not test["met"]:
+        declared = len(test["declared_cases"])
+        parts = [f"Test stage: {len(test['cases_met'])} of {counted(declared, 'test case')} "
+                 f"{_verb(declared, 'has', 'have')} evidence." if declared
+                 else f"Test stage: {counted(test['reports'], 'test report')} so far; one passed report is the evidence needed."]
+        if you.get("can_take_part"):
+            parts.append("You can file a test report.")
+        parts.append("When the evidence is in, a steward who did not write it confirms ratification.")
+        return parts
+    parts = ["Test stage: the test evidence is in."]
+    confirmers = facts.get("confirmers")
+    if you.get("can_confirm"):
+        parts.append("Now a steward who did not write it confirms ratification, and you can: it is waiting in your list.")
+    elif confirmers:
+        parts.append(f"Now a steward who did not write it confirms ratification: {_names(confirmers)} can, "
+                     "and it is waiting in their list.")
+    elif "confirmers" in facts:
+        parts.append("Now a steward who did not write it confirms ratification, but there is no such steward yet: "
+                     "an owner or admin first gives another member the moderator role.")
+    else:
+        parts.append("Now a steward who did not write it confirms ratification.")
+    if you.get("is_author"):
+        parts.append("You wrote it, so you cannot confirm it yourself.")
+    return parts
+
+
+def _ratified_step(prop: Proposal, you: dict, facts: dict) -> str:
+    """Ratified: registration is the next step until it is registered; then the banner names the agreement."""
+    if prop.registered_agreement_id is not None:
+        title = facts.get("registered")
+        return (f"It is ratified and registered as the agreement “{title}”, which is in force. Nothing more is needed."
+                if title else "It is ratified and registered as an agreement. Nothing more is needed.")
+    if not (prop.ratified_text or "").strip():
+        return ("It is ratified: a binding decision. No text was kept when it was ratified, "
+                "so it cannot be registered as an agreement.")
+    who = "You can do it as a steward." if you.get("can_register") else "Any steward of this ecosystem can do it."
+    amends = facts.get("amends")
+    change = (f" Registering it changes the agreement “{amends}”; until then that agreement keeps its current text."
+              if amends else "")
+    return ("It is ratified: a binding decision, but it is not in the agreement registry yet. "
+            f"The next step is to register it as an agreement. {who}{change}")
+
+
+def proposal_next_step(prop: Proposal, gates: dict, you: dict, facts: dict | None = None) -> str:
+    """Plain sentences: where the proposal stands, what the caller can do, and what happens next.
+
+    `facts` (proposal_facts) lets the sentences name people: who sent it back and why, each objector,
+    the stewards who confirm, the registered agreement. Without it they fall back to counts.
+    """
+    facts = facts or {}
     stage = PROPOSAL_LIFECYCLE.canonical(prop.status)
     author = prop.proposer or "the author"
     if stage == "draft":
@@ -281,45 +466,17 @@ def proposal_next_step(prop: Proposal, gates: dict, you: dict) -> str:
             else f"Only {author} or a steward can open it for advice."
         )
     if stage == "ratified":
-        return "It is ratified: a binding decision. Nothing more is needed."
+        return _ratified_step(prop, you, facts)
     if stage == "withdrawn":
         return "It was withdrawn, so nothing more happens to it."
-    parts: list[str] = []
     if stage == "advice":
-        advice = gates["advice"]
-        parts.append(f"Advice stage: {advice['rounds']} of {advice['required_rounds']} advice rounds have advice.")
-        if you.get("is_author"):
-            parts.append("You wrote it, so you gather advice; you cannot advise on it yourself.")
-        elif you.get("can_take_part"):
-            parts.append("You already gave advice in this round." if you.get("has_advised_this_round")
-                         else "You can give advice.")
-        if advice.get("deadline_passed") and you.get("can_manage"):
-            parts.append("The advice deadline has passed: it is time to decide whether to move it to consent.")
+        parts = _advice_step(prop, gates, you, facts)
     elif stage == "consent":
-        consent = gates["consent"]
-        if consent.get("required"):
-            parts.append(f"Consent stage: {consent['positions']} of {consent['quorum']} needed positions are recorded.")
-        if consent.get("open_objections"):
-            parts.append(f"{consent['open_objections']} objection(s) are open; it cannot move on until they are resolved.")
-        if you.get("can_take_part"):
-            mine = you.get("my_position")
-            parts.append(f"Your position: {_POSITION_WORDS.get(mine, mine)}." if mine and mine != "withdrawn" else (
-                "You can record your position: consent, stand aside or object "
-                "(standing aside or objecting needs a reason)."
-            ))
+        parts = _consent_step(prop, gates, you, facts)
     elif stage == "test":
-        test = gates["test"]
-        if test["declared_cases"]:
-            parts.append(f"Test stage: {len(test['cases_met'])} of {len(test['declared_cases'])} test cases have evidence.")
-        else:
-            parts.append(f"Test stage: {test['reports']} test report(s) so far; one passed report is the evidence needed.")
-        if you.get("can_take_part"):
-            parts.append("You can file a test report.")
+        parts = _test_step(gates, you, facts)
     else:
-        parts.append(f"Status: {prop.status}.")
-    note = _move_note(PROPOSAL_LIFECYCLE, stage, gates, f"{author} or a steward")
-    if note:
-        parts.append(note)
+        parts = [f"Status: {prop.status}."]
     if you.get("can_manage") and PROPOSAL_LIFECYCLE.manual_move(prop.status, "withdrawn") is not None:
         parts.append("You can also withdraw it.")
     return " ".join(parts)
@@ -349,7 +506,9 @@ def agreement_next_step(agr: Agreement, gates: dict, you: dict) -> str:
                      "Any active member can record an advice round.")
     elif stage == "consent":
         consent = gates["consent"]
-        parts.append(f"Consent stage: {consent['consented']} member(s) have consented, {consent['outstanding']} still need to.")
+        consented = consent["consented"]
+        parts.append(f"Consent stage: {counted(consented, 'member')} {_verb(consented, 'has', 'have')} consented, "
+                     f"{consent['outstanding']} still need to.")
         if consent_line:
             parts.append(consent_line)
     elif stage == "test":
@@ -368,25 +527,41 @@ def agreement_next_step(agr: Agreement, gates: dict, you: dict) -> str:
 
 
 async def _open_revision_note(session, prop: Proposal) -> str | None:
-    """The send-back note while the revision round has no advice yet (the author is revising), else None."""
+    """The send-back note while the author still has to revise: the revision round has no advice yet and the
+    proposal was not edited since the send-back (its `updated_at` is later than the round's insert time)."""
     log = (await session.execute(
         select(AdviceLog).where(AdviceLog.proposal_id == prop.id).order_by(AdviceLog.created_at.desc()).limit(1)
     )).scalar_one_or_none()
-    if log is None or not (log.proposer_modifications or "").strip():
+    revision = revision_round(log)
+    if revision is None:
         return None
-    advised = await session.scalar(select(func.count(AdviceEntry.id)).where(AdviceEntry.advice_log_id == log.id))
-    return None if advised else log.proposer_modifications.strip()
+    if await session.scalar(select(func.count(AdviceEntry.id)).where(AdviceEntry.advice_log_id == log.id)):
+        return None
+    # created_at is ordered artificially (created_after_newest); updated_at is the server clock at the send-back.
+    edited_at = await session.scalar(select(Proposal.updated_at).where(Proposal.id == prop.id))
+    if edited_at is not None and log.updated_at is not None and edited_at > log.updated_at:
+        return None
+    return revision["note"]
 
 
 async def proposal_items(session, prop: Proposal, caller: Member | None, ecosystem: str | None, clock: Clock) -> list[dict]:
-    """Advice to give, a position to record, the proposer's advice close or revision, a steward's ratification."""
+    """Advice to give, a position to record, and the acts only one role can take: closing advice, revising,
+    answering an objection (the author), confirming ratification and registering (stewards)."""
     stage = PROPOSAL_LIFECYCLE.canonical(prop.status)
-    if not _active(caller) or not can_participate(caller, prop) or stage not in ("advice", "consent", "test"):
+    if not _active(caller) or not can_participate(caller, prop) or stage not in ("advice", "consent", "test", "ratified"):
         return []
 
     def item(action: str, what: str, why: str, **extra) -> dict:
         return _item("proposal", prop, action=action, what=what, why=why, title=prop.title, key=prop.proposal_id,
                      ecosystem=ecosystem, clock=clock, **extra)
+
+    if stage == "ratified":  # ratified is not registered: a steward's step until the agreement exists
+        if (prop.registered_agreement_id is not None or not (prop.ratified_text or "").strip()
+                or not can_register_agreement(caller, prop)):
+            return []
+        return [item("register_agreement", "Register it as an agreement",
+                     "It is ratified but not in the agreement registry yet, and any steward of this ecosystem "
+                     "registers it.")]
 
     # The proposer closes advice (owner decision); an unlinked legacy proposal is steward-managed.
     proposer_role = is_proposal_author(caller, prop) or (prop.proposer_member_id is None and can_manage_proposal(caller, prop))
@@ -394,13 +569,14 @@ async def proposal_items(session, prop: Proposal, caller: Member | None, ecosyst
         note = await _open_revision_note(session, prop)
         if note is not None:
             return [item("revise", "Revise it: it was sent back for revision",
-                         f"You wrote it, and it was sent back with this note: {_clip(note, 200)}", due=prop.advice_deadline)]
-        if prop.advice_deadline is None or clock.past(prop.advice_deadline):  # no deadline: ready is the only signal
-            gates = await proposal_gate_status(session, prop)
-            if any(m["to"] == "consent" and m["ready"] for m in proposal_next_moves(prop, gates, caller)):
-                return [item("close_advice", ADVICE_DEADLINE_PROMPT if prop.advice_deadline else ADVICE_READY_PROMPT,
-                             "You wrote it, and advice closes on your call: nothing moves by itself.",
-                             due=prop.advice_deadline)]
+                         f"You wrote it, and it was sent back with this note: {_clip(note, 200)}. Change the text, "
+                         "or keep it, then gather advice on this version.", due=prop.advice_deadline)]
+        gates = await proposal_gate_status(session, prop)
+        # Once the gate is met, deadline or not: advice never closes by itself, so nothing may stall silently.
+        if any(m["to"] == "consent" and m["ready"] for m in proposal_next_moves(prop, gates, caller)):
+            return [item("close_advice", ADVICE_DEADLINE_PROMPT if clock.past(prop.advice_deadline) else ADVICE_READY_PROMPT,
+                         "You wrote it, and advice closes on your call: nothing moves by itself.",
+                         due=prop.advice_deadline)]
         return []
     if stage == "advice":
         you = await proposal_standing(session, prop, caller)
@@ -410,12 +586,23 @@ async def proposal_items(session, prop: Proposal, caller: Member | None, ecosyst
                      f"You are a member of {ecosystem or 'this ecosystem'} and have not advised in this round.",
                      due=prop.advice_deadline)]
     if stage == "consent":
+        items = []
+        if proposer_role:  # the author answers each open objection (whether the author's consent counts stays the owner's)
+            for row in await open_objections(session, prop):
+                name = row.name or "A member"
+                items.append(item(
+                    "answer_objection", f"{name} objected: “{_clip(row.reason, 80)}”",
+                    "It cannot move on while the objection is open. Answer it: send it back for revision with a "
+                    f"note on what will change, or wait for {name} to withdraw it.",
+                    due=prop.consent_deadline, part=str(row.id),
+                ))
         you = await proposal_standing(session, prop, caller)
-        if you["my_position"] not in (None, "withdrawn"):
-            return []
-        choices = "consent or object" if consent_mode(prop) == "consensus" else "consent, stand aside or object"
-        return [item("record_position", f"Record your position: {choices}",
-                     "It is in consent, and you have not recorded a position in this round.", due=prop.consent_deadline)]
+        if you["my_position"] in (None, "withdrawn"):
+            choices = "consent or object" if consent_mode(prop) == "consensus" else "consent, stand aside or object"
+            items.append(item("record_position", f"Record your position: {choices}",
+                              "It is in consent, and you have not recorded a position in this round.",
+                              due=prop.consent_deadline))
+        return items
     if not can_confirm_ratification(caller, prop):
         return []
     gates = await proposal_gate_status(session, prop)
@@ -582,8 +769,10 @@ async def _repairs_by_case(session, case_ids) -> dict[uuid.UUID, list[RepairAgre
 
 
 def _queue_order(item: dict) -> tuple:
-    """Overdue first, then the nearest due date (undated last), then the more urgent kind."""
-    return (not item["overdue"], item["due"] is None, item["due"] or "", _KIND_ORDER.get(item["kind"], 9), item["title"])
+    """Overdue first, then the acts only this caller's role can take (OWNER_ACTIONS), then the nearest due date
+    (undated last), then the more urgent kind."""
+    return (not item["overdue"], item["action"] not in OWNER_ACTIONS, item["due"] is None, item["due"] or "",
+            _KIND_ORDER.get(item["kind"], 9), item["title"])
 
 
 async def waiting_for(session, user_id: uuid.UUID | None, ecosystem_ids=None, *, now: _dt.datetime | None = None) -> list[dict]:
@@ -606,7 +795,9 @@ async def waiting_for(session, user_id: uuid.UUID | None, ecosystem_ids=None, *,
     items: list[dict] = []
 
     for prop in (await session.execute(select(Proposal).where(
-        Proposal.ecosystem_id.in_(scope), Proposal.status.in_(("advice", "consent", "test")),
+        Proposal.ecosystem_id.in_(scope),
+        or_(Proposal.status.in_(("advice", "consent", "test")),
+            and_(Proposal.status == "ratified", Proposal.registered_agreement_id.is_(None))),  # to register
     ).order_by(Proposal.created_at))).scalars():
         items += await proposal_items(session, prop, callers[prop.ecosystem_id], names.get(prop.ecosystem_id), clock)
 
@@ -682,6 +873,7 @@ def _move(move: str, label: str, *, ready: bool = True, blocked: str | None = No
 async def _explain_proposal(session, prop: Proposal, caller, ecosystem, clock) -> dict:
     gates = await proposal_gate_status(session, prop)
     you = await proposal_standing(session, prop, caller)
+    facts = await proposal_facts(session, prop)
     stage = PROPOSAL_LIFECYCLE.canonical(prop.status)
     due, due_label = {"advice": (prop.advice_deadline, "Advice deadline"),
                       "consent": (prop.consent_deadline, "Consent deadline")}.get(stage, (None, None))
@@ -692,8 +884,8 @@ async def _explain_proposal(session, prop: Proposal, caller, ecosystem, clock) -
     ]
     return _explanation(
         "proposal", prop, key=prop.proposal_id, title=prop.title, ecosystem=ecosystem,
-        state=PROPOSAL_STATES.get(stage, prop.status), next_step=proposal_next_step(prop, gates, you),
-        decided_by=_decider(PROPOSAL_LIFECYCLE, stage, gates, _proposal_managers(prop)),
+        state=PROPOSAL_STATES.get(stage, prop.status), next_step=proposal_next_step(prop, gates, you, facts),
+        decided_by=_proposal_decider(prop, stage, gates, facts),
         due=due, due_label=due_label, open_=stage not in PROPOSAL_LIFECYCLE.terminal, your_moves=moves,
         waiting_on_you=await proposal_items(session, prop, caller, ecosystem, clock), clock=clock,
     )

@@ -223,6 +223,19 @@ async def _reload_for_detail(db, agreement_id: uuid.UUID) -> Agreement:
     return (await db.execute(statement)).scalar_one()
 
 
+async def _registered_from_proposal(db, agreement: Agreement) -> dict | None:
+    """{id, proposal_id, title} of the ratified proposal that created this agreement (it passed the ACT gates), else None.
+
+    An amending proposal is not its origin: the amended agreement ran its own process first.
+    """
+    proposal = await db.scalar(select(Proposal).where(
+        Proposal.registered_agreement_id == agreement.id, Proposal.amends_agreement_id.is_(None),
+    ).order_by(Proposal.created_at).limit(1))
+    if proposal is None:
+        return None
+    return {"id": str(proposal.id), "proposal_id": proposal.proposal_id, "title": proposal.title}
+
+
 async def _agreement_detail_payload(db, agreement: Agreement, caller: Member | None,
                                     outcome: ActOutcome | None = None) -> dict:
     """Detail plus consent progress, gates, the ACT outcome when one ran, and the caller's attestation."""
@@ -232,6 +245,7 @@ async def _agreement_detail_payload(db, agreement: Agreement, caller: Member | N
     payload["gates"] = await agreement_gate_status(db, agreement)
     if outcome is not None:
         outcome.attach(payload)
+    payload["registered_from_proposal"] = await _registered_from_proposal(db, agreement)
     payload["caller_role"] = caller.role if caller else None
     payload["caller_can_conduct"] = can_conduct_agreement_ceremony(caller, agreement)
     # "Propose a change": an in-force agreement changes only through a ratified amending proposal.

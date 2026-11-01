@@ -21,10 +21,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
+    Agreement,
     DecisionDissentRecord,
     DecisionParticipant,
     DecisionRecord,
     DecisionSemanticTag,
+    Proposal,
 )
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
 from neos_agent.api.schemas.decisions import (
@@ -228,8 +230,21 @@ async def get_decision(request: Request, decision_id: uuid.UUID):
 
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()
+        registered = await _registered_agreement(session, d) if d is not None else None
 
     if d is None:
         return json({"error": "Decision record not found"}, status=404)
 
-    return json(_decision_to_detail(d))
+    return json({**_decision_to_detail(d), "registered_agreement": registered})
+
+
+async def _registered_agreement(session, decision: DecisionRecord) -> dict | None:
+    """{id, agreement_id, title} of the agreement the decision's source proposal was registered as, else None."""
+    if decision.source_proposal_id is None:
+        return None
+    row = (await session.execute(
+        select(Agreement.id, Agreement.agreement_id, Agreement.title)
+        .join(Proposal, Proposal.registered_agreement_id == Agreement.id)
+        .where(Proposal.id == decision.source_proposal_id)
+    )).first()
+    return None if row is None else {"id": str(row.id), "agreement_id": row.agreement_id, "title": row.title}

@@ -90,6 +90,14 @@ instead of a client copy.
   proposal decision record; every agreement stage records its ceremony and
   active mints the commitment record. So a manual ratification or activation
   mints its artifact too (it did not before for proposals).
+- The proposal decision record (`record_proposal_decision(..., confirmed_by)`)
+  is the confirming steward's act: `recorder` is that steward and
+  `recorder_role` "steward who confirmed ratification" (it credited the
+  proposer before). Its summary is plain words (no Python `True`), and its
+  counts are the gate's: advice rounds with advice since the latest revision
+  (`_advice_rounds_since_revision`), non-withdrawn positions in the final
+  consent record, every test report. The decisions API adds the agreement the
+  proposal was registered as (`registered_agreement`), looked up live.
 - Refusals raise `TransitionRefused`, an `ApiError`: REST renders it as is,
   MCP turns it into a `ValueError`, chat into `{"success": false}`.
 - `ActOutcome` carries `status`, `gates`, `moved` (the requested move),
@@ -106,9 +114,22 @@ instead of a client copy.
   blocks. Migration `o7c3e9a5d2f8` rewrote the stored `objection` rows to
   `object`. A proposal that already advanced past consent over such a row is
   not reopened.
+- Participation (`require_participant`): advice, positions and test reports
+  need an ACTIVE row in the proposal's ecosystem (`policy.can_participate`;
+  owner rule: a pending newcomer reads, never acts). A `pending_consent` row is
+  refused 403 with `code` `CONSENT_PENDING` and `consent_pending_message(<the
+  ecosystem's name>)` (`refuse_pending_member`), the same words in REST, MCP
+  (the message is prefixed `CONSENT_PENDING:`) and the assistant (`code` in the
+  result); any other non-active row is `INACTIVE_PARTICIPANT` (advice, test) or
+  `PARTICIPATE_DENIED` (positions). Advice and test reports keep the
+  shared-ecosystem path (`row_optional`): a caller with NO row in the
+  proposal's ecosystem, reaching it because it is shared into one where they
+  are active, still advises or reports as their session member. Before this,
+  any row counted, so a pending member's consent could meet the quorum of a
+  shared proposal. Creating a proposal refuses a pending author the same way.
 - `record_consent_position(session, proposal, *, member, position, reason)`
   is the one write for a consent position (REST, MCP and chat call it):
-  `can_participate` (403 `PARTICIPATE_DENIED`), consent stage only (409
+  `require_participant` (403 `CONSENT_PENDING` or `PARTICIPATE_DENIED`), consent stage only (409
   `CONSENT_CLOSED`), vocabulary `consent | stand_aside | object` (400), an
   objection needs a reason, consensus refuses a stand-aside. It keeps one row
   per member in the latest record, owned ONLY by `member_id` (never by display
@@ -151,7 +172,7 @@ rule:
 
 | Record | Items (who) | explain(): next step, who decides, moves |
 |---|---|---|
-| proposal | advice to give (members who did not write it and have not advised this round); a position to record (no live position in the latest consent record); `close_advice` (the author, once `advice_deadline` passed and the advice move is `ready`: `ADVICE_DEADLINE_PROMPT`, the page's words); `revise` (the author, while the send-back round has no advice); `confirm_ratification` (`proposal_next_moves` ready and not blocked: a steward who did not write it) | `proposal_next_step`; who decides from the table row out of the stage (`_decider`); moves = `proposal_next_moves` (the detail's `allowed_next`) |
+| proposal | advice to give (members who did not write it and have not advised this round); a position to record (no live position in the latest consent record); `close_advice` (the author, as soon as the advice move is `ready`, deadline or not); `revise` (the author, while the send-back round has no advice AND the text is unchanged since the send-back); `answer_objection` (the author, one item per open objection: "<name> objected: “<reason>”", with send back for revision or wait for the withdrawal as the way out); `confirm_ratification` (`proposal_next_moves` ready and not blocked: a steward who did not write it); `register_agreement` (ratified, `registered_agreement_id` NULL, text captured: every `policy.can_register_agreement` steward until one registers it) | `proposal_next_step(prop, gates, you, facts)`; who decides: `_proposal_decider` (advice: the author, "a steward can act for them"; test: the confirmers by name; ratified and unregistered: any steward), else the table row (`_decider`); moves = `proposal_next_moves` (the detail's `allowed_next`) |
 | agreement | consent to record in the consent stage, or to renew after the version changed (`reattest_agreement`); only when the agreement asks for consent | `agreement_next_step`; table row; ceremony moves for `can_conduct_agreement_ceremony`, plus `attest` |
 | emergency | co-sign (`caller_flags`); the post-emergency review and closing Recovery go to stewards only (owner default: the review alarm is a steward's) | `emergency.describe()`; dates from the same module |
 | conflict | triage (`can_triage_conflict`, a hidden case yields nothing); repair check-ins whose date has come (`conflicts.next_checkin`) | `conflicts.conflict_stage`; moves = `allowed_moves` for triage, `closed` for the reporter |
@@ -166,8 +187,12 @@ Rules of the queue:
   item names its ecosystem.
 - Items only for an active caller row in the record's own ecosystem (a shared
   record never gives a foreign member a task: every act needs a row there).
-- Order: overdue first, then the nearest `due`, then kind (emergency, conflict,
-  proposal, agreement, exit, audit). `due` is `YYYY-MM-DD` for date columns and
+- Order: overdue first, then `OWNER_ACTIONS` (close_advice, revise,
+  answer_objection, confirm_ratification, register_agreement: acts only this
+  caller's role can take, which hold the record up until taken), then the
+  nearest `due` (undated last), then kind (emergency, conflict, proposal,
+  agreement, exit, audit). Before, a close_advice without a deadline sank
+  below every dated item and was sorted by title (item 18 of 22 in the bell). `due` is `YYYY-MM-DD` for date columns and
   ISO with `Z` for the naive-UTC timestamps (emergencies), so browsers never
   shift it. `overdue` uses one `Clock` per request: a date passes the next day,
   a timestamp at once.
@@ -178,8 +203,42 @@ Rules of the queue:
   through the engine's private `current_position` helpers (latest consent
   record, legacy duplicates), and re-implementing that in bulk would fork the
   rule. The client polls once (the bell, every 5 minutes) to keep the load down.
-- `close_advice` (the proposer's prompt) appears once the advice->consent move
-  is `ready` and the deadline is past OR missing: advice never advances by
-  itself, so a proposal without a deadline must not stall silently. Without a
-  deadline the words are `ADVICE_READY_PROMPT` ("Enough advice to move on",
-  the page's `adviceClosePrompt` title for a met gate).
+- `close_advice` (the proposer's prompt) appears as soon as the advice->consent
+  move is `ready`, deadline set or not: advice never advances by itself, so it
+  must not wait silently for a date. Before the deadline (or with none) the
+  words are `ADVICE_READY_PROMPT` ("Close advice and move to consent: enough
+  advice is in", naming the act); once it has passed, `ADVICE_DEADLINE_PROMPT`.
+  Both are the page's `adviceClosePrompt` titles, word for word.
+- `revise` clears once the author edits: the proposal's `updated_at` is later
+  than the revision round's `updated_at` (its insert time; `created_at` is
+  ordered artificially by `created_after_newest`, so it cannot be used). In
+  PostgreSQL both are the send-back transaction's `now()`, so a send-back alone
+  never counts as an edit.
+
+### Banner words (`proposal_next_step`)
+
+`proposal_standing` is the caller's standing (author, may manage, may take
+part, advised this round, position, `can_confirm`, `can_register`);
+`proposal_facts` is what the sentences name at this stage: the revision round
+(`act_gates.revision_round`, read back from the summary `_open_revision`
+writes: who sent it back, from where, the note), open objections
+(`act_gates.open_objections`, classified as the gate does), the confirmers
+(`act_gates.ratification_confirmers`: active stewards, never the author), and
+the registered or amended agreement's title. The assistant's tools pass the
+same facts, so chat and page say the same words.
+
+- Advice: one statement per viewer under the current manage rule (the
+  owner question on who may close advice is open): the author "you decide when
+  to close advice", a non-author steward "you can also close it for them",
+  anyone else "<author> decides". A revision round names who sent it back, the
+  note and the version, and says earlier advice and positions are history.
+- Consent: "N positions recorded, Q needed"; each open objection by name and
+  reason; the author is told how to answer (send back, or wait for the
+  withdrawal), the objector that they can withdraw. Only objecting needs a
+  reason (standing aside does not).
+- Test: once `gates.test.met`, "the test evidence is in", the confirmers by
+  name and that it is in their list; it stops inviting another report.
+- Ratified: unregistered, registering is the next step by any steward;
+  registered, the agreement is named and nothing more is needed.
+- Plain words: no "(s)" plurals (`act_gates.counted`), no "Nobody by hand"
+  (automatic moves read "It moves on by itself once ...").

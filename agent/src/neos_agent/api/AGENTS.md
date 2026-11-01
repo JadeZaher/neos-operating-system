@@ -51,8 +51,14 @@ and is fixed after creation (`ProposalUpdateRequest` has no proposer field).
 
 Participation and management are separate:
 
-- **Participate** (`caller_can_conduct`): any member row in the ecosystem may
-  give advice, record consent, or file test reports.
+- **Participate** (`caller_can_conduct`, `policy.can_participate`): an ACTIVE
+  member row in the ecosystem may give advice, record consent, or file test
+  reports. A `pending_consent` row reads but never acts (owner rule): 403 with
+  `code` `CONSENT_PENDING` and words naming the ecosystem, in REST, MCP and the
+  assistant (`act_gates.require_participant`; services/AGENTS.md "Engine").
+  The detail's `caller_consent_pending` lets the page say why. A caller with no
+  row there (a proposal shared into an ecosystem where they are active) keeps
+  the shared advice and test-report path.
 - **Manage** (`caller_can_manage`, `can_manage_proposal`): editing (PUT) and
   manual status moves (POST `/status`) need the author OR an ecosystem steward
   (`ROLE_RANK >= mod`). Otherwise the response is 403 with `MANAGE_DENIED`.
@@ -553,8 +559,9 @@ adds on top:
 |---|---|
 | `POST /proposals/:id/consent` | the caller's row in the proposal's ecosystem only (403 otherwise; no shared-ecosystem fallback); one position per member, owned by `member_id`, a second call replaces it; `member_name` is gone from the schema (ignored if sent) |
 | `DELETE /proposals/:id/consent` | withdraw the caller's own position (`withdrawn`); the only way an objection is lifted, so only its author lifts it |
-| `POST /proposals/:id/advice` | 409 outside advice; records `member_id` |
-| `POST /proposals/:id/test` | 409 outside test; records `reporter_member_id` (detail adds `reporter_name`) |
+| `POST /proposals` | a pending newcomer creating in that ecosystem gets 403 `code: CONSENT_PENDING` (not the bare "Access denied to this ecosystem") |
+| `POST /proposals/:id/advice` | a non-active row is 403 (`CONSENT_PENDING` when pending; no row keeps the shared path); 409 outside advice; records `member_id` |
+| `POST /proposals/:id/test` | participation as advice; 409 outside test; records `reporter_member_id` (detail adds `reporter_name`) |
 | `PUT /proposals/:id` | author or steward; outside draft/advice any changed value is 409 `PROPOSAL_LOCKED` (see "The text members decide on") |
 | `POST /proposals/:id/status` | `{status, note}`; `note` required to send back (consent/test -> advice); `ratified` needs a steward who is not the author (`policy.can_confirm_ratification`; the author-steward, or on a legacy proposal the steward its proposer text names, gets 403 `code: NEEDS_ANOTHER_STEWARD`); no withdrawal once ratified or withdrawn |
 | `POST /proposals/:id/register-agreement` | `agreements.register_ratified_proposal`; `policy.can_register_agreement` (active mod+ of the ecosystem); proposal row locked; 409 unless ratified, unregistered and with captured `ratified_text` |
@@ -565,9 +572,13 @@ adds on top:
 
 Proposal detail adds `allowed_next` (the caller's manual moves with `ready`),
 `caller_position` (`{position, reason}` in the latest consent record),
-`caller_can_register`, and briefs (`id`, `agreement_id`, `title`, `status`,
-`version`) for `governing_agreement`, `amends_agreement` and
-`registered_agreement`. Sub-records are serialized oldest first, so the last
+`caller_has_advised` (an entry by the caller in the current advice round),
+`caller_has_reported` (a report by the caller since the latest send-back),
+`caller_consent_pending`, `ratification_confirmers` (in test: `[{id,
+display_name}]` of the active stewards who may confirm, never the author, so
+the page names them instead of "another steward"), `caller_can_register`, and
+briefs (`id`, `agreement_id`, `title`, `status`, `version`) for
+`governing_agreement`, `amends_agreement` and `registered_agreement`. Sub-records are serialized oldest first, so the last
 consent record is the one the gate reads. A governing or amended agreement
 must be in force (`active`, `under_review`); `decision_type` is `consent` or
 `consensus`.
@@ -609,7 +620,16 @@ participation scopes). Either way an `AgreementCeremony` (outcome
 links them. The proposal row (and an amended agreement) is read `FOR UPDATE`
 before the "already registered" check, so two stewards pressing Register at
 once produce one agreement and a 409. Agreement detail adds `caller_can_propose_change` for in-force
-agreements; the page opens a proposal pre-filled to amend it.
+agreements; the page opens a proposal pre-filled to amend it. It also adds
+`registered_from_proposal` (`{id, proposal_id, title}`) when a ratified
+proposal created it (not when one amended it): such an agreement starts
+`active` with the proposal's policy but no advice or test ceremonies of its
+own, so the gates panel says the proposal completed them instead of showing
+them pending. Decision detail adds `registered_agreement` (`{id,
+agreement_id, title}` or null) for a decision whose source proposal was
+registered. A ratified, unregistered proposal is a `register_agreement` item in
+every active steward's queue until one registers it (services/AGENTS.md "Next
+steps").
 
 `PUT /agreements/:id` bumps the version only when `title` or `text` changes
 (`VERSIONED_FIELDS`): a review-date edit used to void every attestation.

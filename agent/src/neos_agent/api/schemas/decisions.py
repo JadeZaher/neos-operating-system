@@ -64,3 +64,5 @@ class DecisionDetail(DecisionListItem):
     dissent_records: list[DissentRecordSchema] = []
     participants: list[ParticipantSchema] = []
     semantic_tags: list[SemanticTagSchema] = []
+    # The agreement its source proposal was registered as ({id, agreement_id, title}), for a link; None until registered.
+    registered_agreement: dict | None = None

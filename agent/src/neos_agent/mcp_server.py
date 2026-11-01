@@ -57,6 +57,7 @@ from neos_agent.db.models import (
     User,
 )
 from neos_agent.services.act_gates import (
+    INACTIVE_PARTICIPANT,
     ActOutcome,
     TransitionRefused,
     agreement_gate_status,
@@ -64,6 +65,7 @@ from neos_agent.services.act_gates import (
     normalize_act_policy,
     proposal_gate_status,
     record_consent_position,
+    refuse_pending_member,
 )
 from neos_agent.services.act_gates import transition_proposal as apply_proposal_transition
 from neos_agent.services.agreement_consent import (
@@ -177,6 +179,21 @@ async def _member(s: AsyncSession, user_id: uuid.UUID, ecosystem_id: uuid.UUID) 
     return member
 
 
+async def _participant(s: AsyncSession, user_id: uuid.UUID, ecosystem_id: uuid.UUID) -> Member:
+    """The caller's ACTIVE row for ACT participation (advise, report, write a proposal), as REST requires.
+
+    A pending_consent row reads but never acts: it is refused with the CONSENT_PENDING words naming the ecosystem.
+    """
+    member = await _member(s, user_id, ecosystem_id)
+    try:
+        await refuse_pending_member(s, member, ecosystem_id)
+    except TransitionRefused as refusal:
+        raise _refused(refusal) from None
+    if member.current_status != "active":
+        raise ValueError(INACTIVE_PARTICIPANT)
+    return member
+
+
 async def _resolve(s: AsyncSession, model, id_or_business_id: str, business_field: str):
     """Accept a UUID or a business id (PROP-/AGR-/DEC-...)."""
     raw = id_or_business_id.strip()
@@ -207,8 +224,10 @@ async def _load_agreement(s: AsyncSession, id_or_business_id: str) -> Agreement 
 
 
 def _refused(refusal: TransitionRefused) -> ValueError:
-    """The engine's REST-shaped refusal as the MCP error the agent reads (gates and allowed moves inline)."""
+    """The engine's REST-shaped refusal as the MCP error the agent reads (code, gates and allowed moves inline)."""
     message = refusal.message
+    if refusal.extra.get("code"):
+        message = f"{refusal.extra['code']}: {message}"
     if refusal.extra.get("allowed"):
         message += f". Allowed: {', '.join(refusal.extra['allowed'])}"
     if "gates" in refusal.extra:
@@ -574,7 +593,7 @@ async def create_proposal(
     caller = await _caller(ctx)
     eco_uuid = uuid.UUID(ecosystem_id)
     async with _db()() as s:
-        member = await _member(s, caller.user.id, eco_uuid)
+        member = await _participant(s, caller.user.id, eco_uuid)
         governing_uuid = None
         if governing_agreement_id:
             governing = await _resolve(s, Agreement, governing_agreement_id, "agreement_id")
@@ -631,7 +650,7 @@ async def record_proposal_advice(proposal_id: str, advice_text: str, ctx: Contex
         proposal = await _resolve(s, Proposal, proposal_id, "proposal_id")
         if proposal is None:
             raise ValueError("Proposal not found")
-        member = await _member(s, caller.user.id, proposal.ecosystem_id)
+        member = await _participant(s, caller.user.id, proposal.ecosystem_id)
         if is_proposal_author(member, proposal):
             raise ValueError(SELF_ADVICE_DENIED)
         if proposal.status != "advice":
@@ -705,7 +724,7 @@ async def submit_test_report(
         proposal = await _resolve(s, Proposal, proposal_id, "proposal_id")
         if proposal is None:
             raise ValueError("Proposal not found")
-        member = await _member(s, caller.user.id, proposal.ecosystem_id)
+        member = await _participant(s, caller.user.id, proposal.ecosystem_id)
         if proposal.status != "test":
             raise ValueError(f"Test reports can only be filed while the proposal is in test (currently '{proposal.status}')")
         report = TestReport(
