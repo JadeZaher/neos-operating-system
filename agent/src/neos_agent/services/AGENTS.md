@@ -13,14 +13,14 @@ the chat assistant tools all call it, so the three surfaces cannot drift
 
 `PROPOSAL_LIFECYCLE` and `AGREEMENT_LIFECYCLE` are `Lifecycle` values: a tuple
 of `Move(source, target, gate=None, automatic=False, steward_only=False,
-note_required=False)` plus `terminal` statuses. They stay separate because
+proposer_until_deadline=False, note_required=False)` plus `terminal` statuses. They stay separate because
 agreements continue past activation (review, sunset, archive) and have no
 withdraw; proposals end at ratified or withdrawn.
 
 | Record | Move | Gate | Automatic | By hand |
 |---|---|---|---|---|
 | proposal | draft -> advice | - | no | manage rule |
-| proposal | advice -> consent | advice | **no** (owner decision) | manage rule: the proposer closes advice |
+| proposal | advice -> consent | advice | **no** (owner decision) | the proposer; another steward only after the advice deadline (`policy.can_close_advice`) |
 | proposal | consent -> test | consent | yes | manage rule |
 | proposal | consent -> advice | - | no | manage rule + note (send back for revision) |
 | proposal | test -> advice | - | no | manage rule + note (send back for revision) |
@@ -42,13 +42,36 @@ or owner). The two steward meanings stay under those two names on purpose.
 `withdrawn` are terminal: a decided or withdrawn proposal cannot be withdrawn
 (it could before, from any status).
 
-Owner decisions, live since 2026-10-31 (`tests/test_act_lifecycle.py::
-test_owner_decisions_are_live_in_the_table` goes red if either is flipped back):
+Owner decisions, live since 2026-10-31 and 2026-11-01 (`tests/test_act_lifecycle.py::
+test_owner_decisions_are_live_in_the_table` goes red if one is flipped back):
 
 - **Advice closes on the proposer's call.** advice -> consent has no
   `automatic`; the advice deadline is a backstop, not a timer: once it passes,
   `gates.advice.deadline_passed` is true and the proposer's page asks "Advice
   deadline passed: move to consent?". Nothing moves by itself.
+- **Only the proposer closes advice before its deadline** (2026-11-01). The
+  move carries `proposer_until_deadline`, which the engine checks through ONE
+  predicate, `policy.can_close_advice(member, proposal, today)`:
+
+  | Caller | No deadline | Before the deadline | After it (deadline < today) |
+  |---|---|---|---|
+  | the proposer | yes | yes | yes |
+  | a steward who did not write it | no | no | yes ("absent proposer") |
+  | a steward, legacy proposal (no `proposer_member_id`) | yes | yes | yes |
+  | anyone else | no (manage rule) | no | no |
+
+  A refused steward gets 403 `code` `ADVICE_CLOSE_PROPOSER_ONLY`
+  (`advice_close_refusal`: "The proposer closes advice. You can close it after
+  the advice deadline (<date>) if they haven't.", or "...has no advice
+  deadline, so only they can close it.") plus `advice_deadline`; MCP prefixes
+  the code, chat returns it as `code`. `allowed_next` still lists the move for
+  that steward with `blocked: "proposer_closes_advice"`, so the page says who
+  decides. Legacy proposals have no author who could act, so their stewards
+  keep closing advice as before (they also keep the proposer's queue items).
+  REST, MCP and chat inherit it through `transition_proposal`; the assistant's
+  pre-confirmation check and the engine share `move_authority_refusal`. A
+  deadline passes the day after it (`advice_deadline_passed`), as
+  `gates.advice.deadline_passed` and the queue's `Clock` count it.
 - **A steward confirms ratification.** test -> ratified is `steward_only`; test
   reports are evidence (each names its reporter), never self-certifying, and
   the confirming steward is never the author: a non-steward proposer gets 403
@@ -63,7 +86,11 @@ Send back for revision (consent or test -> advice) needs a note
 (`NOTE_REQUIRED`, 400). Entering advice that way bumps the proposal's minor
 version and opens a fresh advice round (the note is its
 `proposer_modifications`) and a fresh consent record, so earlier positions
-stay as history. The advice gate counts rounds that carry advice from the
+stay as history. The revision round starts with NO advice deadline
+(`_open_revision` clears it, and the round's `advice_window_end` is null): the old
+one is for the old version and may have passed, which would let a steward close
+the round at once; until the proposer sets a new one only the proposer may close
+advice. The advice gate counts rounds that carry advice from the
 latest revision round on, so a revision needs advice of its own. The test gate
 likewise counts only reports filed at or after the send-back
 (`reports_since_revision`: `created_at >= ` the revision round's `updated_at`,
@@ -75,8 +102,10 @@ are stamped strictly after the proposal's newest row (`created_after_newest`):
 
 The detail payload's `allowed_next` (`proposal_next_moves`) lists the manual
 moves this caller may make now with `ready` (gate met), `gate`,
-`note_required` and `steward_only`, so the page draws buttons from the table
-instead of a client copy.
+`note_required`, `steward_only` and `blocked` (`needs_another_steward` for the
+author of a test proposal, `proposer_closes_advice` for a steward before the
+advice deadline), so the page draws buttons from the table instead of a client
+copy.
 
 ### Engine
 
@@ -160,6 +189,15 @@ holds the gate on a (legacy) stand-aside. A governing or amended agreement must
 be in force (`active` or `under_review`); the old `advice` and `autocratic`
 decision types decided nothing and are refused.
 
+**The author's own position counts** (owner decision 2026-11-01, no code
+change): the consent gate counts every live position in the latest record,
+the author's included, and the queue asks the author to record one like any
+member. With the default quorum of 1 the author can complete consent alone
+(the page warns before that press, `consentCompletesRound`); a proposal or its
+governing agreement raises `consent_quorum` when that is not wanted.
+`tests/test_act_lifecycle.py::test_the_authors_own_consent_counts_toward_the_quorum`
+goes red if the gate ever excludes the author.
+
 The engine never commits; callers own the transaction.
 
 ## Next steps (G-Next)
@@ -178,7 +216,7 @@ rule:
 
 | Record | Items (who) | explain(): next step, who decides, moves |
 |---|---|---|
-| proposal | advice to give (members who did not write it and have not advised this round); a position to record (no live position in the latest consent record); `close_advice` (the author, as soon as the advice move is `ready`, deadline or not); `revise` (the author, while the send-back round has no advice AND the text is unchanged since the send-back); `answer_objection` (the author, one item per open objection: "<name> objected: “<reason>”", with send back for revision or wait for the withdrawal as the way out); `confirm_ratification` (`proposal_next_moves` ready and not blocked: a steward who did not write it); `register_agreement` (ratified, `registered_agreement_id` NULL, text captured: every `policy.can_register_agreement` steward until one registers it) | `proposal_next_step(prop, gates, you, facts)`; who decides: `_proposal_decider` (advice: the author, "a steward can act for them"; test: the confirmers by name; ratified and unregistered: any steward), else the table row (`_decider`); moves = `proposal_next_moves` (the detail's `allowed_next`) |
+| proposal | advice to give (members who did not write it and have not advised this round); a position to record (no live position in the latest consent record); `close_advice` (the author, as soon as the advice move is `ready`, deadline or not; a steward who did not write it only once the deadline has passed, the move is ready and not blocked: the absent proposer); `revise` (the author, while the send-back round has no advice AND the text is unchanged since the send-back); `answer_objection` (the author, one item per open objection: "<name> objected: “<reason>”", with send back for revision or wait for the withdrawal as the way out); `confirm_ratification` (`proposal_next_moves` ready and not blocked: a steward who did not write it); `register_agreement` (ratified, `registered_agreement_id` NULL, text captured: every `policy.can_register_agreement` steward until one registers it) | `proposal_next_step(prop, gates, you, facts)`; who decides: `_proposal_decider` (advice: the author, plus when a steward may close it for them: after the deadline, or never without one; test: the confirmers by name; ratified and unregistered: any steward), else the table row (`_decider`); moves = `proposal_next_moves` (the detail's `allowed_next`) |
 | agreement | consent to record in the consent stage, or to renew after the version changed (`reattest_agreement`); only when the agreement asks for consent | `agreement_next_step`; table row; ceremony moves for `can_conduct_agreement_ceremony`, plus `attest` |
 | emergency | co-sign (`caller_flags`); the post-emergency review and closing Recovery go to stewards only (owner default: the review alarm is a steward's) | `emergency.describe()`; dates from the same module |
 | conflict | triage (`can_triage_conflict`, a hidden case yields nothing); repair check-ins whose date has come (`conflicts.next_checkin`) | `conflicts.conflict_stage`; moves = `allowed_moves` for triage, `closed` for the reporter |
@@ -214,7 +252,11 @@ Rules of the queue:
   must not wait silently for a date. Before the deadline (or with none) the
   words are `ADVICE_READY_PROMPT` ("Close advice and move to consent: enough
   advice is in", naming the act); once it has passed, `ADVICE_DEADLINE_PROMPT`.
-  Both are the page's `adviceClosePrompt` titles, word for word.
+  Both are the page's `adviceClosePrompt` titles, word for word. A steward's
+  item (deadline passed, proposer silent) reads
+  `ADVICE_DEADLINE_STEWARD_PROMPT` ("Advice deadline passed: close advice for
+  the proposer?"), the page's title for a non-proposer; every eligible steward
+  sees it until one of them, or the proposer, closes advice.
 - `revise` clears once the author edits: the proposal's `updated_at` is later
   than the revision round's `updated_at` (its insert time; `created_at` is
   ordered artificially by `created_after_newest`, so it cannot be used). In
@@ -233,10 +275,10 @@ writes: who sent it back, from where, the note), open objections
 the registered or amended agreement's title. The assistant's tools pass the
 same facts, so chat and page say the same words.
 
-- Advice: one statement per viewer under the current manage rule (the
-  owner question on who may close advice is open): the author "you decide when
-  to close advice", a non-author steward "you can also close it for them",
-  anyone else "<author> decides". A revision round names who sent it back, the
+- Advice: one statement per viewer (owner decision 2026-11-01): the author
+  "you decide when to close advice", a non-author steward when they may close
+  it (`_steward_advice_close`: after the deadline "<date>", once it passed, or
+  "only <author> can" without one), anyone else "<author> decides". A revision round names who sent it back, the
   note and the version, and says earlier advice, positions and test reports are
   history (the gates count none of them).
 - Consent: "N positions recorded, Q needed"; each open objection by name and

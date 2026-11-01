@@ -8,7 +8,7 @@ import uuid
 from pydantic import ValidationError
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from neos_agent.api.domains import domain_display_name
@@ -333,6 +333,11 @@ def _authenticated_user_id(request: Request) -> uuid.UUID | None:
     return user.id if user else None
 
 
+async def _rename_member_rows(session, user_id: uuid.UUID, display_name: str) -> None:
+    """The profile name is the person's name in every ecosystem (owner decision 2026-11-01); see api/AGENTS.md."""
+    await session.execute(update(Member).where(Member.user_id == user_id).values(display_name=display_name))
+
+
 @profiles_api_bp.get("/me")
 async def get_own_profile(request: Request):
     """Return the authenticated user's public profile."""
@@ -389,6 +394,8 @@ async def update_own_profile(request: Request):
 
         for field, value in update_data.items():
             setattr(user, field, value)
+        if "display_name" in update_data:
+            await _rename_member_rows(session, user.id, update_data["display_name"])
         try:
             await session.commit()
         except IntegrityError:

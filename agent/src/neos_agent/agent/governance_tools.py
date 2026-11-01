@@ -67,7 +67,6 @@ from neos_agent.api.errors import ApiError
 from neos_agent.api.domains import CREATE_DENIED as DOMAIN_CREATE_DENIED, NAME_SEPARATOR, domain_display_name
 from neos_agent.api.policy import (
     CONFLICT_PARTIES_CAN_VIEW,
-    can_confirm_ratification,
     can_conduct_agreement_ceremony,
     can_declare_emergency,
     can_manage_proposal,
@@ -85,13 +84,12 @@ from neos_agent.services.act_gates import (
     AGREEMENT_LIFECYCLE,
     EVIDENCED_CEREMONIES,
     MANAGE_DENIED,
-    NEEDS_ANOTHER_STEWARD,
     PROPOSAL_LIFECYCLE,
-    STEWARD_MOVE_DENIED,
     TransitionRefused,
     agreement_gate_status,
     consent_position,
     current_position,
+    move_authority_refusal,
     proposal_gate_status,
     proposal_next_moves,
     refuse_pending_member,
@@ -2411,15 +2409,16 @@ PROPOSAL_CONFIRM = {
 
 
 async def proposal_move_refusal(db: AsyncSession, prop: Proposal, target: str, caller: Member | None) -> str | None:
-    """Why the engine would refuse this move (manage rule, table, steward, gate), checked before asking to confirm it."""
+    """Why the engine would refuse this move (manage rule, table, who may make it, gate), checked before asking to confirm it."""
     if not can_manage_proposal(caller, prop):
         return MANAGE_DENIED
     move = PROPOSAL_LIFECYCLE.manual_move(prop.status, target)
     if move is None:
         allowed = PROPOSAL_LIFECYCLE.manual_targets(prop.status)
         return f"Invalid transition from '{prop.status}' to '{target}'. Allowed: {', '.join(allowed) or 'none'}."
-    if move.steward_only and not can_confirm_ratification(caller, prop):
-        return NEEDS_ANOTHER_STEWARD if is_steward_in(caller, prop.ecosystem_id) else STEWARD_MOVE_DENIED
+    refusal = move_authority_refusal(prop, move, caller, today=date.today())
+    if refusal is not None:
+        return refusal.message
     if move.gate is not None and not (await proposal_gate_status(db, prop))[move.gate]["met"]:
         return f"The {move.gate} gate is not satisfied — the conditions declared in the ACT policy must be met first"
     return None
@@ -2463,7 +2462,7 @@ async def update_proposal_status(
     try:
         outcome = await transition_proposal(db, prop, to=new_status, caller=caller, **({"note": note} if note else {}))
     except TransitionRefused as refusal:
-        return {"success": False, "error": _refusal_text(refusal)}
+        return _refused(refusal)  # a coded refusal (ADVICE_CLOSE_PROPOSER_ONLY, ...) keeps its code
     await db.flush()
     you = await _proposal_standing(db, prop, caller)
 

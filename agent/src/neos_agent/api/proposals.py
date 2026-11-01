@@ -36,6 +36,7 @@ from neos_agent.api.policy import (
     can_manage_proposal,
     can_participate,
     can_register_agreement,
+    can_set_advice_deadline,
     is_consent_pending_in,
     is_proposal_author,
 )
@@ -552,6 +553,10 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
         # explicit-null semantics: present-and-null CLEARS the declaration so
         # the proposal inherits its gates from the governing agreement.
         update_data = update_req.model_dump(exclude_none=True)
+        new_deadline = update_data.get("advice_deadline")
+        if new_deadline is not None and new_deadline != proposal.advice_deadline \
+                and not can_set_advice_deadline(caller, proposal):
+            raise ApiError(403, "Only the proposer can change the advice deadline.", {"code": "ADVICE_DEADLINE_AUTHOR_ONLY"})
         if proposal.status not in EDITABLE_STAGES and _changes_anything(proposal, update_data, body):
             raise ApiError(409, PROPOSAL_LOCKED, {"status": proposal.status})
         _validate_decision_type(update_req.decision_type)

@@ -112,6 +112,9 @@ def act_stage_guide() -> str:
             how = f"a steward who did not write it confirms it once {_GATE_WORDS.get(move.gate, 'it is ready')}"
         elif getattr(move, "note_required", False):
             how = "the author or a steward sends it back for revision, with a note saying what will change"
+        elif getattr(move, "proposer_until_deadline", False):
+            how = (f"the author moves it, once {_GATE_WORDS.get(move.gate, 'it is ready')}; another steward only "
+                   "after the advice deadline has passed and the author has not (no deadline: only the author)")
         else:
             how = "the author or a steward moves it" + (f", once {_GATE_WORDS[move.gate]}" if move.gate else "")
         lines.append(f"- {move.source} -> {move.target}: {how}.")
@@ -128,13 +131,19 @@ def act_stage_guide() -> str:
             "Advice never ends by itself: the author decides when to move on. A passed advice deadline only "
             "reminds them."
         )
+    if any(getattr(move, "proposer_until_deadline", False) for move in PROPOSAL_LIFECYCLE.moves):
+        lines.append(
+            "A steward who asks to close someone else's advice early is refused (ADVICE_CLOSE_PROPOSER_ONLY, or "
+            "`your_moves` blocked as proposer_closes_advice): say the proposer closes it and when, if ever, they can."
+        )
     lines.append(
         "The number of advice rounds and positions needed come from the proposal, its governing agreement or "
         "the default. Read them from the tool's `gates`; never work them out yourself."
     )
     lines.append(
         "Agreements go through the same stages to active (in force). Each member consents to an agreement "
-        "personally on its page; ecosystem admins or owners conduct its ceremonies."
+        "personally on its page; ecosystem admins or owners move it from stage to stage, and each move with its "
+        "evidence is the recorded ceremony (there is no separate ceremony to record)."
     )
     return "\n".join(lines)
 

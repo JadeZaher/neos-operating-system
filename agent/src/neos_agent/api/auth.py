@@ -457,7 +457,8 @@ async def api_logout(request: Request):
                     )
                     auth_session = result.scalar_one_or_none()
                     if auth_session:
-                        await db.delete(auth_session)
+                        # Expire, never delete: an agent token may reference the row (FK).
+                        auth_session.expires_at = _dt.datetime.now(timezone.utc)
                         await db.commit()
             except Exception:
                 logger.exception("Error during API logout session cleanup")

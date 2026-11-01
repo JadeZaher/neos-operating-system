@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import datetime
     import uuid
 
     from neos_agent.db.models import Agreement, Domain, Member, Proposal
@@ -302,6 +303,29 @@ def can_confirm_ratification(member: Member | None, proposal: Proposal) -> bool:
         and not is_proposal_author(member, proposal)
         and not is_legacy_proposer_named(member, proposal)
     )
+
+
+def advice_deadline_passed(proposal: Proposal, today: datetime.date) -> bool:
+    """The advice deadline is set and has gone by (a date passes on the following day)."""
+    return proposal.advice_deadline is not None and proposal.advice_deadline < today
+
+
+def can_close_advice(member: Member | None, proposal: Proposal, today: datetime.date) -> bool:
+    """Close advice (owner decision 2026-11-01): the proposer at any time; another steward only after the advice
+    deadline (none set: never); a legacy proposal with no author link, its stewards. See services/AGENTS.md."""
+    if not can_manage_proposal(member, proposal):
+        return False
+    if proposal.proposer_member_id is None or is_proposal_author(member, proposal):
+        return True
+    return advice_deadline_passed(proposal, today)
+
+
+def can_set_advice_deadline(member: Member | None, proposal: Proposal) -> bool:
+    """Move the advice deadline: only the author when the proposal has one (else a steward could backdate it
+    and close advice); a legacy proposal with no author link, whoever can manage it."""
+    if not can_manage_proposal(member, proposal):
+        return False
+    return proposal.proposer_member_id is None or is_proposal_author(member, proposal)
 
 
 # Profiles that confer administration (PROFILE_ADMINS) are granted, never chosen; see api/AGENTS.md "Role grants".

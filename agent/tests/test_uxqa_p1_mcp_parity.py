@@ -8,6 +8,7 @@ The parity table is documented in src/neos_agent/api/AGENTS.md "ACT parity".
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 import pytest
@@ -21,6 +22,7 @@ from neos_agent.agent.governance_tools import execute_tool  # noqa: E402
 from neos_agent.api.agreements import CEREMONY_DENIED  # noqa: E402
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED  # noqa: E402
 from neos_agent.db.models import AdviceEntry, Agreement, Proposal, User  # noqa: E402
+from neos_agent.services.act_gates import ADVICE_CLOSE_PROPOSER_ONLY, PROPOSER_CLOSES_ADVICE  # noqa: E402
 
 from .test_uxqa_p1_governance import (  # noqa: E402,F401 — env is the shared fixture
     ECO,
@@ -29,6 +31,7 @@ from .test_uxqa_p1_governance import (  # noqa: E402,F401 — env is the shared 
     Person,
     _call,
     _create_proposal,
+    _open_for_advice,
     env,
 )
 
@@ -112,8 +115,8 @@ class Surfaces:
             path, body = paths[action]
             url = f"/api/v1/proposals/{proposal['id']}{path}"
         resp = await _call(self.env.app, "post", who, url, json=body)
-        if resp.status >= 400:
-            return ("refused", resp.json["error"])
+        if resp.status >= 400:  # a coded refusal reads "CODE: message", as MCP renders it
+            return ("refused", ": ".join(filter(None, (resp.json.get("code"), resp.json["error"]))))
         return ("ok", resp.json.get("auto_transitions", []))
 
     async def mcp(self, who, action, proposal, **args):
@@ -150,7 +153,7 @@ class Surfaces:
             if result.get("success"):
                 await session.commit()
         if not result["success"]:
-            return ("refused", result["error"])
+            return ("refused", ": ".join(filter(None, (result.get("code"), result["error"]))))
         return ("ok", result["data"].get("auto_transitions", []))
 
 
@@ -162,6 +165,8 @@ ACT_SCRIPT = [
     ("ada", "advise", {"text": "I agree with myself"}, ("refused", SELF_ADVICE_DENIED), "advice"),
     ("ben", "advise", {"text": "Add a sign-out sheet"}, ("ok", []), "advice"),  # the proposer closes advice
     ("ben", "move", {"status": "consent"}, ("refused", MANAGE_DENIED), "advice"),
+    # No advice deadline: a steward never closes someone else's advice (owner decision 2026-11-01).
+    ("mo", "move", {"status": "consent"}, ("refused", f"{ADVICE_CLOSE_PROPOSER_ONLY}: {PROPOSER_CLOSES_ADVICE}"), "advice"),
     ("ada", "move", {"status": "consent"}, ("ok", []), "consent"),
     ("mo", "position", {"position": "objection", "reason": "Too noisy at night"}, ("ok", []), "consent"),
     ("sol", "position", {"position": "consent"}, ("ok", []), "consent"),  # the open objection blocks
@@ -176,6 +181,13 @@ AGREEMENT_SCRIPT = [
     ("ari", "ceremony", {"status": "active", "evidence": "Adopting it straight away"}, ("refused", "Invalid transition"), "advice"),
 ]
 SEEDED_AGREEMENT_VERSION = "1.0"  # a ceremony never bumps it: member consent is bound to the version
+TOMORROW, YESTERDAY = dt.date.today() + dt.timedelta(days=1), dt.date.today() - dt.timedelta(days=1)
+# Mo (a steward who did not write it) closes Ada's advice: (advice deadline, expected outcome, status afterwards).
+ADVICE_DEADLINE_SCRIPT = [
+    (TOMORROW, ("refused", f"{ADVICE_CLOSE_PROPOSER_ONLY}: {PROPOSER_CLOSES_ADVICE} You can close it after the "
+                           f"advice deadline ({TOMORROW.isoformat()})"), "advice"),
+    (YESTERDAY, ("ok", []), "consent"),  # the proposer did not close it by the deadline
+]
 
 
 def _matches(observed: tuple, expected: tuple) -> bool:
@@ -203,3 +215,19 @@ async def test_every_surface_applies_the_same_act_rules(env, monkeypatch, surfac
 
     async with env.db() as session:
         assert (await session.get(Agreement, GARDEN_AGREEMENT)).version == SEEDED_AGREEMENT_VERSION, surface
+
+
+@pytest.mark.parametrize("surface", ["rest", "mcp", "chat"])
+async def test_every_surface_lets_a_steward_close_advice_only_after_its_deadline(env, monkeypatch, surface):
+    run = getattr(Surfaces(env, monkeypatch), surface)
+    for deadline, expected, status_after in ADVICE_DEADLINE_SCRIPT:
+        proposal = await _create_proposal(env.app, advice_deadline=deadline.isoformat())
+        await _open_for_advice(env.app, proposal["id"])
+        advice = await _call(env.app, "post", "ben", f"/api/v1/proposals/{proposal['id']}/advice", json={"content": "Add a rota"})
+        assert advice.status == 201, advice.text
+
+        observed = await run("mo", "move", proposal, status="consent")
+        assert _matches(observed, expected), (surface, deadline, observed)
+        async with env.db() as session:
+            current = (await session.scalar(select(Proposal).where(Proposal.id == proposal["id"]))).status
+        assert current == status_after, (surface, deadline, current)

@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from neos_agent.api.errors import ApiError
 from neos_agent.api.policy import (
     ROLE_RANK,
+    can_close_advice,
     can_confirm_ratification,
     can_manage_proposal,
     can_participate,
@@ -95,6 +96,7 @@ class Move:
 
     `steward_only` narrows who may make it by hand to a steward who is not the author
     (`policy.can_confirm_ratification`);
+    `proposer_until_deadline` keeps it the author's until the advice deadline has passed (`policy.can_close_advice`);
     `note_required` refuses it without a written reason (sending a proposal back).
     """
 
@@ -103,6 +105,7 @@ class Move:
     gate: str | None = None
     automatic: bool = False
     steward_only: bool = False
+    proposer_until_deadline: bool = False
     note_required: bool = False
 
 
@@ -144,7 +147,8 @@ class Lifecycle:
 PROPOSAL_LIFECYCLE = Lifecycle(
     moves=(
         Move("draft", "advice"),  # opening the process is always deliberate
-        Move("advice", "consent", gate="advice"),  # owner decision 2026-10-31: the proposer closes advice
+        # Owner decisions 2026-10-31 and 2026-11-01: the proposer closes advice; another steward only after its deadline.
+        Move("advice", "consent", gate="advice", proposer_until_deadline=True),
         Move("consent", "test", gate="consent", automatic=True),
         Move("consent", "advice", note_required=True),  # send back for revision
         Move("test", "advice", note_required=True),  # send back for revision
@@ -211,6 +215,31 @@ NEEDS_ANOTHER_STEWARD = (
     "If you are the only steward, give another member the moderator role first."
 )
 NOTE_REQUIRED = "Say what will change: sending a proposal back for revision needs a note"
+# Machine code for a steward closing someone else's advice before its deadline (owner decision 2026-11-01).
+ADVICE_CLOSE_PROPOSER_ONLY = "ADVICE_CLOSE_PROPOSER_ONLY"
+PROPOSER_CLOSES_ADVICE = "The proposer closes advice."
+
+
+def advice_close_refusal(proposal: Proposal) -> str:
+    """Plain words for a steward refused the advice close: when they may close it, or that only the proposer can."""
+    if proposal.advice_deadline is None:
+        return f"{PROPOSER_CLOSES_ADVICE} This proposal has no advice deadline, so only they can close it."
+    return (f"{PROPOSER_CLOSES_ADVICE} You can close it after the advice deadline "
+            f"({proposal.advice_deadline.isoformat()}) if they haven't.")
+
+
+def move_authority_refusal(proposal: Proposal, move: Move, caller: Member | None, *,
+                           today: _dt.date) -> TransitionRefused | None:
+    """Who may make `move` by hand, past the manage rule: steward-only moves and the proposer's advice close."""
+    if move.steward_only and not can_confirm_ratification(caller, proposal):
+        if is_steward_in(caller, proposal.ecosystem_id):  # a steward who wrote it
+            return TransitionRefused(403, NEEDS_ANOTHER_STEWARD, {"code": "NEEDS_ANOTHER_STEWARD"})
+        return TransitionRefused(403, STEWARD_MOVE_DENIED)
+    if move.proposer_until_deadline and not can_close_advice(caller, proposal, today):
+        deadline = proposal.advice_deadline.isoformat() if proposal.advice_deadline else None
+        return TransitionRefused(403, advice_close_refusal(proposal),
+                                 {"code": ADVICE_CLOSE_PROPOSER_ONLY, "advice_deadline": deadline})
+    return None
 
 # Machine code for a membership still waiting on the consent gate (owner rule: a pending newcomer reads, never acts).
 CONSENT_PENDING = "CONSENT_PENDING"
@@ -376,10 +405,11 @@ async def _open_revision(session, proposal: Proposal, source: str, *, actor: Mem
     """Send-back side effects: a minor version, a fresh advice round carrying the note, a fresh consent record."""
     proposal.version = _bump_minor(proposal.version)
     who = actor.display_name if actor is not None else "the proposer"
+    proposal.advice_deadline = None  # a revision round starts open-ended; the proposer sets its own deadline
     # proposer_modifications marks a revision round: the advice gate counts rounds from the latest one.
     session.add(AdviceLog(
         id=uuid.uuid4(), proposal_id=proposal.id, advice_window_start=_dt.date.today(),
-        advice_window_end=proposal.advice_deadline, urgency=proposal.urgency,
+        advice_window_end=None, urgency=proposal.urgency,
         summary=f"Sent back from {source} for revision by {who} (v{proposal.version})",
         proposer_modifications=note, **await created_after_newest(session, AdviceLog, proposal.id),
     ))
@@ -427,10 +457,9 @@ async def transition_proposal(session, proposal: Proposal, *, to: str | None = N
                 f"Invalid transition from '{proposal.status}' to '{to}'",
                 {"allowed": PROPOSAL_LIFECYCLE.manual_targets(proposal.status)},
             )
-        if move.steward_only and not can_confirm_ratification(caller, proposal):
-            if is_steward_in(caller, proposal.ecosystem_id):  # a steward who wrote it
-                raise TransitionRefused(403, NEEDS_ANOTHER_STEWARD, {"code": "NEEDS_ANOTHER_STEWARD"})
-            raise TransitionRefused(403, STEWARD_MOVE_DENIED)
+        refusal = move_authority_refusal(proposal, move, caller, today=_dt.date.today())
+        if refusal is not None:
+            raise refusal
         note = (note or "").strip() or None
         if move.note_required and note is None:
             raise TransitionRefused(400, NOTE_REQUIRED)
@@ -737,10 +766,15 @@ async def _settle_consent(session, proposal: Proposal, record: ConsentRecord, me
     return outcome
 
 
-def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None) -> list[dict]:
-    """The manual moves `caller` may request now, each with whether its gate is met (the UI's buttons)."""
+def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None, *,
+                        today: _dt.date | None = None) -> list[dict]:
+    """The manual moves `caller` may request now, each with whether its gate is met (the UI's buttons).
+
+    `blocked` lists a move the caller may not make yet, so the page says who decides instead of a button.
+    """
     if not can_manage_proposal(caller, proposal):
         return []
+    today = today or _dt.date.today()
     moves = []
     for target in PROPOSAL_LIFECYCLE.manual_targets(proposal.status):
         move = PROPOSAL_LIFECYCLE.manual_move(proposal.status, target)
@@ -749,6 +783,8 @@ def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None) 
             if not is_proposal_author(caller, proposal):
                 continue
             blocked = "needs_another_steward"  # the author sees who decides instead of a button
+        elif move.proposer_until_deadline and not can_close_advice(caller, proposal, today):
+            blocked = "proposer_closes_advice"  # a steward before the deadline (or with none set)
         moves.append({
             "to": target,
             "ready": move.gate is None or bool(gates[move.gate]["met"]),

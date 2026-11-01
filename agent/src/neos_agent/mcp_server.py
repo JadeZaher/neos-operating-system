@@ -757,6 +757,8 @@ async def transition_proposal(
 
     Same rule as the app: only the proposer or an ecosystem steward moves a
     proposal by hand, and a forward move needs its declared (or inherited) gate.
+    Closing advice (status='consent') is the proposer's; another steward may
+    only once the advice deadline has passed (ADVICE_CLOSE_PROPOSER_ONLY).
     Sending it back for revision (consent or test -> advice) needs a `note`
     saying what will change. Moves whose gates are already met happen automatically.
     Ratifying and withdrawing cannot be undone: without confirm=true nothing

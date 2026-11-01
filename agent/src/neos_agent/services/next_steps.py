@@ -24,6 +24,7 @@ from neos_agent.api.agreements import CONSENT_OPEN_STATUSES
 from neos_agent.api.errors import ApiError, get_scoped_or_404
 from neos_agent.api.guards import caller_in, reachable_ecosystem_ids
 from neos_agent.api.policy import (
+    can_close_advice,
     can_conduct_agreement_ceremony,
     can_confirm_ratification,
     can_finish_audit,
@@ -84,6 +85,8 @@ OWNER_ACTIONS = frozenset({"close_advice", "revise", "answer_objection", "confir
 # The proposer's prompt, word for word as the proposal page (client lib/proposal-vocab.ts adviceClosePrompt).
 ADVICE_DEADLINE_PROMPT = "Advice deadline passed: move to consent?"
 ADVICE_READY_PROMPT = "Close advice and move to consent: enough advice is in"  # names the act (deadline not passed)
+# A steward's prompt once the deadline passed and the proposer has not closed advice (owner decision 2026-11-01).
+ADVICE_DEADLINE_STEWARD_PROMPT = "Advice deadline passed: close advice for the proposer?"
 
 # Plain stage names, as the client labels them (proposal-vocab, agreement-status, emergency-phase, exit-status).
 PROPOSAL_STATES = {"draft": "Draft", "advice": "Advice", "consent": "Consent", "test": "Test",
@@ -212,6 +215,7 @@ async def proposal_standing(session, prop: Proposal, caller: Member | None) -> d
         "my_position": consent_position(row.position) if row is not None and row.position else None,
         "can_confirm": can_confirm_ratification(caller, prop),
         "can_register": can_register_agreement(caller, prop),
+        "can_close_advice": can_close_advice(caller, prop, _dt.date.today()),
     }
 
 
@@ -321,11 +325,16 @@ def _proposal_managers(prop: Proposal) -> str:
 
 
 def _proposal_decider(prop: Proposal, stage: str, gates: dict, facts: dict) -> str | None:
-    """'Who decides' for the banner: the advice close is the author's (a steward may act for them), names the confirmers."""
+    """'Who decides' for the banner: the advice close is the author's (a steward only after its deadline), names the confirmers."""
     if stage == "advice":
         if prop.proposer_member_id is None:
             return "A steward of this ecosystem"
-        return f"{prop.proposer or 'The author'}, who wrote it (a steward can act for them)"
+        author = f"{prop.proposer or 'The author'}, who wrote it"
+        if prop.advice_deadline is None:
+            return author
+        if gates["advice"].get("deadline_passed"):
+            return f"{author}; the advice deadline has passed, so a steward can close it for them"
+        return f"{author} (a steward can close it for them after the advice deadline, {prop.advice_deadline.isoformat()})"
     if stage == "test" and facts.get("confirmers"):
         return f"A steward who did not write it: {_names(facts['confirmers'])}"
     if stage == "ratified" and prop.registered_agreement_id is None and (prop.ratified_text or "").strip():
@@ -361,13 +370,25 @@ def _advice_step(prop: Proposal, gates: dict, you: dict, facts: dict) -> list[st
         if prop.proposer_member_id is None:  # legacy, no author link: steward-managed
             parts.append("A steward of this ecosystem closes advice and moves it to consent"
                          + (": you can, as a steward." if you.get("can_manage") else "."))
-        elif you.get("can_manage"):
-            parts.append(f"{author} wrote it and decides when to close advice; as a steward you can also close it for them.")
+        elif you.get("can_manage"):  # a steward who did not write it (owner decision 2026-11-01)
+            parts.append(_steward_advice_close(prop, author, you))
         else:
             parts.append(f"{author} wrote it and decides when to close advice and move it to consent.")
-    if advice.get("deadline_passed") and you.get("can_manage"):
+    proposer_role = you.get("is_author") or prop.proposer_member_id is None
+    if advice.get("deadline_passed") and proposer_role and you.get("can_manage"):
         parts.append("The advice deadline has passed: it is time to decide whether to move it to consent.")
     return parts
+
+
+def _steward_advice_close(prop: Proposal, author: str, you: dict) -> str:
+    """What a steward who did not write it may do about closing advice: wait for the deadline, or act once it passed."""
+    if prop.advice_deadline is None:
+        return f"{author} wrote it and closes advice. There is no advice deadline, so only {author} can close it."
+    deadline = prop.advice_deadline.isoformat()
+    if you.get("can_close_advice"):
+        return (f"{author} wrote it and closes advice. The advice deadline ({deadline}) has passed, so as a steward "
+                "you can close it for them if they haven't.")
+    return f"{author} wrote it and closes advice. You can close it after the advice deadline ({deadline}) if they haven't."
 
 
 def _consent_step(prop: Proposal, gates: dict, you: dict, facts: dict) -> list[str]:
@@ -573,21 +594,31 @@ async def proposal_items(session, prop: Proposal, caller: Member | None, ecosyst
                          "or keep it, then gather advice on this version.", due=prop.advice_deadline)]
         gates = await proposal_gate_status(session, prop)
         # Once the gate is met, deadline or not: advice never closes by itself, so nothing may stall silently.
-        if any(m["to"] == "consent" and m["ready"] for m in proposal_next_moves(prop, gates, caller)):
+        if any(m["to"] == "consent" and m["ready"] for m in proposal_next_moves(prop, gates, caller, today=clock.today)):
             return [item("close_advice", ADVICE_DEADLINE_PROMPT if clock.past(prop.advice_deadline) else ADVICE_READY_PROMPT,
                          "You wrote it, and advice closes on your call: nothing moves by itself.",
                          due=prop.advice_deadline)]
         return []
     if stage == "advice":
+        items = []
+        # A steward who did not write it, once the deadline passed and the proposer has not closed advice.
+        if can_close_advice(caller, prop, clock.today):
+            gates = await proposal_gate_status(session, prop)
+            moves = proposal_next_moves(prop, gates, caller, today=clock.today)
+            if any(m["to"] == "consent" and m["ready"] and not m["blocked"] for m in moves):
+                items.append(item("close_advice", ADVICE_DEADLINE_STEWARD_PROMPT,
+                                  f"{prop.proposer or 'The proposer'} wrote it and has not closed advice. The advice "
+                                  "deadline has passed, so a steward can close it for them.",
+                                  due=prop.advice_deadline))
         you = await proposal_standing(session, prop, caller)
-        if you["has_advised_this_round"]:
-            return []
-        return [item("give_advice", "Give your advice",
-                     f"You are a member of {ecosystem or 'this ecosystem'} and have not advised in this round.",
-                     due=prop.advice_deadline)]
+        if not you["has_advised_this_round"]:
+            items.append(item("give_advice", "Give your advice",
+                              f"You are a member of {ecosystem or 'this ecosystem'} and have not advised in this round.",
+                              due=prop.advice_deadline))
+        return items
     if stage == "consent":
         items = []
-        if proposer_role:  # the author answers each open objection (whether the author's consent counts stays the owner's)
+        if proposer_role:  # the author answers each open objection (the author's own position counts: owner decision)
             for row in await open_objections(session, prop):
                 name = row.name or "A member"
                 items.append(item(
@@ -606,7 +637,7 @@ async def proposal_items(session, prop: Proposal, caller: Member | None, ecosyst
     if not can_confirm_ratification(caller, prop):
         return []
     gates = await proposal_gate_status(session, prop)
-    ratify = next((m for m in proposal_next_moves(prop, gates, caller) if m["to"] == "ratified"), None)
+    ratify = next((m for m in proposal_next_moves(prop, gates, caller, today=clock.today) if m["to"] == "ratified"), None)
     if ratify is None or not ratify["ready"] or ratify["blocked"]:
         return []
     return [item("confirm_ratification", "Confirm ratification",
@@ -880,7 +911,7 @@ async def _explain_proposal(session, prop: Proposal, caller, ecosystem, clock) -
     moves = [
         _move(m["to"], "Send back for revision" if m["note_required"] else _PROPOSAL_MOVE_LABELS.get(m["to"], m["to"]),
               ready=m["ready"], blocked=m["blocked"])
-        for m in proposal_next_moves(prop, gates, caller)  # the page's buttons (detail `allowed_next`)
+        for m in proposal_next_moves(prop, gates, caller, today=clock.today)  # the page's buttons (detail `allowed_next`)
     ]
     return _explanation(
         "proposal", prop, key=prop.proposal_id, title=prop.title, ecosystem=ecosystem,

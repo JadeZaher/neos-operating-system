@@ -8,6 +8,7 @@ newcomer and a shared agreement of their own.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -24,14 +25,16 @@ from neos_agent.api.errors import register_api_errors
 from neos_agent.db.models import Agreement, Base, ConsentParticipant, ConsentRecord, Ecosystem, Member, Proposal, User
 from neos_agent.services import act_gates
 from neos_agent.services.act_gates import (
+    ADVICE_CLOSE_PROPOSER_ONLY,
     AGREEMENT_LIFECYCLE,
+    MANAGE_DENIED,
     NEEDS_ANOTHER_STEWARD,
     PROPOSAL_LIFECYCLE,
     STEWARD_MOVE_DENIED,
 )
 from neos_agent.services.agreement_consent import synchronize_agreement_requirements
 
-from .test_uxqa_p1_governance import _call, _create_proposal, env  # noqa: F401 — env is the shared fixture
+from .test_uxqa_p1_governance import LEGACY_PROPOSAL, _call, _create_proposal, env  # noqa: F401 — env is the shared fixture
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +82,11 @@ async def test_on_transition_sees_each_applied_move_once(env, monkeypatch):
 
 
 def test_owner_decisions_are_live_in_the_table():
-    """Flipping either owner decision back (automatic advice close, self-certifying ratification) goes red here."""
+    """Flipping an owner decision back (automatic advice close, a steward closing advice any time,
+    self-certifying ratification) goes red here."""
     advice_close = PROPOSAL_LIFECYCLE.manual_move("advice", "consent")
     ratification = PROPOSAL_LIFECYCLE.manual_move("test", "ratified")
-    assert (advice_close.automatic, advice_close.gate) == (False, "advice")
+    assert (advice_close.automatic, advice_close.gate, advice_close.proposer_until_deadline) == (False, "advice", True)
     assert (ratification.automatic, ratification.steward_only, ratification.gate) == (False, True, "test")
     assert PROPOSAL_LIFECYCLE.automatic_move("advice") is None
     assert PROPOSAL_LIFECYCLE.automatic_move("test") is None
@@ -154,6 +158,72 @@ async def test_a_steward_who_wrote_the_proposal_cannot_confirm_its_ratification(
     assert (refused.status, refused.json["code"], refused.json["error"]) == (403, "NEEDS_ANOTHER_STEWARD", NEEDS_ANOTHER_STEWARD)
     confirmed = await _call(env.app, "post", "ari", f"{url}/status", json={"status": "ratified"})
     assert confirmed.json["status"] == "ratified", confirmed.text
+
+
+# ---------------------------------------------------------------------------
+# Who closes advice (owner decision 2026-11-01): the proposer; another steward only after the deadline
+# ---------------------------------------------------------------------------
+
+TODAY = dt.date.today()
+NO_DEADLINE, TOMORROW, DEADLINE_TODAY, YESTERDAY = None, TODAY + dt.timedelta(days=1), TODAY, TODAY - dt.timedelta(days=1)
+
+
+@pytest.mark.parametrize("who, deadline, status, refusal", [
+    ("ada", NO_DEADLINE, 200, None),  # the proposer closes whenever she chooses
+    ("ada", TOMORROW, 200, None),
+    ("ada", YESTERDAY, 200, None),
+    ("mo", NO_DEADLINE, 403, "This proposal has no advice deadline, so only they can close it."),
+    ("mo", TOMORROW, 403, f"You can close it after the advice deadline ({TOMORROW.isoformat()}) if they haven't."),
+    ("mo", DEADLINE_TODAY, 403, f"after the advice deadline ({TODAY.isoformat()})"),  # a deadline passes the next day
+    ("mo", YESTERDAY, 200, None),  # the absent proposer: a steward closes it for her
+    ("ben", YESTERDAY, 403, MANAGE_DENIED),  # never a member who neither wrote it nor stewards
+])
+async def test_a_steward_closes_someone_elses_advice_only_after_its_deadline(env, who, deadline, status, refusal):
+    fields = {"advice_deadline": deadline.isoformat()} if deadline else {}
+    proposal = await _create_proposal(env.app, **fields)
+    url = f"/api/v1/proposals/{proposal['id']}"
+    assert (await _call(env.app, "post", "ada", f"{url}/status", json={"status": "advice"})).status == 200
+    assert (await _call(env.app, "post", "ben", f"{url}/advice", json={"content": "Add a rota"})).status == 201
+
+    closed = await _call(env.app, "post", who, f"{url}/status", json={"status": "consent"})
+    assert closed.status == status, closed.text
+    if status == 200:
+        assert closed.json["status"] == "consent"
+    elif refusal == MANAGE_DENIED:
+        assert closed.json["error"] == MANAGE_DENIED
+    else:
+        assert closed.json["code"] == ADVICE_CLOSE_PROPOSER_ONLY
+        assert closed.json["error"].startswith("The proposer closes advice.") and refusal in closed.json["error"]
+        assert closed.json["advice_deadline"] == (deadline.isoformat() if deadline else None)
+        # The page still lists the move for the steward, blocked, so it can say who decides.
+        detail = (await _call(env.app, "get", who, url)).json
+        assert (detail["status"], _next(detail, "consent")) == (
+            "advice", {"ready": True, "gate": "advice", "blocked": "proposer_closes_advice"})
+
+
+async def test_stewards_still_close_advice_on_a_legacy_proposal_with_no_author_to_act(env):
+    url = f"/api/v1/proposals/{LEGACY_PROPOSAL}"  # seeded in advice; its proposer text is Ben, no author link
+    assert (await _call(env.app, "post", "sol", f"{url}/advice", json={"content": "Keep it short"})).status == 201
+    assert (await _call(env.app, "post", "ben", f"{url}/status", json={"status": "consent"})).status == 403
+    assert _next((await _call(env.app, "get", "mo", url)).json, "consent")["blocked"] is None
+    closed = await _call(env.app, "post", "mo", f"{url}/status", json={"status": "consent"})
+    assert (closed.status, closed.json["status"]) == (200, "consent"), closed.text
+
+
+# Owner decision 2026-11-01 (no behaviour change): the author's own consent position counts toward the quorum.
+async def test_the_authors_own_consent_counts_toward_the_quorum(env):
+    proposal = await _create_proposal(env.app)
+    url = f"/api/v1/proposals/{proposal['id']}"
+    for who, path, body in (
+        ("ada", "/status", {"status": "advice"}),
+        ("ben", "/advice", {"content": "Add a rota"}),
+        ("ada", "/status", {"status": "consent"}),
+    ):
+        assert (await _call(env.app, "post", who, f"{url}{path}", json=body)).status in (200, 201)
+
+    own = await _call(env.app, "post", "ada", f"{url}/consent", json={"position": "consent"})
+    assert own.status == 201, own.text
+    assert (own.json["auto_transitions"], own.json["gates"]["consent"]["positions"]) == (["consent->test"], 1)
 
 
 async def test_a_legacy_objection_spelling_blocks_the_consent_gate(env):

@@ -200,7 +200,8 @@ async def logout(request: Request):
                     )
                     auth_session = result.scalar_one_or_none()
                     if auth_session:
-                        await session.delete(auth_session)
+                        # Expire, never delete: an agent token may reference the row (FK).
+                        auth_session.expires_at = datetime.now(timezone.utc)
                         await session.commit()
             except Exception:
                 logger.exception("Error during logout session cleanup")

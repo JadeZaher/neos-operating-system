@@ -68,6 +68,14 @@ Participation and management are separate:
   chat tool `update_proposal_status` all call
   `act_gates.transition_proposal(..., to=...)`, which applies the manage rule,
   the table and the gate (MCP forward moves used to skip the manage rule).
+  Closing advice is narrower than the manage rule (owner decision 2026-11-01,
+  `policy.can_close_advice`): the proposer at any time, another steward only
+  once the advice deadline has passed (403 `ADVICE_CLOSE_PROPOSER_ONLY`
+  before it, or always when no deadline is set); see `services/AGENTS.md`
+  "ACT lifecycle". The deadline is the author's to move, or the rule is void:
+  on a proposal with `proposer_member_id`, `PUT` changing `advice_deadline` by
+  anyone else is 403 `ADVICE_DEADLINE_AUTHOR_ONLY` (`policy.can_set_advice_deadline`;
+  an unchanged value is not a change); legacy proposals stay steward-editable.
 
 Advice integrity: blank advice is rejected with 400, because a blank entry would
 still count toward the advice gate. The author cannot advise their own proposal
@@ -124,7 +132,7 @@ for identity: `participant`, `declared_by`, `recorder`, `auditor`,
 | `create_proposal` | a member row in the scoped ecosystem | author (`proposer_member_id`); `proposer` is display text |
 | `record_advice` | not the author (`is_proposal_author`) | advisor |
 | `record_consent_position` | `can_participate`, then `act_gates.record_consent_position` (one position per member, as REST) | participant |
-| `update_proposal_status` | `transition_proposal` (manage rule, table, steward-only, `note` for send-backs, gate); withdraw and ratify need confirmation | actor |
+| `update_proposal_status` | `transition_proposal` (manage rule, table, steward-only, the proposer's advice close with `code` `ADVICE_CLOSE_PROPOSER_ONLY`, `note` for send-backs, gate); withdraw and ratify need confirmation | actor |
 | `create_agreement_draft` | `is_active_member_in` (REST: authorized ids) | proposer text defaults to the caller |
 | `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate); needs confirmation for active, sunset and archived, and when the automatic cascade after the ceremony would put it in force | conductor; the version never changes |
 | `create_decision_record` | `can_record_decision` (steward; no REST route, decisions are minted by ACT) | recorder |
@@ -177,13 +185,17 @@ same moves and leave the same status.
 | forward move with unmet gate | 409 + `gates` | `ValueError` with gates | refusal text |
 | advice | `POST /advice` (author refused) | `record_proposal_advice` | `record_advice` |
 | consent position | `POST /consent` (caller, body name ignored, one per member) | `submit_proposal_consent` (same engine call) | `record_consent_position` (same engine call) |
-| close advice | `POST /status consent` (manage rule) | `transition_proposal` | `update_proposal_status` |
+| close advice | `POST /status consent` (the proposer; a steward only after the deadline: 403 `ADVICE_CLOSE_PROPOSER_ONLY`) | `transition_proposal` (`ADVICE_CLOSE_PROPOSER_ONLY: ...`) | `update_proposal_status` (`code`) |
 | test report | `POST /test` (test stage, reporter recorded) | `submit_test_report` | `submit_test_report` |
 | ratify | `POST /status ratified` (steward only) | `transition_proposal` | `update_proposal_status` |
 | send back | `POST /status advice` + `note` | needs `note` (hand-off) | `update_proposal_status` + `note` |
 | withdraw | manage rule, non-terminal only | manage rule | manage rule |
 | agreement ceremony | `POST /agreements/:id/status` | `transition_agreement` | `update_agreement_status` (with `evidence`) |
 | agreement round / evidence | `POST /agreements/:id/ceremonies` | `record_agreement_ceremony` | `record_agreement_evidence` |
+
+`ADVICE_DEADLINE_SCRIPT` runs the advice close by a steward who did not write
+the proposal on each surface: refused before the deadline (the message names
+it), accepted the day after it.
 
 The agreement script also refuses short evidence, an unmet advice gate and a
 skipped stage on every surface, and checks that no surface changes the
@@ -563,7 +575,7 @@ adds on top:
 | `POST /proposals/:id/advice` | a non-active row is 403 (`CONSENT_PENDING` when pending; no row keeps the shared path); 409 outside advice; records `member_id` |
 | `POST /proposals/:id/test` | participation as advice; 409 outside test; records `reporter_member_id` (detail adds `reporter_name`) |
 | `PUT /proposals/:id` | author or steward; outside draft/advice any changed value is 409 `PROPOSAL_LOCKED` (see "The text members decide on") |
-| `POST /proposals/:id/status` | `{status, note}`; `note` required to send back (consent/test -> advice); `ratified` needs a steward who is not the author (`policy.can_confirm_ratification`; the author-steward, or on a legacy proposal the steward its proposer text names, gets 403 `code: NEEDS_ANOTHER_STEWARD`); no withdrawal once ratified or withdrawn |
+| `POST /proposals/:id/status` | `{status, note}`; `consent` (close advice): the proposer, or another steward once the advice deadline has passed (`policy.can_close_advice`; else 403 `code: ADVICE_CLOSE_PROPOSER_ONLY` with `advice_deadline`; legacy unlinked proposals: any steward); `note` required to send back (consent/test -> advice); `ratified` needs a steward who is not the author (`policy.can_confirm_ratification`; the author-steward, or on a legacy proposal the steward its proposer text names, gets 403 `code: NEEDS_ANOTHER_STEWARD`); no withdrawal once ratified or withdrawn |
 | `POST /proposals/:id/register-agreement` | `agreements.register_ratified_proposal`; `policy.can_register_agreement` (active mod+ of the ecosystem); proposal row locked; 409 unless ratified, unregistered and with captured `ratified_text` |
 | `PUT /members/:id` | self only; a `profile` that confers administration (co_creator, builder) is 403 `PROFILE_GRANT_ONLY` unless already held (`policy.can_choose_own_profile`); `POST /members` likewise |
 | `PUT /members/:id/role` | `policy.can_assign_role` (owner decision) and a recorded `MemberStatusTransition` |
@@ -631,12 +643,34 @@ registered. A ratified, unregistered proposal is a `register_agreement` item in
 every active steward's queue until one registers it (services/AGENTS.md "Next
 steps").
 
+Ceremonies are the recorded stage moves (owner decision 2026-11-01): every
+`AgreementCeremony` row is written by a stage move (`act_gates._enter_agreement_stage`),
+an advice round or test evidence (`POST /agreements/:id/ceremonies`) or a
+registration. There is no separate "record a held ceremony" route, and the
+client copy (admin role card, the agreement page's ceremonies box) says so.
+
 `PUT /agreements/:id` bumps the version only when `title` or `text` changes
 (`VERSIONED_FIELDS`): a review-date edit used to void every attestation.
 `agreements.record_member_consent` is the one consent write (row, alignment
 ledger, pending-membership activation); REST and MCP `attest_agreement_consent`
 both call it, so MCP consent now credits the ledger and refuses outside the
 consent-open stages.
+
+### Profile name is the member name (owner decision 2026-11-01)
+
+`PUT /api/v1/profiles/me` with `display_name` also writes that name to every
+`Member` row of the user (`profiles._rename_member_rows`, any ecosystem, any
+status, same transaction), so the sidebar (`/auth/me` reads the member row),
+governance pages and the public profile agree. Names are presentational only:
+every rule matches member ids (`policy`), and the one name comparison,
+`is_legacy_proposer_named`, can only refuse, never grant. That refusal exists
+only on LEGACY proposals (no `proposer_member_id`): it stops the person named
+in the free-text proposer from self-confirming ratification, so renaming
+yourself away from that text sidesteps that one extra refusal. Linked
+proposals match by member id and are unaffected. A rename never grants
+authority. History keeps the words it was written with (advice
+and consent rows store the name at the time). `PUT /members/:id` still edits
+one row's `display_name`; the next profile save overwrites it.
 
 ### Role grants (owner decision)
 

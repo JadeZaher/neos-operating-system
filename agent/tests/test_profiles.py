@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 import uuid
 
 import pytest
+from sanic import Sanic
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from neos_agent.api.profiles import _build_profile_response
+from neos_agent.api.errors import register_api_errors
+from neos_agent.api.members import members_api_bp
+from neos_agent.api.profiles import _build_profile_response, profiles_api_bp
 from neos_agent.api.schemas.profiles import ProfileUpdateRequest
 from neos_agent.api.discover import (
     _require_auth_for_shares_needs,
@@ -305,3 +311,52 @@ async def test_publication_mutation_is_author_only_except_for_admins(db_session)
     )
     assert error is None
     assert admin_record.id == publication.id
+
+
+# ---------------------------------------------------------------------------
+# Owner decision 2026-11-01: the profile name is the member name in every ecosystem
+# ---------------------------------------------------------------------------
+
+
+async def test_saving_the_profile_name_renames_every_membership_and_governance_reads_show_it(db_engine):
+    oasis, river = (Ecosystem(id=uuid.uuid4(), name=name, status="active") for name in ("Oasis", "River House"))
+    kai, ines = User(id=uuid.uuid4(), display_name="Kai"), User(id=uuid.uuid4(), display_name="Ines")
+    rows = {
+        "kai-oasis": Member(id=uuid.uuid4(), ecosystem_id=oasis.id, user_id=kai.id, member_id="kai-oasis",
+                            display_name="Kai", current_status="active", role="mod"),
+        "kai-river": Member(id=uuid.uuid4(), ecosystem_id=river.id, user_id=kai.id, member_id="kai-river",
+                            display_name="Kai R.", current_status="pending_consent"),
+        "ines-oasis": Member(id=uuid.uuid4(), ecosystem_id=oasis.id, user_id=ines.id, member_id="ines-oasis",
+                             display_name="Ines", current_status="active"),
+    }
+    factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        session.add_all([oasis, river, kai, ines])
+        await session.flush()
+        session.add_all(rows.values())
+        await session.commit()
+
+    app = Sanic(f"test-profile-name-{uuid.uuid4().hex[:8]}")
+    app.ctx.settings, app.ctx.db = MagicMock(), factory
+    register_api_errors(app)
+
+    @app.on_request
+    async def sign_in_as_kai(request):
+        request.ctx.user = User(id=kai.id, display_name="Kai")
+        request.ctx.member = Member(id=rows["kai-oasis"].id, ecosystem_id=oasis.id, user_id=kai.id,
+                                    member_id="kai-oasis", display_name="Kai", current_status="active", role="mod")
+        request.ctx.selected_ecosystem_ids = request.ctx.authorized_ecosystem_ids = [oasis.id, river.id]
+
+    app.blueprint(profiles_api_bp)
+    app.blueprint(members_api_bp)
+
+    _, saved = await app.asgi_client.put("/api/v1/profiles/me", json={"display_name": "  Kai Rivers "})
+    assert saved.status == 200, saved.text
+    assert saved.json["profile"]["display_name"] == "Kai Rivers"
+
+    async with factory() as session:
+        stored = {row.member_id: row.display_name for row in (await session.execute(select(Member))).scalars()}
+    assert stored == {"kai-oasis": "Kai Rivers", "kai-river": "Kai Rivers", "ines-oasis": "Ines"}  # only Kai's rows
+    for key in ("kai-oasis", "kai-river"):  # the governance read every page and the sidebar's session use
+        _, detail = await app.asgi_client.get(f"/api/v1/members/{rows[key].id}")
+        assert (detail.status, detail.json["display_name"]) == (200, "Kai Rivers"), key

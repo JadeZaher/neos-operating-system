@@ -355,13 +355,32 @@ async def test_the_advice_banner_says_the_author_closes_advice_to_each_viewer(en
 
     said = {who: await _explain(env, who, proposal_id) for who in ("ada", "mo", "cy")}
     assert "You decide when to close advice and move it to consent: nothing moves by itself." in said["ada"]["next_step"]
-    assert "Ada wrote it and decides when to close advice; as a steward you can also close it for them." in said["mo"]["next_step"]
+    # A steward is never told "you decide" (owner decision 2026-11-01): with no deadline only the proposer can.
+    assert ("Ada wrote it and closes advice. There is no advice deadline, so only Ada can close it."
+            in said["mo"]["next_step"])
     assert "Ada wrote it and decides when to close advice and move it to consent." in said["cy"]["next_step"]
     assert all("or a steward moves it" not in s["next_step"] for s in said.values())
-    assert {s["decided_by"] for s in said.values()} == {"Ada, who wrote it (a steward can act for them)"}
+    assert {s["decided_by"] for s in said.values()} == {"Ada, who wrote it"}
     assert said["ada"]["next_step"].startswith("Advice stage: 1 of 1 advice round has advice.")
     # The page's done state: the advisor sees they advised in this round, nobody else does.
     assert [(await _detail(env, who, proposal_id))["caller_has_advised"] for who in ("ben", "cy")] == [True, False]
+
+    # With a deadline the steward is told when they may act, and once it has passed that they may.
+    for deadline, steward_words, decided_by in (
+        (dt.date.today() + dt.timedelta(days=2), "You can close it after the advice deadline ({date}) if they haven't.",
+         "Ada, who wrote it (a steward can close it for them after the advice deadline, {date})"),
+        (dt.date.today() - dt.timedelta(days=1),
+         "The advice deadline ({date}) has passed, so as a steward you can close it for them if they haven't.",
+         "Ada, who wrote it; the advice deadline has passed, so a steward can close it for them"),
+    ):
+        async with env.db() as session:
+            await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id))
+                                  .values(advice_deadline=deadline))
+            await session.commit()
+        steward = await _explain(env, "mo", proposal_id)
+        assert steward_words.format(date=deadline.isoformat()) in steward["next_step"], steward["next_step"]
+        assert steward["decided_by"] == decided_by.format(date=deadline.isoformat())
+        assert "You decide" not in steward["next_step"]
 
 
 async def test_a_passed_report_hands_off_to_named_stewards_then_registration_waits_in_their_lists(env):

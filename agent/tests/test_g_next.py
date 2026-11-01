@@ -34,7 +34,7 @@ from neos_agent.api.proposals import proposals_api_bp
 from neos_agent.api.safeguards import safeguards_api_bp
 from neos_agent.auth.ecosystem_scope import EcosystemScope
 from neos_agent.db.models import Agreement, Base, EmergencyState, Ecosystem, Member, Proposal, User
-from neos_agent.services.next_steps import ADVICE_DEADLINE_PROMPT, ADVICE_READY_PROMPT
+from neos_agent.services.next_steps import ADVICE_DEADLINE_PROMPT, ADVICE_DEADLINE_STEWARD_PROMPT, ADVICE_READY_PROMPT
 
 OASIS = uuid.UUID("0000000e-0000-0000-0000-000000000001")
 RIVER = uuid.UUID("0000000e-0000-0000-0000-000000000002")
@@ -218,8 +218,9 @@ async def test_items_leave_the_queue_once_done_and_the_owner_decisions_shape_the
     await _advise(env, "ben", proposal_id)
     assert ADVISE not in await _items(env, "ben") and ADVISE in await _items(env, "cy")
 
-    # Advice closes on the proposer's call: prompted as soon as the gate is met (the deadline only firms the words),
-    # and never a steward's prompt.
+    # Advice closes on the proposer's call: prompted as soon as the gate is met (the deadline only firms the words).
+    # A steward who did not write it is asked only once the deadline has passed (owner decision 2026-11-01).
+    close = ("close_advice", "Bike shed")
     deadline = dt.date.today() + dt.timedelta(days=3)
     async with env.db() as session:
         await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id)).values(advice_deadline=deadline))
@@ -227,17 +228,23 @@ async def test_items_leave_the_queue_once_done_and_the_owner_decisions_shape_the
     [early] = [i for i in (await _queue(env, "ada"))["items"] if i["kind"] == "proposal"]
     assert (early["action"], early["what"], early["due"], early["overdue"]) == (
         "close_advice", ADVICE_READY_PROMPT, deadline.isoformat(), False)
+    assert {who for who in OASIS_MEMBERS if close in await _items(env, who)} == {"ada"}
     async with env.db() as session:
         await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id))
                               .values(advice_deadline=dt.date.today() - dt.timedelta(days=1)))
         await session.commit()
     [prompt] = [i for i in (await _queue(env, "ada"))["items"] if i["kind"] == "proposal"]
     assert (prompt["action"], prompt["what"], prompt["overdue"]) == ("close_advice", ADVICE_DEADLINE_PROMPT, True)
-    assert ("close_advice", "Bike shed") not in await _items(env, "mo")
+    # The proposer has not closed it and the deadline has passed: every steward may close it for her.
+    assert {who for who in OASIS_MEMBERS if close in await _items(env, who)} == {"ada", "mo", "sol", "ari"}
+    [for_her] = [i for i in (await _queue(env, "mo"))["items"] if i["action"] == "close_advice"]
+    assert (for_her["what"], for_her["overdue"]) == (ADVICE_DEADLINE_STEWARD_PROMPT, True)
+    assert for_her["why"].startswith("Ada wrote it and has not closed advice.")
     async with env.db() as session:
         assert (await session.get(Proposal, uuid.UUID(proposal_id))).status == "advice"  # the deadline moved nothing
 
     await _call(env, "post", "ada", f"/api/v1/proposals/{proposal_id}/status", expect=200, json={"status": "consent"})
+    assert all([close not in await _items(env, who) for who in OASIS_MEMBERS])  # closed: nobody is asked again
     position = ("record_position", "Bike shed")
     assert all([position in await _items(env, who) for who in OASIS_MEMBERS])
     await _call(env, "post", "ben", f"/api/v1/proposals/{proposal_id}/consent", expect=201, json={"position": "consent"})
@@ -304,8 +311,11 @@ async def test_explain_offers_exactly_the_moves_the_engine_accepts(env):
         explained = (await _explain(env, who, "proposal", world.proposal)).json
         assert [m["move"] for m in explained["your_moves"]] == [m["to"] for m in detail.get("allowed_next") or []], who
     explained = (await _explain(env, "ada", "proposal", world.proposal)).json
-    # The proposer closes advice (owner decision); the current manage rule lets a steward act for her.
-    assert (explained["state"], explained["decided_by"]) == ("Advice", "Ada, who wrote it (a steward can act for them)")
+    # The proposer closes advice; with no deadline set, no steward can close it for her (owner decision 2026-11-01).
+    assert (explained["state"], explained["decided_by"]) == ("Advice", "Ada, who wrote it")
+    [blocked] = [m for m in (await _explain(env, "mo", "proposal", world.proposal)).json["your_moves"] if m["move"] == "consent"]
+    assert (blocked["ready"], blocked["blocked"]) == (True, "proposer_closes_advice")
+    await _call(env, "post", "mo", f"/api/v1/proposals/{world.proposal}/status", expect=403, json={"status": "consent"})
 
     # Emergency: what each member may do with a pending declaration, then the move itself.
     moves = {who: [m["move"] for m in (await _explain(env, who, "emergency", world.emergency)).json["your_moves"]]

@@ -316,6 +316,9 @@ def test_foundation_contains_global_rules():
      "- advice -> consent: by itself once the advice rounds it needs have advice."),
     (dict(source="advice", target="consent", gate="advice"),
      "- advice -> consent: the author or a steward moves it, once the advice rounds it needs have advice."),
+    (dict(source="advice", target="consent", gate="advice", proposer_until_deadline=True),
+     "- advice -> consent: the author moves it, once the advice rounds it needs have advice; another steward only "
+     "after the advice deadline has passed and the author has not (no deadline: only the author)."),
     (dict(source="test", target="ratified", gate="test", steward_only=True),
      "- test -> ratified: a steward who did not write it confirms it once the test evidence is in."),
 ])
@@ -327,8 +330,10 @@ def test_act_guide_follows_the_lifecycle_table(monkeypatch, move, line):
     monkeypatch.setattr(system_prompt, "PROPOSAL_LIFECYCLE", Lifecycle(moves=(Move(**move),), withdrawn="withdrawn"))
     prompt = build_foundation_prompt(["OmniOne"], [])
     assert line in prompt
-    # Only a steward-confirmed move brings the "another steward confirms" guidance.
+    # Only a steward-confirmed move brings the "another steward confirms" guidance; only the proposer's
+    # advice close brings the ADVICE_CLOSE_PROPOSER_ONLY guidance.
     assert ("another member the moderator role" in prompt) is bool(move.get("steward_only"))
+    assert ("ADVICE_CLOSE_PROPOSER_ONLY" in prompt) is bool(move.get("proposer_until_deadline"))
 
 
 # ---------------------------------------------------------------------------
