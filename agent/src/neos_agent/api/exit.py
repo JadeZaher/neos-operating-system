@@ -21,7 +21,10 @@ from sanic.request import Request
 from sqlalchemy import func, or_, select
 
 from neos_agent.db.models import ExitRecord
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated
+from neos_agent.api.helpers import get_ecosystem_ids, apply_ecosystem_name_filter, parse_pagination, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.exit import ExitCreateRequest, ExitDetail, ExitListItem, ExitStatusRequest
 
 logger = logging.getLogger(__name__)
@@ -86,27 +89,20 @@ def _exit_to_detail(r: ExitRecord) -> dict:
 
 
 @exit_api_bp.get("/")
+@authenticated
 async def list_exits(request: Request):
     """GET /api/v1/exit -- paginated list with filters.
 
     Query params: status, exit_type, q (search departure_notice),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
+    page = parse_pagination(request)
 
     async with request.app.ctx.db() as session:
         stmt = select(ExitRecord).order_by(ExitRecord.created_at.desc())
 
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
+        stmt = restrict_to_ecosystems(stmt, ExitRecord, eco_ids)
         stmt = apply_ecosystem_name_filter(stmt, ExitRecord, request)
 
         status = request.args.get("status")
@@ -126,61 +122,44 @@ async def list_exits(request: Request):
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
 
-        stmt = stmt.offset(offset).limit(per_page)
+        stmt = stmt.offset(page.offset).limit(page.per_page)
         result = await session.execute(stmt)
         exits = result.scalars().all()
 
     return json({
         "items": [_exit_to_list_item(r) for r in exits],
         "total": total,
-        "page": page,
-        "per_page": per_page,
+        "page": page.page,
+        "per_page": page.per_page,
     })
 
 
 @exit_api_bp.get("/<exit_id:uuid>")
+@authenticated
 async def get_exit(request: Request, exit_id: uuid.UUID):
     """GET /api/v1/exit/:id -- exit process detail with unwinding tracker."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
-
-        result = await session.execute(stmt)
-        record = result.scalar_one_or_none()
-
-    if record is None:
-        return json({"error": "Exit record not found"}, status=404)
+        record = await get_scoped_or_404(session, request, ExitRecord, exit_id, label="Exit record")
 
     return json(_exit_to_detail(record))
 
 
 @exit_api_bp.post("/")
+@authenticated
 async def create_exit(request: Request):
     """POST /api/v1/exit -- initiate an exit process.
 
     Accepts JSON: ExitCreateRequest
     Returns JSON: ExitDetail with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = ExitCreateRequest(**body)
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied: ecosystem not in scope"}, status=403)
+    if create_req.ecosystem_id not in get_ecosystem_ids(request):
+        raise ApiError(403, "Access denied: ecosystem not in scope")
 
     now = _dt.datetime.now(timezone.utc)
     cooling_days = 30 if create_req.exit_type == "standard" else 7
@@ -211,34 +190,21 @@ async def create_exit(request: Request):
 
 
 @exit_api_bp.post("/<exit_id:uuid>/status")
+@authenticated
 async def status_transition(request: Request, exit_id: uuid.UUID):
     """POST /api/v1/exit/:id/status -- transition exit status.
 
     Accepts JSON: {"new_status": "..."}
     Returns JSON: ExitDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         status_req = ExitStatusRequest(**body)
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
 
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        stmt = select(ExitRecord).where(ExitRecord.id == exit_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, ExitRecord, eco_ids)
-
-        result = await session.execute(stmt)
-        record = result.scalar_one_or_none()
-
-        if record is None:
-            return json({"error": "Exit record not found"}, status=404)
+        record = await get_scoped_or_404(session, request, ExitRecord, exit_id, label="Exit record")
 
         old_status = record.status
         record.status = status_req.new_status

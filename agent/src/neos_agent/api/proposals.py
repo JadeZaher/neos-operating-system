@@ -29,11 +29,18 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
-from neos_agent.api.helpers import ROLE_RANK, require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import apply_ecosystem_name_filter, build_search_filter, get_ecosystem_ids, parse_pagination, serialize_shared_ecosystem_ids
+from neos_agent.api.policy import can_manage_proposal, can_participate, is_proposal_author
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.act_gates import (
-    maybe_auto_advance_proposal,
+    MANAGE_DENIED,
+    ActOutcome,
+    consent_position,
     normalize_act_policy,
     proposal_gate_status,
+    transition_proposal,
 )
 from neos_agent.api.schemas.proposals import (
     AdviceEntryCreateRequest,
@@ -65,95 +72,42 @@ proposals_api_bp = Blueprint("proposals_api", url_prefix="/api/v1/proposals")
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Valid status transitions: current_status -> set of allowed next statuses
-_VALID_TRANSITIONS: dict[str, set[str]] = {
-    "created": {"advice", "withdrawn"},  # legacy chat-assistant drafts
-    "draft": {"advice", "withdrawn"},
-    "advice": {"consent", "withdrawn"},
-    "consent": {"test", "withdrawn"},
-    "test": {"ratified", "withdrawn"},
-}
-
 
 def _escape_like(value: str) -> str:
     """Escape special characters for SQL LIKE patterns."""
     return value.replace("%", "\\%").replace("_", "\\_")
 
 
-# Manage rule: see api/AGENTS.md "Proposal authorship and manage rule".
-MANAGE_DENIED = "Only the proposer or an ecosystem steward can change this proposal"
+# Manage rule: see api/AGENTS.md "Proposal authorship and manage rule" (MANAGE_DENIED lives with the engine).
 SELF_ADVICE_DENIED = "The proposer gathers advice and cannot advise their own proposal"
-
-
-async def caller_member(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
-    """The caller's Member row in one ecosystem (request.ctx.member is an arbitrary row)."""
-    if user_id is None:
-        return None
-    return await session.scalar(select(Member).where(
-        Member.user_id == user_id,
-        Member.ecosystem_id == ecosystem_id,
-    ))
-
-
-def is_proposal_author(caller: Member | None, proposal: Proposal) -> bool:
-    """True when the caller's member row is the proposal's recorded author."""
-    return (
-        caller is not None
-        and proposal.proposer_member_id is not None
-        and caller.id == proposal.proposer_member_id
-    )
-
-
-def can_manage_proposal(caller: Member | None, proposal: Proposal) -> bool:
-    """Author or ecosystem steward (mod+); a proposal with no author link is steward-only."""
-    if caller is None:
-        return False
-    return is_proposal_author(caller, proposal) or ROLE_RANK.get(caller.role, 0) >= ROLE_RANK["mod"]
 
 
 def _attach_caller_flags(payload: dict, caller: Member | None, proposal: Proposal) -> None:
     """Caller standing in the proposal's ecosystem: participate vs manage."""
     payload["caller_role"] = caller.role if caller else None
-    payload["caller_can_conduct"] = caller is not None
+    payload["caller_can_conduct"] = can_participate(caller, proposal)
     payload["caller_can_manage"] = can_manage_proposal(caller, proposal)
     payload["caller_is_proposer"] = is_proposal_author(caller, proposal)
 
 
-# The ACT gate a forward move must clear (draft -> advice opens the process, ungated).
-_GATE_FOR_TARGET = {"consent": "advice", "test": "consent", "ratified": "test"}
+def _detail_options() -> tuple:
+    """Eager loads the detail payload reads (async sessions cannot lazy-load)."""
+    return (
+        selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
+        selectinload(Proposal.consent_records).selectinload(ConsentRecord.participants),
+        selectinload(Proposal.test_reports).selectinload(TestReport.success_criteria),
+    )
 
 
-async def manual_transition_error(session, proposal: Proposal, new_status: str) -> tuple[int, dict] | None:
-    """Why a manual status move is refused as (HTTP status, body); None when it may proceed.
-
-    Shared by REST POST /status and the chat assistant's update_proposal_status;
-    the manage rule is checked separately by the caller.
-    """
-    if new_status == "withdrawn":
-        return None
-    current = proposal.status
-    allowed = _VALID_TRANSITIONS.get(current, set())
-    if new_status not in allowed:
-        return 400, {
-            "error": f"Invalid transition from '{current}' to '{new_status}'",
-            "allowed": sorted(allowed | {"withdrawn"}),
-        }
-    gate_key = _GATE_FOR_TARGET.get(new_status)
-    if gate_key:
-        gates = await proposal_gate_status(session, proposal)
-        if not gates[gate_key]["met"]:
-            return 409, {
-                "error": f"The {gate_key} gate is not satisfied — the conditions declared in the ACT policy must be met first",
-                "gates": gates,
-            }
-    return None
+async def _reload_for_detail(session, proposal_id: uuid.UUID) -> Proposal:
+    """The proposal with every relationship the detail payload reads."""
+    statement = select(Proposal).where(Proposal.id == proposal_id).options(*_detail_options())
+    return (await session.execute(statement)).scalar_one()
 
 
-
-def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = None):
-    """Apply query-param filters to a Proposal select statement."""
-    if eco_ids:
-        stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
+def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID]):
+    """Apply query-param filters to a Proposal select statement (no ecosystems -> no rows)."""
+    stmt = restrict_to_ecosystems(stmt, Proposal, eco_ids)
     stmt = apply_ecosystem_name_filter(stmt, Proposal, request)
 
     phase = request.args.get("phase")
@@ -344,6 +298,17 @@ async def _attach_gate_context(session, proposal: Proposal, payload: dict) -> No
             }
 
 
+async def _proposal_detail_payload(session, proposal: Proposal, caller: Member | None,
+                                   outcome: ActOutcome | None = None) -> dict:
+    """Detail JSON: effective gates and governing agreement, the ACT outcome when one ran, caller standing."""
+    payload = _proposal_to_detail(proposal).model_dump(mode="json")
+    await _attach_gate_context(session, proposal, payload)
+    if outcome is not None:
+        outcome.attach(payload)
+    _attach_caller_flags(payload, caller, proposal)
+    return payload
+
+
 async def _validate_governing_agreement(session, proposal_ecosystem_id: uuid.UUID, agreement_id: uuid.UUID | None) -> str | None:
     """The governing agreement must exist in the proposal's own ecosystem."""
     if agreement_id is None:
@@ -362,121 +327,65 @@ async def _validate_governing_agreement(session, proposal_ecosystem_id: uuid.UUI
 
 
 @proposals_api_bp.get("/")
+@authenticated
 async def list_proposals(request: Request):
     """GET /api/v1/proposals -- Paginated proposal list with filtering.
 
-    Query params: phase, type, domain, urgency, q, page (default 1), per_page (default 20).
+    Query params: phase, type, domain, urgency, q, page (default 1), per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
-    page = int(request.args.get("page", 1))
-    per_page = min(int(request.args.get("per_page", 20)), 100)
-    offset = (page - 1) * per_page
+    page = parse_pagination(request)  # default 25 like every other list (was 20), on purpose
 
     async with request.app.ctx.db() as session:
         stmt = select(Proposal).order_by(Proposal.created_at.desc())
-        stmt = _apply_filters(stmt, request, eco_ids=eco_ids or None)
-
-        # Total count
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = await session.scalar(count_stmt) or 0
-
-        # Paginate
-        stmt = stmt.offset(offset).limit(per_page)
-        result = await session.execute(stmt)
-        proposals = result.scalars().all()
+        stmt = _apply_filters(stmt, request, get_ecosystem_ids(request))
+        total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        proposals = (await session.execute(stmt.offset(page.offset).limit(page.per_page))).scalars().all()
 
     items = [_proposal_to_list_item(p).model_dump(mode="json") for p in proposals]
-    return json({"items": items, "total": total, "page": page, "per_page": per_page})
+    return json({"items": items, "total": total, "page": page.page, "per_page": page.per_page})
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>")
+@authenticated
 async def get_proposal(request: Request, proposal_id: uuid.UUID):
-    """GET /api/v1/proposals/:id -- Proposal detail with nested relationships.
-
-    Eager-loads advice_logs.entries, consent_records.participants,
-    test_reports.success_criteria.
-    """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    """GET /api/v1/proposals/:id -- Proposal detail with nested relationships, gates and caller standing."""
     async with request.app.ctx.db() as session:
-        stmt = (
-            select(Proposal)
-            .where(Proposal.id == proposal_id)
-            .options(
-                selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
-                selectinload(Proposal.consent_records).selectinload(
-                    ConsentRecord.participants
-                ),
-                selectinload(Proposal.test_reports).selectinload(
-                    TestReport.success_criteria
-                ),
-            )
+        proposal = await get_scoped_or_404(
+            session, request, Proposal, proposal_id, options=_detail_options(), label="Proposal",
         )
-
-        # Scope to authorized ecosystems
-        eco_ids = get_authorized_ecosystem_ids(request)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
-
-        result = await session.execute(stmt)
-        proposal = result.scalar_one_or_none()
-
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
-
-        # Any member row may participate (advice/consent/test); editing and
-        # manual status moves need the manage rule (author or mod+).
-        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
-
-        detail = _proposal_to_detail(proposal)
-        payload = detail.model_dump(mode="json")
-        await _attach_gate_context(session, proposal, payload)
-        _attach_caller_flags(payload, caller, proposal)
-        return json(payload)
+        caller = await caller_in(session, request, proposal.ecosystem_id)
+        return json(await _proposal_detail_payload(session, proposal, caller))
 
 
 @proposals_api_bp.post("/")
+@authenticated
 async def create_proposal(request: Request):
     """POST /api/v1/proposals -- Create a new proposal.
 
     Accepts JSON: ProposalCreateRequest
     Returns JSON: ProposalDetail with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = ProposalCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
-    # Verify ecosystem access
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied to this ecosystem"}, status=403)
+    if create_req.ecosystem_id not in get_ecosystem_ids(request):
+        raise ApiError(403, "Access denied to this ecosystem")
 
-    short_id = uuid.uuid4().hex[:8].upper()
-    proposal_id_str = f"PROP-{short_id}"
+    proposal_id_str = f"PROP-{uuid.uuid4().hex[:8].upper()}"
 
     async with request.app.ctx.db() as session:
         link_error = await _validate_governing_agreement(
             session, create_req.ecosystem_id, create_req.governing_agreement_id
         )
         if link_error:
-            return json({"error": link_error}, status=400)
+            raise ApiError(400, link_error)
         # The caller is the author; the proposer text may still name someone
         # else (proposing on their behalf) and defaults to the caller's name.
-        author = await caller_member(session, member.user_id, create_req.ecosystem_id)
+        author = await caller_in(session, request, create_req.ecosystem_id)
         proposer_text = (create_req.proposer or "").strip() or (author.display_name if author else None)
         proposal = Proposal(
             id=uuid.uuid4(),
@@ -503,74 +412,37 @@ async def create_proposal(request: Request):
         )
         session.add(proposal)
         await session.commit()
-        await session.refresh(proposal)
 
-        # Re-load with relationships for the detail response
-        stmt = (
-            select(Proposal)
-            .where(Proposal.id == proposal.id)
-            .options(
-                selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
-                selectinload(Proposal.consent_records).selectinload(
-                    ConsentRecord.participants
-                ),
-                selectinload(Proposal.test_reports).selectinload(
-                    TestReport.success_criteria
-                ),
-            )
-        )
-        result = await session.execute(stmt)
-        proposal = result.scalar_one()
-
-        detail = _proposal_to_detail(proposal)
-        payload = detail.model_dump(mode="json")
-        await _attach_gate_context(session, proposal, payload)
-        _attach_caller_flags(payload, author, proposal)
-        return json(payload, status=201)
+        proposal = await _reload_for_detail(session, proposal.id)
+        return json(await _proposal_detail_payload(session, proposal, author), status=201)
 
 
 @proposals_api_bp.put("/<proposal_id:uuid>")
+@authenticated
 async def update_proposal(request: Request, proposal_id: uuid.UUID):
     """PUT /api/v1/proposals/:id -- Update non-None fields of a proposal.
 
     Accepts JSON: ProposalUpdateRequest
     Returns JSON: ProposalDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = ProposalUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
     async with request.app.ctx.db() as session:
-        # Scope to authorized ecosystems
-        eco_ids = get_authorized_ecosystem_ids(request)
-        stmt = select(Proposal).where(Proposal.id == proposal_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
-
-        result = await session.execute(stmt)
-        proposal = result.scalar_one_or_none()
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
-
-        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
+        proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
+        caller = await caller_in(session, request, proposal.ecosystem_id)
         if not can_manage_proposal(caller, proposal):
-            return json({"error": MANAGE_DENIED}, status=403)
+            raise ApiError(403, MANAGE_DENIED)
 
         # Update non-None fields. act_policy / governing_agreement_id use
         # explicit-null semantics: present-and-null CLEARS the declaration so
         # the proposal inherits its gates from the governing agreement.
         update_data = update_req.model_dump(exclude_none=True)
         if ("act_policy" in body or "governing_agreement_id" in body) and proposal.status not in {"draft", "advice"}:
-            return json(
-                {"error": "ACT gates can only be redeclared while the proposal is in draft or advice"},
-                status=409,
-            )
+            raise ApiError(409, "ACT gates can only be redeclared while the proposal is in draft or advice")
         if "act_policy" in body:
             update_data["act_policy"] = (
                 normalize_act_policy(update_req.act_policy.model_dump())
@@ -581,7 +453,7 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
                 session, proposal.ecosystem_id, update_req.governing_agreement_id
             )
             if link_error:
-                return json({"error": link_error}, status=400)
+                raise ApiError(400, link_error)
             update_data["governing_agreement_id"] = update_req.governing_agreement_id
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
@@ -592,180 +464,85 @@ async def update_proposal(request: Request, proposal_id: uuid.UUID):
 
         await session.commit()
 
-        # Re-load with relationships
-        stmt = (
-            select(Proposal)
-            .where(Proposal.id == proposal_id)
-            .options(
-                selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
-                selectinload(Proposal.consent_records).selectinload(
-                    ConsentRecord.participants
-                ),
-                selectinload(Proposal.test_reports).selectinload(
-                    TestReport.success_criteria
-                ),
-            )
-        )
-        result = await session.execute(stmt)
-        proposal = result.scalar_one()
-
-        detail = _proposal_to_detail(proposal)
-        payload = detail.model_dump(mode="json")
-        await _attach_gate_context(session, proposal, payload)
-        _attach_caller_flags(payload, caller, proposal)
-        return json(payload)
+        proposal = await _reload_for_detail(session, proposal_id)
+        return json(await _proposal_detail_payload(session, proposal, caller))
 
 
 @proposals_api_bp.post("/<proposal_id:uuid>/status")
+@authenticated
 async def transition_status(request: Request, proposal_id: uuid.UUID):
-    """POST /api/v1/proposals/:id/status -- Transition proposal status.
+    """POST /api/v1/proposals/:id/status -- Manual ACT move through the transition engine.
 
     Accepts JSON: {"status": "advice"}
-    Valid transitions: draft->advice, advice->consent, consent->test,
-    test->ratified, any->withdrawn.
-    Returns JSON: ProposalDetail
+    Moves and gates: services/act_gates.py PROPOSAL_LIFECYCLE (any status may move to withdrawn).
+    Returns JSON: ProposalDetail plus auto_transitions (and decision_record_id when minted).
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     new_status = body.get("status")
     if not new_status:
-        return json({"error": "\"status\" field is required"}, status=400)
+        raise ApiError(400, "\"status\" field is required")
 
     async with request.app.ctx.db() as session:
-        eco_ids = get_authorized_ecosystem_ids(request)
-        stmt = select(Proposal).where(Proposal.id == proposal_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Proposal, eco_ids)
-
-        result = await session.execute(stmt)
-        proposal = result.scalar_one_or_none()
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
-
-        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
-        if not can_manage_proposal(caller, proposal):
-            return json({"error": MANAGE_DENIED}, status=403)
-
+        proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
+        caller = await caller_in(session, request, proposal.ecosystem_id)
         current = proposal.status
-
-        # Transition table + ACT gates (any status may move to withdrawn).
-        refusal = await manual_transition_error(session, proposal, new_status)
-        if refusal is not None:
-            status_code, body = refusal
-            return json(body, status=status_code)
-
-        proposal.status = new_status
-        # Cascade through any further gates now satisfied (mints the decision
-        # artifact when the process completes at ratified).
-        advance = await maybe_auto_advance_proposal(session, proposal)
+        outcome = await transition_proposal(session, proposal, to=new_status, caller=caller)
         await session.commit()
 
-        logger.info(
-            "Proposal %s status: %s -> %s", proposal_id, current, advance["status"]
-        )
+        logger.info("Proposal %s status: %s -> %s", proposal_id, current, outcome.status)
 
-        # Re-load with relationships
-        stmt = (
-            select(Proposal)
-            .where(Proposal.id == proposal_id)
-            .options(
-                selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
-                selectinload(Proposal.consent_records).selectinload(
-                    ConsentRecord.participants
-                ),
-                selectinload(Proposal.test_reports).selectinload(
-                    TestReport.success_criteria
-                ),
-            )
-        )
-        result = await session.execute(stmt)
-        proposal = result.scalar_one()
-
-        detail = _proposal_to_detail(proposal)
-        payload = detail.model_dump(mode="json")
-        await _attach_gate_context(session, proposal, payload)
-        payload["auto_transitions"] = advance["transitions"]
-        if advance["decision_record_id"]:
-            payload["decision_record_id"] = advance["decision_record_id"]
-        _attach_caller_flags(payload, caller, proposal)
-        return json(payload)
+        proposal = await _reload_for_detail(session, proposal_id)
+        return json(await _proposal_detail_payload(session, proposal, caller, outcome))
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/advice")
+@authenticated
 async def get_advice(request: Request, proposal_id: uuid.UUID):
     """GET /api/v1/proposals/:id/advice -- Advice logs with entries.
 
     Returns JSON: {"advice_logs": [...]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        if await session.scalar(p_stmt) is None:
-            return json({"error": "Proposal not found"}, status=404)
-
+        await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
         stmt = (
             select(AdviceLog)
             .where(AdviceLog.proposal_id == proposal_id)
             .options(selectinload(AdviceLog.entries))
             .order_by(AdviceLog.created_at.desc())
         )
-        result = await session.execute(stmt)
-        logs = result.scalars().all()
+        logs = (await session.execute(stmt)).scalars().all()
 
-    schemas = [_advice_log_to_schema(log).model_dump(mode="json") for log in logs]
-    return json({"advice_logs": schemas})
+    return json({"advice_logs": [_advice_log_to_schema(log).model_dump(mode="json") for log in logs]})
 
 
 @proposals_api_bp.post("/<proposal_id:uuid>/advice")
+@authenticated
 async def submit_advice(request: Request, proposal_id: uuid.UUID):
     """POST /api/v1/proposals/:id/advice -- Add an advice entry.
 
     If no AdviceLog exists for this proposal, creates one first.
     Accepts JSON: AdviceEntryCreateRequest
-    Returns JSON: AdviceLogSchema
+    Returns JSON: AdviceLogSchema plus gates and auto_transitions, 201.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = AdviceEntryCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
     advice_text = (create_req.content or "").strip()
     if not advice_text:
         # A blank entry would still count toward the advice gate and could
         # auto-advance the proposal.
-        return json({"error": "Advice text is required"}, status=400)
+        raise ApiError(400, "Advice text is required")
 
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        result = await session.execute(p_stmt)
-        proposal = result.scalar_one_or_none()
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
-
-        caller = await caller_member(session, member.user_id, proposal.ecosystem_id)
+        proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
+        caller = await caller_in(session, request, proposal.ecosystem_id)
         if is_proposal_author(caller, proposal):
-            return json({"error": SELF_ADVICE_DENIED}, status=409)
+            raise ApiError(409, SELF_ADVICE_DENIED)
         # Advisor identity comes from the caller, never the request body. A
         # shared-ecosystem advisor has no row here, so use their session member.
-        advisor_name = (caller or member).display_name
+        advisor_name = (caller or request.ctx.member).display_name
 
         # Find or create advice log. ``new_round`` opens a fresh round —
         # rounds are the unit the declared advice gate counts.
@@ -775,8 +552,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             .order_by(AdviceLog.created_at.desc())
             .limit(1)
         )
-        log_result = await session.execute(log_stmt)
-        advice_log = log_result.scalar_one_or_none()
+        advice_log = (await session.execute(log_stmt)).scalar_one_or_none()
 
         if advice_log is None or create_req.new_round:
             advice_log = AdviceLog(
@@ -789,8 +565,7 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             session.add(advice_log)
             await session.flush()
 
-        # Create the advice entry
-        entry = AdviceEntry(
+        session.add(AdviceEntry(
             id=uuid.uuid4(),
             advice_log_id=advice_log.id,
             advisor=advisor_name,
@@ -799,103 +574,72 @@ async def submit_advice(request: Request, proposal_id: uuid.UUID):
             date=_dt.date.today(),
             advice_text=advice_text,
             integration_status="pending",
-        )
-        session.add(entry)
+        ))
         await session.flush()
 
-        # ACT gate engine: advance automatically when the declared
-        # advice-round conditions are met.
-        advance = await maybe_auto_advance_proposal(session, proposal)
+        outcome = await transition_proposal(session, proposal, caller=caller)
         await session.commit()
 
-        # Re-load log with entries
         stmt = (
             select(AdviceLog)
             .where(AdviceLog.id == advice_log.id)
             .options(selectinload(AdviceLog.entries))
         )
-        result = await session.execute(stmt)
-        advice_log = result.scalar_one()
+        advice_log = (await session.execute(stmt)).scalar_one()
 
-    schema = _advice_log_to_schema(advice_log)
-    payload = schema.model_dump(mode="json")
-    payload["gates"] = advance["gates"]
-    payload["auto_transitions"] = advance["transitions"]
-    return json(payload, status=201)
+    payload = _advice_log_to_schema(advice_log).model_dump(mode="json")
+    return json(outcome.attach(payload, gates=True), status=201)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/consent")
+@authenticated
 async def get_consent(request: Request, proposal_id: uuid.UUID):
     """GET /api/v1/proposals/:id/consent -- Consent records with participants.
 
     Returns JSON: {"consent_records": [...]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        if await session.scalar(p_stmt) is None:
-            return json({"error": "Proposal not found"}, status=404)
-
+        await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
         stmt = (
             select(ConsentRecord)
             .where(ConsentRecord.proposal_id == proposal_id)
             .options(selectinload(ConsentRecord.participants))
             .order_by(ConsentRecord.created_at.desc())
         )
-        result = await session.execute(stmt)
-        records = result.scalars().all()
+        records = (await session.execute(stmt)).scalars().all()
 
-    schemas = [
-        _consent_record_to_schema(cr).model_dump(mode="json") for cr in records
-    ]
-    return json({"consent_records": schemas})
+    return json({"consent_records": [_consent_record_to_schema(cr).model_dump(mode="json") for cr in records]})
 
 
 @proposals_api_bp.post("/<proposal_id:uuid>/consent")
+@authenticated
 async def submit_consent(request: Request, proposal_id: uuid.UUID):
-    """POST /api/v1/proposals/:id/consent -- Submit a consent position.
+    """POST /api/v1/proposals/:id/consent -- Record the caller's consent position.
 
-    If no ConsentRecord exists for this proposal, creates one first.
+    If no ConsentRecord exists for this proposal, creates one first. The
+    participant is always the caller; the body's member_name is ignored.
     Accepts JSON: ConsentPositionRequest
-    Returns JSON: ConsentRecordSchema
+    Returns JSON: ConsentRecordSchema plus gates and auto_transitions, 201.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = ConsentPositionRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        result = await session.execute(p_stmt)
-        proposal = result.scalar_one_or_none()
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
+        proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
+        caller = await caller_in(session, request, proposal.ecosystem_id)
+        # Same identity rule as advice: a shared-ecosystem participant uses their session member.
+        participant_name = (caller or request.ctx.member).display_name
 
-        # Find or create consent record
         cr_stmt = (
             select(ConsentRecord)
             .where(ConsentRecord.proposal_id == proposal_id)
             .order_by(ConsentRecord.created_at.desc())
             .limit(1)
         )
-        cr_result = await session.execute(cr_stmt)
-        consent_record = cr_result.scalar_one_or_none()
+        consent_record = (await session.execute(cr_stmt)).scalar_one_or_none()
 
         if consent_record is None:
             consent_record = ConsentRecord(
@@ -909,97 +653,66 @@ async def submit_consent(request: Request, proposal_id: uuid.UUID):
             session.add(consent_record)
             await session.flush()
 
-        # Record participant position
-        participant = ConsentParticipant(
+        session.add(ConsentParticipant(
             id=uuid.uuid4(),
             consent_record_id=consent_record.id,
-            name=create_req.member_name,
-            position=create_req.position,
+            name=participant_name,
+            position=consent_position(create_req.position),
             reason=create_req.objection_text,
-        )
-        session.add(participant)
+        ))
         await session.flush()
 
-        # ACT gate engine: advance automatically when the declared
-        # consent conditions are met (quorum reached, no open objections).
-        advance = await maybe_auto_advance_proposal(session, proposal)
+        outcome = await transition_proposal(session, proposal, caller=caller)
         await session.commit()
 
-        # Re-load record with participants
         stmt = (
             select(ConsentRecord)
             .where(ConsentRecord.id == consent_record.id)
             .options(selectinload(ConsentRecord.participants))
         )
-        result = await session.execute(stmt)
-        consent_record = result.scalar_one()
+        consent_record = (await session.execute(stmt)).scalar_one()
 
-    schema = _consent_record_to_schema(consent_record)
-    payload = schema.model_dump(mode="json")
-    payload["gates"] = advance["gates"]
-    payload["auto_transitions"] = advance["transitions"]
-    return json(payload, status=201)
+    payload = _consent_record_to_schema(consent_record).model_dump(mode="json")
+    return json(outcome.attach(payload, gates=True), status=201)
 
 
 @proposals_api_bp.get("/<proposal_id:uuid>/test")
+@authenticated
 async def get_test_reports(request: Request, proposal_id: uuid.UUID):
     """GET /api/v1/proposals/:id/test -- Test reports with success criteria.
 
     Returns JSON: {"test_reports": [...]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal.id).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        if await session.scalar(p_stmt) is None:
-            return json({"error": "Proposal not found"}, status=404)
-
+        await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
         stmt = (
             select(TestReport)
             .where(TestReport.proposal_id == proposal_id)
             .options(selectinload(TestReport.success_criteria))
             .order_by(TestReport.created_at.desc())
         )
-        result = await session.execute(stmt)
-        reports = result.scalars().all()
+        reports = (await session.execute(stmt)).scalars().all()
 
-    schemas = [_test_report_to_schema(tr).model_dump(mode="json") for tr in reports]
-    return json({"test_reports": schemas})
+    return json({"test_reports": [_test_report_to_schema(tr).model_dump(mode="json") for tr in reports]})
 
 
 @proposals_api_bp.post("/<proposal_id:uuid>/test")
+@authenticated
 async def submit_test_report(request: Request, proposal_id: uuid.UUID):
     """POST /api/v1/proposals/:id/test -- Submit a test report.
 
     Accepts JSON: TestReportCreateRequest
-    Returns JSON: TestReportSchema with 201 status.
+    Returns JSON: TestReportSchema plus gates, auto_transitions (and decision_record_id when minted), 201.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = TestReportCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
     async with request.app.ctx.db() as session:
-        # Verify proposal exists and is accessible
-        eco_ids = get_authorized_ecosystem_ids(request)
-        p_stmt = select(Proposal).where(Proposal.id == proposal_id)
-        if eco_ids:
-            p_stmt = apply_ecosystem_filter(p_stmt, Proposal, eco_ids)
-        p_result = await session.execute(p_stmt)
-        proposal = p_result.scalar_one_or_none()
-        if proposal is None:
-            return json({"error": "Proposal not found"}, status=404)
+        proposal = await get_scoped_or_404(session, request, Proposal, proposal_id, label="Proposal")
+        caller = await caller_in(session, request, proposal.ecosystem_id)
 
         report = TestReport(
             id=uuid.uuid4(),
@@ -1011,37 +724,25 @@ async def submit_test_report(request: Request, proposal_id: uuid.UUID):
         session.add(report)
         await session.flush()
 
-        # Add success criteria
         for sc in create_req.success_criteria:
-            criterion = TestSuccessCriterion(
+            session.add(TestSuccessCriterion(
                 id=uuid.uuid4(),
                 test_report_id=report.id,
                 criterion=sc.criterion,
                 met=sc.met,
                 evidence=sc.evidence,
-            )
-            session.add(criterion)
-
+            ))
         await session.flush()
 
-        # ACT gate engine: advance automatically when the declared test
-        # cases all show met evidence (mints the decision artifact at
-        # ratified).
-        advance = await maybe_auto_advance_proposal(session, proposal)
+        outcome = await transition_proposal(session, proposal, caller=caller)
         await session.commit()
 
-        # Reload with criteria
         stmt = (
             select(TestReport)
             .where(TestReport.id == report.id)
             .options(selectinload(TestReport.success_criteria))
         )
-        result = await session.execute(stmt)
-        report = result.scalar_one()
+        report = (await session.execute(stmt)).scalar_one()
 
     payload = _test_report_to_schema(report).model_dump(mode="json")
-    payload["gates"] = advance["gates"]
-    payload["auto_transitions"] = advance["transitions"]
-    if advance["decision_record_id"]:
-        payload["decision_record_id"] = advance["decision_record_id"]
-    return json(payload, status=201)
+    return json(outcome.attach(payload, gates=True), status=201)

@@ -24,7 +24,10 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids, apply_ecosystem_name_filter
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated
+from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.onboarding import CeremonyState, OnboardingListItem, SectionConsentRequest
 
 logger = logging.getLogger(__name__)
@@ -77,6 +80,7 @@ def _calc_completion(section_consents: dict | None) -> int:
 
 
 @onboarding_api_bp.get("/")
+@authenticated
 async def list_pending_onboardings(request: Request):
     """GET /api/v1/onboarding -- List pending onboardings.
 
@@ -84,15 +88,8 @@ async def list_pending_onboardings(request: Request):
     Ecosystem scoped via the member join.
     Query params: page (default 1), per_page (default 25, max 100).
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
+    page = parse_pagination(request)
 
     async with request.app.ctx.db() as session:
         stmt = (
@@ -105,13 +102,12 @@ async def list_pending_onboardings(request: Request):
             .order_by(MemberOnboarding.created_at.desc())
         )
 
-        if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+        stmt = restrict_to_ecosystems(stmt, Member, eco_ids, include_shared=False)
 
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
 
-        stmt = stmt.offset(offset).limit(per_page)
+        stmt = stmt.offset(page.offset).limit(page.per_page)
         result = await session.execute(stmt)
         rows = result.all()
 
@@ -134,30 +130,21 @@ async def list_pending_onboardings(request: Request):
     return json({
         "items": items,
         "total": total,
-        "page": page,
-        "per_page": per_page,
+        "page": page.page,
+        "per_page": page.per_page,
     })
 
 
 @onboarding_api_bp.get("/<member_id:uuid>/ceremony")
+@authenticated
 async def get_ceremony_state(request: Request, member_id: uuid.UUID):
     """GET /api/v1/onboarding/:member_id/ceremony -- Ceremony state.
 
     Returns section_consents map, completion_percentage, cooling_off dates.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        # Verify member exists and is accessible
-        m_stmt = select(Member.id).where(Member.id == member_id)
-        if eco_ids:
-            m_stmt = m_stmt.where(Member.ecosystem_id.in_(eco_ids))
-        if await session.scalar(m_stmt) is None:
-            return json({"error": "Member not found"}, status=404)
+        # A member opens from any authorized ecosystem, matching the list's owner-only rule.
+        await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
 
         stmt = select(MemberOnboarding).where(
             MemberOnboarding.member_id == member_id
@@ -166,7 +153,7 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
         ob = result.scalar_one_or_none()
 
     if ob is None:
-        return json({"error": "No onboarding record found for this member"}, status=404)
+        raise ApiError(404, "No onboarding record found for this member")
 
     # Ensure section_consents has all sections represented
     consents = dict(ob.section_consents) if ob.section_consents else {}
@@ -187,6 +174,7 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
 
 
 @onboarding_api_bp.post("/<member_id:uuid>/ceremony")
+@authenticated
 async def submit_section_consent(request: Request, member_id: uuid.UUID):
     """POST /api/v1/onboarding/:member_id/ceremony -- Submit section consent.
 
@@ -194,10 +182,6 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
     Updates section_consents JSON and recalculates completion_percentage
     (6 sections total).
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         req = SectionConsentRequest(**body)
@@ -205,23 +189,10 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     if req.section not in _CONSENT_SECTIONS:
-        return json(
-            {
-                "error": f"Invalid section: '{req.section}'",
-                "valid_sections": _CONSENT_SECTIONS,
-            },
-            status=400,
-        )
-
-    eco_ids = get_ecosystem_ids(request)
+        raise ApiError(400, f"Invalid section: '{req.section}'", {"valid_sections": _CONSENT_SECTIONS})
 
     async with request.app.ctx.db() as session:
-        # Verify member exists and is accessible
-        m_stmt = select(Member.id).where(Member.id == member_id)
-        if eco_ids:
-            m_stmt = m_stmt.where(Member.ecosystem_id.in_(eco_ids))
-        if await session.scalar(m_stmt) is None:
-            return json({"error": "Member not found"}, status=404)
+        await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
 
         stmt = select(MemberOnboarding).where(
             MemberOnboarding.member_id == member_id
@@ -230,10 +201,7 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
         ob = result.scalar_one_or_none()
 
         if ob is None:
-            return json(
-                {"error": "No onboarding record found for this member"},
-                status=404,
-            )
+            raise ApiError(404, "No onboarding record found for this member")
 
         # Update section consent
         consents = dict(ob.section_consents) if ob.section_consents else {}

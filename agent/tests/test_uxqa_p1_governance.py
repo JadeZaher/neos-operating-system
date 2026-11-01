@@ -1,11 +1,12 @@
 """UX-QA pass 01 (first week), lane 1: governance integrity flows.
 
-Drives the real proposals/domains blueprints and the chat assistant's tool
-dispatch over an in-memory SQLite DB, acting as different members through an
-injected session. Rules under test live in src/neos_agent/api/AGENTS.md:
-"Proposal authorship and manage rule", "Domain naming and participation flags"
-and "Chat assistant tools (caller-scoped)". The MCP parity test lives in
-test_uxqa_p1_mcp_parity.py so these collect without the `mcp` package.
+Drives the real proposals/domains/agreements blueprints and the chat
+assistant's tool dispatch over an in-memory SQLite DB, acting as different
+members through an injected session. Rules under test live in
+src/neos_agent/api/AGENTS.md: "Proposal authorship and manage rule", "Domain
+naming and participation flags" and "Chat assistant tools (caller-scoped)". The
+REST / MCP / chat parity table lives in test_uxqa_p1_mcp_parity.py so these
+collect without the `mcp` package.
 """
 
 from __future__ import annotations
@@ -18,15 +19,43 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_asyncio
 from sanic import Sanic
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from neos_agent.agent.governance_tools import CALLER_REQUIRED, execute_tool
+from neos_agent.agent.governance_tools import (
+    CALLER_REQUIRED,
+    CALLER_SCOPED_TOOLS,
+    DECISION_DENIED,
+    EXIT_SELF_ONLY,
+    MEMBER_REQUIRED,
+    execute_tool,
+)
+from neos_agent.api.agreements import CEREMONY_DENIED, agreements_api_bp
 from neos_agent.api.domains import CREATE_DENIED, domain_display_name, domains_api_bp
+from neos_agent.api.errors import register_api_errors
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED, proposals_api_bp
-from neos_agent.db.models import Base, Domain, DomainElement, Ecosystem, Member, Proposal, User
+from neos_agent.db.models import (
+    Agreement,
+    Base,
+    ConflictCase,
+    ConsentParticipant,
+    DecisionRecord,
+    Domain,
+    DomainElement,
+    Ecosystem,
+    EmergencyState,
+    ExitRecord,
+    GovernanceHealthAudit,
+    Member,
+    Proposal,
+    RepairAgreementRecord,
+    User,
+)
 
 ECO = uuid.UUID("0000000a-0000-0000-0000-000000000001")
+RIVER = uuid.UUID("0000000a-0000-0000-0000-000000000002")  # another ecosystem
+RIVER_PROPOSAL = uuid.UUID("0000000a-0000-0000-0000-0000000000f2")
+GARDEN_AGREEMENT = uuid.UUID("0000000a-0000-0000-0000-0000000000a1")
 STEWARDED_DOMAIN = uuid.UUID("0000000a-0000-0000-0000-0000000000d1")
 LEGACY_PROPOSAL = uuid.UUID("0000000a-0000-0000-0000-0000000000f1")
 
@@ -53,7 +82,9 @@ PEOPLE = {
     "ben": _person("ben", "Ben", "user"),  # another member
     "mo": _person("mo", "Mo", "mod"),  # ecosystem steward
     "sol": _person("sol", "Sol", "user"),  # domain steward without an ecosystem role
+    "ari": _person("ari", "Ari", "admin"),  # conducts agreement ceremonies
 }
+OLU = _person("olu", "Olu", "user")  # a member of River only: an outsider to Oasis
 
 
 async def _seed(session: AsyncSession) -> None:
@@ -82,6 +113,22 @@ async def _seed(session: AsyncSession) -> None:
         id=LEGACY_PROPOSAL, ecosystem_id=ECO, proposal_id="PROP-LEGACY", type="policy",
         title="Legacy proposal", version="1.0", status="advice", proposer="Ben",
     ))
+    session.add(Agreement(
+        id=GARDEN_AGREEMENT, ecosystem_id=ECO, agreement_id="AGR-GARDEN", type="space",
+        title="Garden hours", version="1.0", status="draft", proposer="Ada", text="Open at dawn.",
+    ))
+    session.add(Ecosystem(id=RIVER, name="River House", status="active"))
+    session.add(User(id=OLU.user_id, display_name=OLU.name))
+    await session.flush()
+    session.add(Member(
+        id=OLU.member_id, ecosystem_id=RIVER, user_id=OLU.user_id, member_id="MEM-OLU",
+        display_name=OLU.name, current_status="active", role=OLU.role,
+    ))
+    session.add(Proposal(
+        id=RIVER_PROPOSAL, ecosystem_id=RIVER, proposal_id="PROP-RIVER", type="policy",
+        title="River proposal", version="1.0", status="draft", proposer="Olu",
+        proposer_member_id=OLU.member_id,
+    ))
     await session.commit()
 
 
@@ -89,23 +136,25 @@ def _create_app() -> Sanic:
     """Blueprint app; the x-test-as header picks who is signed in."""
     app = Sanic(f"test-uxqa-p1-{uuid.uuid4().hex[:8]}")
     app.ctx.settings = MagicMock()
+    register_api_errors(app)
 
     @app.on_request
     async def inject_session(request):
         who = request.headers.get("x-test-as")
         if not who:
             return
-        p = PEOPLE[who]
+        p, home = (OLU, RIVER) if who == "olu" else (PEOPLE[who], ECO)
         request.ctx.member = Member(
-            id=p.member_id, ecosystem_id=ECO, user_id=p.user_id, member_id="MEM-AUTH",
+            id=p.member_id, ecosystem_id=home, user_id=p.user_id, member_id="MEM-AUTH",
             display_name=p.name, current_status="active", role=p.role,
         )
         request.ctx.user = User(id=p.user_id, display_name=p.name)
-        request.ctx.selected_ecosystem_ids = [ECO]
-        request.ctx.authorized_ecosystem_ids = [ECO]
+        request.ctx.selected_ecosystem_ids = [home]
+        request.ctx.authorized_ecosystem_ids = [home]
 
     app.blueprint(proposals_api_bp)
     app.blueprint(domains_api_bp)
+    app.blueprint(agreements_api_bp)
     return app
 
 
@@ -334,7 +383,7 @@ async def test_clearing_a_domain_name_falls_back_to_the_purpose_label(env):
 
 async def _tool(env, who: str | None, tool_name: str, /, **args) -> dict:
     """Run a chat tool the way api/chat.py does: scoped ids as strings, commit on success."""
-    caller = PEOPLE[who].user_id if who else None
+    caller = (OLU if who == "olu" else PEOPLE[who]).user_id if who else None
     async with env.db() as session:
         result = await execute_tool(tool_name, args, session, ecosystem_ids=[str(ECO)], caller_user_id=caller)
         if result.get("success"):
@@ -342,14 +391,32 @@ async def _tool(env, who: str | None, tool_name: str, /, **args) -> dict:
     return result
 
 
-@pytest.mark.parametrize("name, args", [
-    ("create_proposal", {"title": "T", "type": "policy", "proposed_change": "C", "rationale": "R"}),
-    ("record_advice", {"proposal_id": "PROP-LEGACY", "advice_text": "Advice"}),
-    ("update_proposal_status", {"proposal_id": "PROP-LEGACY", "new_status": "withdrawn"}),
-    ("create_domain_draft", {"domain_id": "tools", "purpose": "Lend tools"}),
-])
-async def test_chat_tools_refuse_to_act_without_a_signed_in_member(env, name, args):
-    result = await _tool(env, None, name, **args)
+# Arguments each state-changing tool would succeed with for an entitled member.
+_TOOL_ARGS = {
+    "create_agreement_draft": {"title": "Tool shed rota", "type": "space", "domain": "Garden", "text": "Lend tools."},
+    "update_agreement_status": {"agreement_id": "AGR-GARDEN", "new_status": "advice", "evidence": "Opening the advice round"},
+    "create_proposal": {"title": "T", "type": "policy", "proposed_change": "C", "rationale": "R"},
+    "record_advice": {"proposal_id": "PROP-LEGACY", "advice_text": "Advice"},
+    "record_consent_position": {"proposal_id": "PROP-LEGACY", "position": "consent"},
+    "create_decision_record": {"holding": "Quiet hours start at ten.", "rationale": "Neighbours asked."},
+    "create_conflict_case": {"title": "Noise at night", "description": "Music after midnight."},
+    "triage_conflict": {"case_id": "set by the test", "tier": 1},
+    "declare_emergency": {"notes": "The river is flooding the garden."},
+    "create_exit_record": {"departure_notice": "Moving to another valley."},
+    "create_domain_draft": {"domain_id": "tools", "purpose": "Lend tools"},
+    "create_ecosystem": {"name": "New Commons"},
+    "create_safeguard_audit": {"findings": "Participation is healthy."},
+    "create_repair_agreement": {
+        "case_id": "set by the test", "title": "Quiet repair",
+        "commitments": [{"commitment": "Lower the volume", "owner": "Ben"}],
+    },
+    "update_proposal_status": {"proposal_id": "PROP-LEGACY", "new_status": "withdrawn"},
+}
+
+
+@pytest.mark.parametrize("name", sorted(CALLER_SCOPED_TOOLS))
+async def test_chat_tools_refuse_to_act_without_a_signed_in_member(env, name):
+    result = await _tool(env, None, name, **_TOOL_ARGS[name])
     assert result == {"success": False, "error": CALLER_REQUIRED}
 
 
@@ -402,3 +469,180 @@ async def test_chat_domain_creation_requires_an_ecosystem_steward(env, actor, ex
     assert (created is not None) is expected
     if expected:
         assert domain_display_name(created) == "Tool Library"
+
+
+# ---------------------------------------------------------------------------
+# Chat assistant authorization: every state-changing tool (ledger p1-coord-chat-tool-authz)
+# ---------------------------------------------------------------------------
+
+
+async def _open_case(env) -> str:
+    created = await _tool(env, "ben", "create_conflict_case", **_TOOL_ARGS["create_conflict_case"])
+    assert created["success"] is True, created
+    return created["data"]["case_id"]
+
+
+async def _governance_state(env) -> tuple:
+    """Row counts of everything these tools write, plus the seeded agreement's status and version."""
+    async with env.db() as session:
+        counts = [
+            await session.scalar(select(func.count()).select_from(model))
+            for model in (Agreement, DecisionRecord, ConflictCase, EmergencyState, ExitRecord,
+                          GovernanceHealthAudit, RepairAgreementRecord)
+        ]
+        garden = await session.get(Agreement, GARDEN_AGREEMENT)
+        case_statuses = sorted((await session.execute(select(ConflictCase.status))).scalars().all())
+        return (*counts, garden.status, garden.version, *case_statuses)
+
+
+@pytest.mark.parametrize("name, denied, refusal, allowed", [
+    ("create_agreement_draft", "olu", MEMBER_REQUIRED, "ben"),  # an active member here, as REST POST /agreements
+    ("update_agreement_status", "ben", CEREMONY_DENIED, "ari"),  # active admin or owner, as REST ceremonies
+    ("create_decision_record", "ben", DECISION_DENIED, "mo"),  # no REST route: stewards only
+    ("create_conflict_case", "olu", MEMBER_REQUIRED, "ben"),
+    ("triage_conflict", "olu", MEMBER_REQUIRED, "ben"),
+    ("declare_emergency", "olu", MEMBER_REQUIRED, "ben"),  # owner decision: any active member
+    ("create_exit_record", "olu", MEMBER_REQUIRED, "ben"),
+    ("create_safeguard_audit", "olu", MEMBER_REQUIRED, "ben"),
+    ("create_repair_agreement", "olu", MEMBER_REQUIRED, "ben"),
+])
+async def test_chat_tools_apply_the_rule_for_the_callers_ecosystem(env, name, denied, refusal, allowed):
+    args = dict(_TOOL_ARGS[name])
+    if "case_id" in args:
+        args["case_id"] = await _open_case(env)
+    before = await _governance_state(env)
+
+    assert await _tool(env, denied, name, **args) == {"success": False, "error": refusal}
+    assert await _governance_state(env) == before
+
+    granted = await _tool(env, allowed, name, **args)
+    assert granted["success"] is True, granted
+    assert await _governance_state(env) != before
+
+
+@pytest.mark.parametrize("name, actor, spoofed, model, column, expected", [
+    ("declare_emergency", "ben", {"declared_by": "Mo"}, EmergencyState, "declared_by", "Ben"),
+    ("create_decision_record", "mo", {"recorder": "Ada"}, DecisionRecord, "recorder", "Mo"),
+    ("create_safeguard_audit", "ben", {"auditor": "Ada"}, GovernanceHealthAudit, "auditor", "Ben"),
+    ("create_conflict_case", "ben", {"reporter_id": str(PEOPLE["ada"].member_id)}, ConflictCase,
+     "reporter_id", PEOPLE["ben"].member_id),
+    ("create_agreement_draft", "ben", {}, Agreement, "proposer", "Ben"),  # proposer text defaults to the caller
+])
+async def test_chat_tools_record_the_caller_not_a_model_supplied_identity(env, name, actor, spoofed, model, column, expected):
+    async with env.db() as session:
+        existing = set((await session.execute(select(model.id))).scalars().all())
+    result = await _tool(env, actor, name, **_TOOL_ARGS[name], **spoofed)
+    assert result["success"] is True, result
+    async with env.db() as session:
+        [stored] = (await session.execute(select(model).where(model.id.not_in(existing)))).scalars().all()
+    assert getattr(stored, column) == expected
+
+
+async def test_chat_exit_is_only_the_callers_own(env):
+    refused = await _tool(env, "ben", "create_exit_record", **_TOOL_ARGS["create_exit_record"], member_name="Ada")
+    assert refused == {"success": False, "error": EXIT_SELF_ONLY}
+    started = await _tool(env, "ben", "create_exit_record", **_TOOL_ARGS["create_exit_record"], member_name="ben")
+    assert started["data"]["member"] == "Ben"
+    async with env.db() as session:
+        exits = (await session.execute(select(ExitRecord.member_id))).scalars().all()
+    assert exits == [PEOPLE["ben"].member_id]
+
+
+async def test_chat_ecosystem_founder_joins_and_stewards_its_core_domain(env):
+    created = await _tool(env, "ben", "create_ecosystem", **_TOOL_ARGS["create_ecosystem"])
+    assert created["success"] is True, created
+    new_ecosystem = uuid.UUID(created["data"]["id"])
+    async with env.db() as session:
+        founder = await session.scalar(select(Member).where(Member.ecosystem_id == new_ecosystem))
+        core = await session.scalar(select(Domain).where(Domain.ecosystem_id == new_ecosystem))
+    assert (founder.user_id, founder.current_status) == (PEOPLE["ben"].user_id, "active")
+    assert core.steward_id == founder.id
+
+
+async def _proposal_in_consent(env) -> dict:
+    """Ada's proposal after Ben's advice: the default one-round gate has moved it to consent."""
+    proposal = await _create_proposal(env.app)
+    await _open_for_advice(env.app, proposal["id"])
+    advice = await _call(env.app, "post", "ben", f"/api/v1/proposals/{proposal['id']}/advice", json={"content": "Add a rota"})
+    assert advice.json["auto_transitions"] == ["advice->consent"], advice.text
+    return proposal
+
+
+async def _positions(env) -> list[tuple[str, str]]:
+    async with env.db() as session:
+        rows = (await session.execute(
+            select(ConsentParticipant.name, ConsentParticipant.position).order_by(ConsentParticipant.created_at)
+        )).all()
+    return [tuple(row) for row in rows]
+
+
+async def test_chat_consent_is_the_callers_own_and_an_objection_blocks(env):
+    proposal = await _proposal_in_consent(env)
+
+    outsider = await _tool(env, "olu", "record_consent_position", proposal_id=proposal["id"], position="consent")
+    assert outsider["success"] is False
+
+    # Accepts the page's UUID, ignores the name argument, stores the engine's "object".
+    objected = await _tool(
+        env, "mo", "record_consent_position",
+        proposal_id=proposal["id"], participant="Ada", position="objection", reason="Too noisy at night",
+    )
+    assert objected["success"] is True, objected
+    assert (objected["data"]["participant"], objected["data"]["position"]) == ("Mo", "object")
+    assert objected["data"]["gates"]["consent"]["open_objections"] == 1
+
+    # With the objection open, another member's consent (quorum 1) does not advance it.
+    consent = await _call(env.app, "post", "sol", f"/api/v1/proposals/{proposal['id']}/consent",
+                          json={"member_name": "Sol", "position": "consent"})
+    assert consent.status == 201, consent.text
+    assert consent.json["auto_transitions"] == []
+    current = (await _call(env.app, "get", "ada", f"/api/v1/proposals/{proposal['id']}")).json
+    assert current["status"] == "consent"
+    assert await _positions(env) == [("Mo", "object"), ("Sol", "consent")]
+
+
+async def test_rest_consent_position_is_always_the_callers(env):
+    proposal = await _proposal_in_consent(env)
+    resp = await _call(env.app, "post", "ben", f"/api/v1/proposals/{proposal['id']}/consent",
+                       json={"member_name": "Ada", "position": "consent"})
+    assert resp.status == 201, resp.text
+    assert [p["member_name"] for p in resp.json["participants"]] == ["Ben"]
+    assert resp.json["auto_transitions"] == ["consent->test"]
+
+
+async def test_chat_reads_a_proposal_in_consent_by_its_page_id(env):
+    proposal = await _proposal_in_consent(env)
+    await _tool(env, "mo", "record_consent_position", proposal_id=proposal["proposal_id"], position="consent")
+    read = await _tool(env, "ben", "get_proposal", proposal_id=proposal["id"])
+    assert read["success"] is True, read
+    assert read["data"]["status"] == "test"
+    assert [e["advisor"] for e in read["data"]["advice_logs"][0]["entries"]] == ["Ben"]
+    assert read["data"]["consent_records"][0]["round"] == 1
+
+
+# ---------------------------------------------------------------------------
+# REST contracts on the proposals blueprint
+# ---------------------------------------------------------------------------
+
+
+async def test_proposal_list_pages_by_25_and_rejects_a_non_numeric_page(env):
+    for index in range(26):
+        await _create_proposal(env.app, title=f"Proposal {index}")
+    first = (await _call(env.app, "get", "ben", "/api/v1/proposals")).json
+    assert (first["per_page"], len(first["items"]), first["total"]) == (25, 25, 27)  # 26 + the legacy row
+    bad = await _call(env.app, "get", "ben", "/api/v1/proposals?page=abc")
+    assert bad.status == 400
+    assert bad.json == {"error": "Query parameter 'page' must be a whole number"}
+
+
+@pytest.mark.parametrize("who, proposal, method, path, body", [
+    ("olu", LEGACY_PROPOSAL, "get", "", None),
+    ("olu", LEGACY_PROPOSAL, "post", "/status", {"status": "withdrawn"}),
+    ("ada", RIVER_PROPOSAL, "get", "", None),
+    ("ada", RIVER_PROPOSAL, "post", "/advice", {"content": "Advice from outside"}),
+])
+async def test_another_ecosystems_proposal_is_not_found(env, who, proposal, method, path, body):
+    kwargs = {"json": body} if body is not None else {}
+    resp = await _call(env.app, method, who, f"/api/v1/proposals/{proposal}{path}", **kwargs)
+    assert resp.status == 404
+    assert resp.json == {"error": "Proposal not found"}

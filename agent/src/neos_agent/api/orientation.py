@@ -25,7 +25,7 @@ from neos_agent.db.models import (
     UserJourneyProgress,
 )
 
-from .helpers import require_auth
+from .guards import authenticated, caller_in, caller_in_or_join_required
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +36,12 @@ orientation_api_bp = Blueprint("orientation_api", url_prefix="/api/v1/orientatio
 
 
 @orientation_api_bp.get("/ethos/<ecosystem_id:uuid>")
+@authenticated
 async def get_ethos_detail(request: Request, ecosystem_id: uuid.UUID):
     """Get ecosystem detail for orientation (acts as ethos detail).
 
     Returns JSON with ecosystem info, member count, tags, and governance summary.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
@@ -67,15 +64,12 @@ async def get_ethos_detail(request: Request, ecosystem_id: uuid.UUID):
 
 
 @orientation_api_bp.get("/ethos/<ecosystem_id:uuid>/journey-maps")
+@authenticated
 async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
     """List available journey maps for an ecosystem.
 
     Returns JSON: list of journey map summaries.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     include_inactive = request.args.get("include_inactive", "").lower() in ("true", "1")
 
     async with request.app.ctx.db() as db:
@@ -111,6 +105,7 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
 
 
 @orientation_api_bp.get("/journey-maps")
+@authenticated
 async def list_all_journey_maps(request: Request):
     """List all journey maps across ecosystems (admin / management view).
 
@@ -119,10 +114,6 @@ async def list_all_journey_maps(request: Request):
       - is_active: optional "true"/"false" filter
     Returns JSON: { maps: [...] }
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         filters = []
         ethos_id = request.args.get("ethos_id")
@@ -161,15 +152,12 @@ async def list_all_journey_maps(request: Request):
 
 
 @orientation_api_bp.get("/journey-maps/<journey_map_id:uuid>")
+@authenticated
 async def get_journey_map(request: Request, journey_map_id: uuid.UUID):
     """Get a specific journey map with full content.
 
     Returns JSON: journey map detail including content_sequence and exit_package.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         jm = await db.get(JourneyMap, journey_map_id)
         if jm is None:
@@ -191,12 +179,9 @@ async def get_journey_map(request: Request, journey_map_id: uuid.UUID):
 
 
 @orientation_api_bp.post("/ethos/<ecosystem_id:uuid>/journey-maps")
+@authenticated
 async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
     """POST -- Create a new journey map for an ecosystem."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     title = (body.get("title") or "").strip()
     if not title:
@@ -244,12 +229,9 @@ async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
 
 
 @orientation_api_bp.put("/journey-maps/<journey_map_id:uuid>")
+@authenticated
 async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
     """PUT -- Update an existing journey map."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
 
     async with request.app.ctx.db() as db:
@@ -291,12 +273,9 @@ async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
 
 
 @orientation_api_bp.delete("/journey-maps/<journey_map_id:uuid>")
+@authenticated
 async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
     """DELETE -- Delete a journey map."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         jm = await db.get(JourneyMap, journey_map_id)
         if jm is None:
@@ -315,12 +294,9 @@ async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
 
 
 @orientation_api_bp.post("/journey-maps/<journey_map_id:uuid>/deactivate")
+@authenticated
 async def deactivate_journey_map(request: Request, journey_map_id: uuid.UUID):
     """POST -- Soft-delete a journey map by setting is_active=False."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         jm = await db.get(JourneyMap, journey_map_id)
         if jm is None:
@@ -333,16 +309,18 @@ async def deactivate_journey_map(request: Request, journey_map_id: uuid.UUID):
 
 
 @orientation_api_bp.get("/ethos/<ecosystem_id:uuid>/progress")
+@authenticated
 async def get_progress(request: Request, ecosystem_id: uuid.UUID):
     """Get current user's orientation progress for an ecosystem.
 
     Returns JSON: progress object or empty dict if none exists.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
+        # Progress belongs to the caller's Member row in THIS ecosystem, not the default row.
+        member = await caller_in(db, request, ecosystem_id)
+        if member is None:
+            return json({})
+
         stmt = (
             select(UserJourneyProgress)
             .where(
@@ -380,6 +358,7 @@ async def get_progress(request: Request, ecosystem_id: uuid.UUID):
 
 
 @orientation_api_bp.post("/ethos/<ecosystem_id:uuid>/progress")
+@authenticated
 async def save_progress(request: Request, ecosystem_id: uuid.UUID):
     """Save or update orientation progress.
 
@@ -387,13 +366,15 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
     was_recommended, step_key, step_response, status.
     Returns JSON: saved progress summary.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
 
     async with request.app.ctx.db() as db:
+        # Beginning an orientation is joining's first step: no row here is a 409 the client answers by joining.
+        member = await caller_in_or_join_required(
+            db, request, ecosystem_id,
+            not_found="Ecosystem not found", join_message="Join this ecosystem to begin its orientation",
+        )
+
         # Find existing progress
         stmt = select(UserJourneyProgress).where(
             and_(
@@ -469,16 +450,13 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
 
 
 @orientation_api_bp.post("/genplan-input")
+@authenticated
 async def save_genplan_input(request: Request):
     """Save generative plan input from orientation choices.
 
     Accepts JSON payload with orientation choice data.
     Returns JSON: {"status": "ok", "received": true}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     # Store genplan inputs as part of journey progress step_responses.
     # For now, acknowledge receipt.
     return json({"status": "ok", "received": True})

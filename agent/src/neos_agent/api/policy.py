@@ -99,3 +99,36 @@ def can_assign_role(caller: Member | None, target: Member, new_role: str) -> boo
     if role_rank(caller) == ROLE_RANK["admin"]:
         return role_rank(target) < ROLE_RANK["admin"] and ROLE_RANK[new_role] < ROLE_RANK["admin"]
     return False
+
+# BE-Groups
+
+def can_update_ecosystem(member: Member | None, *, stewards_a_domain: bool, member_count: int) -> bool:
+    """Edit ecosystem settings: a domain steward there, or the founding sole member (pass a caller_in row)."""
+    return member is not None and (stewards_a_domain or member_count <= 1)
+
+
+def can_create_domain(member: Member | None) -> bool:
+    """Create a domain: a moderator or above in the row's own ecosystem (pass a caller_in row)."""
+    return is_steward(member)
+
+
+# BE-ACT
+
+def can_participate(member: Member | None, resource) -> bool:
+    """Advise, record a consent position or report a test on `resource`: any member row in its ecosystem."""
+    return _same_ecosystem(member, resource)
+
+
+def is_active_member_in(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """An ACTIVE membership in `ecosystem_id`: draft or edit agreements, record evidence, open cases (pass a caller_in row)."""
+    return member is not None and member.ecosystem_id == ecosystem_id and member.current_status == "active"
+
+
+def can_record_decision(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """Record a decision outside the ACT engine (assistant only; REST mints them through ACT): a steward there."""
+    return is_steward_in(member, ecosystem_id)
+
+
+def can_declare_emergency(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """Declare an emergency in `ecosystem_id`: any active member there (owner decision; a co-signer comes later)."""
+    return is_active_member_in(member, ecosystem_id)

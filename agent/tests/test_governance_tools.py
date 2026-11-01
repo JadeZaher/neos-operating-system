@@ -30,9 +30,20 @@ from neos_agent.agent.governance_tools import (
     update_agreement_status,
 )
 
-# conftest seeds these users behind Kai's and Lani's member rows.
+# conftest seeds these users behind Kai's, Lani's and Manu's member rows (all role "user").
 USER_KAI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.kai")
 USER_LANI_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.lani")
+USER_MANU_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "test.user.manu")
+
+
+async def _promote(db, user_id: uuid.UUID, role: str) -> None:
+    """Give a seeded member an ecosystem role tier (conftest seeds every member as "user")."""
+    from neos_agent.db.models import Member
+    from sqlalchemy import select
+
+    member = await db.scalar(select(Member).where(Member.user_id == user_id))
+    member.role = role
+    await db.flush()
 
 
 # ===================================================================
@@ -101,6 +112,7 @@ class TestCreateAgreementDraft:
             },
             seeded_db,
             ecosystem_ids=ecosystem_ids,
+            caller_user_id=USER_KAI_ID,
         )
         assert result["success"] is True
         data = result["data"]
@@ -121,6 +133,7 @@ class TestCreateAgreementDraft:
             },
             seeded_db,
             ecosystem_ids=ecosystem_ids,
+            caller_user_id=USER_KAI_ID,
         )
         assert result["success"] is False
         assert "not an active member" in result["error"]
@@ -133,27 +146,59 @@ class TestCreateAgreementDraft:
 
 class TestUpdateAgreementStatus:
     async def test_update_agreement_status_valid(self, seeded_db):
-        """Transitions draft -> advice correctly and bumps version."""
+        """An active admin conducts draft -> advice: a ceremony and a snapshot, the version (consent's anchor) unchanged."""
+        from neos_agent.db.models import Agreement, AgreementCeremony, AgreementVersion
+        from sqlalchemy import select
+
+        await _promote(seeded_db, USER_LANI_ID, "admin")
+        result = await update_agreement_status(
+            {"agreement_id": "AGR-GARD-2026-002", "new_status": "advice", "evidence": "Advice round opened at the circle"},
+            seeded_db,
+            caller_user_id=USER_LANI_ID,
+        )
+        assert result["success"] is True, result
+        data = result["data"]
+        assert (data["previous_status"], data["new_status"], data["version"]) == ("draft", "advice", "0.1")
+        agreement = await seeded_db.scalar(select(Agreement).where(Agreement.agreement_id == "AGR-GARD-2026-002"))
+        ceremony = await seeded_db.scalar(select(AgreementCeremony).where(AgreementCeremony.agreement_id == agreement.id))
+        snapshot = await seeded_db.scalar(select(AgreementVersion).where(AgreementVersion.agreement_id == agreement.id))
+        assert (ceremony.stage, ceremony.evidence) == ("advice", "Advice round opened at the circle")
+        assert snapshot.change_reason == "Status transition: draft -> advice"
+
+    async def test_update_agreement_status_requires_ceremony_evidence(self, seeded_db):
+        """Forward ceremonies need documented evidence, as REST and MCP."""
+        await _promote(seeded_db, USER_LANI_ID, "admin")
         result = await update_agreement_status(
             {"agreement_id": "AGR-GARD-2026-002", "new_status": "advice"},
             seeded_db,
+            caller_user_id=USER_LANI_ID,
         )
-        assert result["success"] is True
-        data = result["data"]
-        assert data["previous_status"] == "draft"
-        assert data["new_status"] == "advice"
-        # Version should be bumped from 0.1 to 0.2
-        assert data["version"] == "0.2"
+        assert result == {"success": False, "error": "Documented evidence is required for the advice ceremony"}
+        stored = (await get_agreement({"agreement_id": "AGR-GARD-2026-002"}, seeded_db))["data"]
+        assert stored["status"] == "draft"
+
+    async def test_update_agreement_status_refuses_a_plain_member(self, seeded_db):
+        """Only an active admin or owner conducts agreement ceremonies (REST rule)."""
+        from neos_agent.api.agreements import CEREMONY_DENIED
+
+        result = await update_agreement_status(
+            {"agreement_id": "AGR-GARD-2026-002", "new_status": "advice"},
+            seeded_db,
+            caller_user_id=USER_KAI_ID,
+        )
+        assert result == {"success": False, "error": CEREMONY_DENIED}
+        stored = (await get_agreement({"agreement_id": "AGR-GARD-2026-002"}, seeded_db))["data"]
+        assert stored["status"] == "draft"
 
     async def test_update_agreement_status_invalid(self, seeded_db):
         """Rejects invalid transition draft -> active with explanation."""
+        await _promote(seeded_db, USER_LANI_ID, "admin")
         result = await update_agreement_status(
-            {"agreement_id": "AGR-GARD-2026-002", "new_status": "active"},
+            {"agreement_id": "AGR-GARD-2026-002", "new_status": "active", "evidence": "Skipping ahead to adoption"},
             seeded_db,
+            caller_user_id=USER_LANI_ID,
         )
-        assert result["success"] is False
-        assert "Cannot transition" in result["error"]
-        assert "advice" in result["error"]  # valid target should be listed
+        assert result == {"success": False, "error": "Invalid transition: draft -> active. Allowed: advice."}
 
 
 # ===================================================================
@@ -259,11 +304,11 @@ class TestRecordConsentPosition:
         result = await record_consent_position(
             {
                 "proposal_id": "PROP-2026-001",
-                "participant": "Manu",
                 "position": "objection",
                 # no reason provided
             },
             seeded_db,
+            caller_user_id=USER_MANU_ID,
         )
         assert result["success"] is False
         assert "reason is required" in result["error"].lower()
@@ -283,13 +328,13 @@ class TestRecordConsentPosition:
         result = await record_consent_position(
             {
                 "proposal_id": "PROP-2026-001",
-                "participant": "Kai",
                 "position": "consent",
             },
             seeded_db,
+            caller_user_id=USER_KAI_ID,
         )
         assert result["success"] is True
-        assert result["data"]["position"] == "consent"
+        assert (result["data"]["participant"], result["data"]["position"]) == ("Kai", "consent")
 
 
 # ===================================================================
@@ -348,7 +393,8 @@ class TestCheckQuorum:
 
 class TestCreateDecisionRecord:
     async def test_create_decision_record(self, seeded_db, ecosystem_ids):
-        """Creates a decision record with auto-generated ID and tags."""
+        """A steward records a decision with auto-generated ID and tags."""
+        await _promote(seeded_db, USER_LANI_ID, "mod")
         result = await create_decision_record(
             {
                 "holding": "Evening kitchen hours extended to 10pm.",
@@ -361,6 +407,7 @@ class TestCreateDecisionRecord:
             },
             seeded_db,
             ecosystem_ids=ecosystem_ids,
+            caller_user_id=USER_LANI_ID,
         )
         assert result["success"] is True
         data = result["data"]
@@ -379,6 +426,7 @@ class TestSearchPrecedents:
     async def test_search_precedents_by_domain(self, seeded_db, ecosystem_ids):
         """Finds decision records matching a domain filter."""
         # First create a record to search for
+        await _promote(seeded_db, USER_LANI_ID, "mod")
         await create_decision_record(
             {
                 "holding": "Kitchen hours set to 6am-9pm.",
@@ -388,6 +436,7 @@ class TestSearchPrecedents:
             },
             seeded_db,
             ecosystem_ids=ecosystem_ids,
+            caller_user_id=USER_LANI_ID,
         )
         await seeded_db.flush()
 
@@ -555,7 +604,7 @@ class TestDeclareEmergencyTool:
         args = dict()
         args["declared_by"] = "Lani"
         args["notes"] = "Severe storm: kitchen flooded"
-        result = await declare_emergency(args, seeded_db)
+        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
         assert result["success"] is True
         assert result["data"]["state"] == "open"
         assert result["data"]["id"]
@@ -586,7 +635,7 @@ class TestDeclareEmergencyTool:
         await seeded_db.commit()
         args = dict()
         args["declared_by"] = "Lani"
-        result = await declare_emergency(args, seeded_db)
+        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
         assert result["success"] is False
         assert "already active" in result["error"].lower()
 
@@ -606,6 +655,6 @@ class TestDeclareEmergencyTool:
         await seeded_db.commit()
         args = dict()
         args["declared_by"] = "Lani"
-        result = await declare_emergency(args, seeded_db)
+        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
         assert result["success"] is False
         assert "already active" in result["error"].lower()

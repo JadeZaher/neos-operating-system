@@ -30,13 +30,9 @@ from sqlalchemy.orm import selectinload
 from mcp.server.fastmcp import Context, FastMCP
 
 from neos_agent.config import get_settings
-from neos_agent.api.agreements import _snapshot_agreement
-from neos_agent.api.proposals import (
-    MANAGE_DENIED,
-    SELF_ADVICE_DENIED,
-    can_manage_proposal,
-    is_proposal_author,
-)
+from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
+from neos_agent.api.policy import is_proposal_author
+from neos_agent.api.proposals import SELF_ADVICE_DENIED
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
@@ -56,13 +52,14 @@ from neos_agent.db.models import (
     User,
 )
 from neos_agent.services.act_gates import (
+    ActOutcome,
+    TransitionRefused,
     agreement_gate_status,
-    maybe_auto_advance_agreement,
-    maybe_auto_advance_proposal,
+    consent_position,
     normalize_act_policy,
     proposal_gate_status,
-    record_agreement_commitment,
 )
+from neos_agent.services.act_gates import transition_proposal as apply_proposal_transition
 from neos_agent.services.agreement_consent import (
     _PARTICIPATING_MEMBER_STATUSES,
     synchronize_agreement_requirements,
@@ -151,11 +148,16 @@ async def _caller(ctx: Context) -> Caller:
         return Caller(user=user, token=agent_token)
 
 
-async def _member(s: AsyncSession, user_id: uuid.UUID, ecosystem_id: uuid.UUID) -> Member:
-    """The caller's Member row in the ecosystem, or a clear refusal."""
-    member = await s.scalar(
+async def _row(s: AsyncSession, user_id: uuid.UUID, ecosystem_id: uuid.UUID) -> Member | None:
+    """The token owner's Member row in one ecosystem (the request-free guards.caller_in)."""
+    return await s.scalar(
         select(Member).where(Member.user_id == user_id, Member.ecosystem_id == ecosystem_id)
     )
+
+
+async def _member(s: AsyncSession, user_id: uuid.UUID, ecosystem_id: uuid.UUID) -> Member:
+    """The caller's Member row in the ecosystem, or a clear refusal."""
+    member = await _row(s, user_id, ecosystem_id)
     if member is None:
         raise ValueError("The token owner is not a member of this ecosystem")
     if member.current_status not in _PARTICIPATING_MEMBER_STATUSES:
@@ -194,20 +196,24 @@ async def _load_agreement(s: AsyncSession, id_or_business_id: str) -> Agreement 
     return (await s.execute(stmt)).scalar_one_or_none()
 
 
-def _gates_error(prefix: str, gates: dict) -> ValueError:
-    return ValueError(f"{prefix}. Current gates: {gates}")
+def _refused(refusal: TransitionRefused) -> ValueError:
+    """The engine's REST-shaped refusal as the MCP error the agent reads (gates and allowed moves inline)."""
+    message = refusal.message
+    if refusal.extra.get("allowed"):
+        message += f". Allowed: {', '.join(refusal.extra['allowed'])}"
+    if "gates" in refusal.extra:
+        message += f". Current gates: {refusal.extra['gates']}"
+    return ValueError(message)
 
 
-# Mirrors api/agreements.py — the ACT lifecycle plus review/sunset chain.
-_AGREEMENT_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"advice"},
-    "advice": {"consent"},
-    "consent": {"test"},
-    "test": {"active"},
-    "active": {"under_review"},
-    "under_review": {"sunset", "active"},
-    "sunset": {"archived"},
-}
+def _outcome(outcome: ActOutcome, **fields) -> dict:
+    """An MCP result: the record's key fields plus the ACT outcome."""
+    return {
+        **fields,
+        "status": outcome.status,
+        "auto_transitions": outcome.auto_transitions,
+        "decision_record_id": outcome.decision_record_id,
+    }
 
 
 def _parse_cases(test_cases: list[str] | None) -> list[str]:
@@ -443,15 +449,9 @@ async def record_agreement_ceremony(agreement_id: str, stage: str, note: str, ct
             evidence=note.strip(),
             completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
         ))
-        advance = await maybe_auto_advance_agreement(s, agreement, actor_member_id=member.id)
+        outcome = await conduct_agreement_transition(s, agreement, caller=member)
         await s.commit()
-        return {
-            "agreement_id": agreement.agreement_id,
-            "status": agreement.status,
-            "auto_transitions": advance["transitions"],
-            "gates": advance["gates"],
-            "decision_record_id": advance["decision_record_id"],
-        }
+        return _outcome(outcome, agreement_id=agreement.agreement_id, gates=outcome.gates)
 
 
 @mcp.tool()
@@ -492,15 +492,9 @@ async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Con
                 consent.revision += 1
             consent.withdrawn_at = None
             consent.withdrawal_reason = None
-        advance = await maybe_auto_advance_agreement(s, agreement, actor_member_id=member.id)
+        outcome = await conduct_agreement_transition(s, agreement, caller=member)
         await s.commit()
-        return {
-            "agreement_id": agreement.agreement_id,
-            "status": agreement.status,
-            "auto_transitions": advance["transitions"],
-            "gates": advance["gates"],
-            "decision_record_id": advance["decision_record_id"],
-        }
+        return _outcome(outcome, agreement_id=agreement.agreement_id, gates=outcome.gates)
 
 
 @mcp.tool()
@@ -515,74 +509,18 @@ async def transition_agreement(agreement_id: str, status: str, evidence: str, ct
     """
     caller = await _caller(ctx)
     target = status.strip().lower()
-    evidence = (evidence or "").strip()
     async with _db()() as s:
         agreement = await _load_agreement(s, agreement_id)
         if agreement is None:
             raise ValueError("Agreement not found")
-        actor = await s.scalar(
-            select(Member).where(
-                Member.user_id == caller.user.id,
-                Member.ecosystem_id == agreement.ecosystem_id,
-            ).with_for_update()
-        )
-        if actor is None or actor.current_status != "active" or actor.role not in {"admin", "owner"}:
-            raise ValueError("Only an active ecosystem steward (admin or owner) may conduct this ceremony")
-
-        allowed = _AGREEMENT_TRANSITIONS.get(agreement.status, set())
-        if target not in allowed:
-            raise ValueError(f"Invalid transition: {agreement.status} -> {target}")
-        if target in {"advice", "consent", "test", "active"} and len(evidence) < 8:
-            raise ValueError(f"Documented evidence is required for the {target} ceremony (min 8 chars)")
-
-        gate_key = {"consent": "advice", "test": "consent", "active": "test"}.get(target)
-        if gate_key:
-            gates = await agreement_gate_status(s, agreement)
-            if not gates[gate_key]["met"]:
-                raise _gates_error(
-                    f"The {gate_key} gate is not satisfied — the agreement's declared ACT conditions must be met first",
-                    gates,
-                )
-
-        s.add(_snapshot_agreement(
-            agreement,
-            change_reason=f"Status transition: {agreement.status} -> {target}",
-            changed_by=actor.display_name,
-        ))
-        agreement.status = target
-        if target == "active" and agreement.ratification_date is None:
-            agreement.ratification_date = date.today()
-        s.add(AgreementCeremony(
-            id=uuid.uuid4(),
-            agreement_id=agreement.id,
-            stage=target,
-            completed_by_member_id=actor.id,
-            outcome={"advice": "opened", "consent": "opened", "test": "started", "active": "passed"}.get(target, "completed"),
-            evidence=evidence or None,
-            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        ))
-        agreement.version_fingerprint = generate_fingerprint(
-            agreement.title, agreement.text, agreement.version, agreement.status
-        )
-        if target == "active":
-            await record_agreement_commitment(s, agreement)
-        advance = await maybe_auto_advance_agreement(s, agreement, actor_member_id=actor.id)
-        if advance["transitions"]:
-            s.add(_snapshot_agreement(
-                agreement,
-                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
-                changed_by="ACT gate engine",
-            ))
-            agreement.version_fingerprint = generate_fingerprint(
-                agreement.title, agreement.text, agreement.version, agreement.status
-            )
+        # Same engine as REST POST /agreements/:id/status: ceremony steward, table, evidence, gate.
+        actor = await _row(s, caller.user.id, agreement.ecosystem_id)
+        try:
+            outcome = await conduct_agreement_transition(s, agreement, to=target, caller=actor, evidence=evidence)
+        except TransitionRefused as refusal:
+            raise _refused(refusal) from None
         await s.commit()
-        return {
-            "agreement_id": agreement.agreement_id,
-            "status": agreement.status,
-            "auto_transitions": advance["transitions"],
-            "decision_record_id": advance["decision_record_id"],
-        }
+        return _outcome(outcome, agreement_id=agreement.agreement_id)
 
 
 # ---------------------------------------------------------------------------
@@ -687,14 +625,9 @@ async def record_proposal_advice(proposal_id: str, advice_text: str, ctx: Contex
             advisor=member.display_name,
             advice_text=advice_text.strip(),
         ))
-        advance = await maybe_auto_advance_proposal(s, proposal)
+        outcome = await apply_proposal_transition(s, proposal, caller=member)
         await s.commit()
-        return {
-            "proposal_id": proposal.proposal_id,
-            "status": proposal.status,
-            "auto_transitions": advance["transitions"],
-            "gates": advance["gates"],
-        }
+        return _outcome(outcome, proposal_id=proposal.proposal_id, gates=outcome.gates)
 
 
 @mcp.tool()
@@ -703,7 +636,7 @@ async def submit_proposal_consent(proposal_id: str, position: str, ctx: Context,
     The consent gate needs quorum and zero open objections; status
     auto-advances when met."""
     caller = await _caller(ctx)
-    position = position.strip().lower()
+    position = consent_position(position)
     if position not in {"consent", "stand_aside", "object"}:
         raise ValueError("position must be consent, stand_aside, or object")
     if position == "object" and not (objection_text and objection_text.strip()):
@@ -737,14 +670,9 @@ async def submit_proposal_consent(proposal_id: str, position: str, ctx: Context,
             position=position,
             reason=objection_text.strip() if objection_text else None,
         ))
-        advance = await maybe_auto_advance_proposal(s, proposal)
+        outcome = await apply_proposal_transition(s, proposal, caller=member)
         await s.commit()
-        return {
-            "proposal_id": proposal.proposal_id,
-            "status": proposal.status,
-            "auto_transitions": advance["transitions"],
-            "gates": advance["gates"],
-        }
+        return _outcome(outcome, proposal_id=proposal.proposal_id, gates=outcome.gates)
 
 
 @mcp.tool()
@@ -785,22 +713,19 @@ async def submit_test_report(
                 criterion=name,
                 met=True,
             ))
-        advance = await maybe_auto_advance_proposal(s, proposal)
+        outcome = await apply_proposal_transition(s, proposal, caller=member)
         await s.commit()
-        return {
-            "proposal_id": proposal.proposal_id,
-            "status": proposal.status,
-            "auto_transitions": advance["transitions"],
-            "decision_record_id": advance["decision_record_id"],
-            "gates": advance["gates"],
-        }
+        return _outcome(outcome, proposal_id=proposal.proposal_id, gates=outcome.gates)
 
 
 @mcp.tool()
 async def transition_proposal(proposal_id: str, status: str, ctx: Context) -> dict:
-    """Move a proposal through the ACT sequence. Forward moves require the
-    declared (or inherited) gates to be met. Withdrawing and opening for
-    advice are manual moves reserved to the proposer or an ecosystem steward."""
+    """Move a proposal one step through the ACT sequence (or withdraw it).
+
+    Same rule as the app: only the proposer or an ecosystem steward moves a
+    proposal by hand, and a forward move needs its declared (or inherited) gate.
+    Moves whose gates are already met happen automatically.
+    """
     caller = await _caller(ctx)
     target = status.strip().lower()
     async with _db()() as s:
@@ -808,40 +733,17 @@ async def transition_proposal(proposal_id: str, status: str, ctx: Context) -> di
         if proposal is None:
             raise ValueError("Proposal not found")
         member = await _member(s, caller.user.id, proposal.ecosystem_id)
-        chain = ["draft", "advice", "consent", "test", "ratified"]
-        if target not in chain and target != "withdrawn":
-            raise ValueError(f"status must be one of {chain + ['withdrawn']}")
-        current = proposal.status
-        if target == current:
-            return {"proposal_id": proposal.proposal_id, "status": current, "auto_transitions": []}
-        is_manual_move = target == "withdrawn" or (current == "draft" and target == "advice")
-        if is_manual_move and not can_manage_proposal(member, proposal):
-            raise ValueError(MANAGE_DENIED)
-        if target == "withdrawn":
-            proposal.status = "withdrawn"
-            await s.commit()
-            return {"proposal_id": proposal.proposal_id, "status": "withdrawn", "auto_transitions": []}
-        if current not in chain or chain.index(target) < chain.index(current):
-            raise ValueError(f"Cannot move proposal from '{current}' to '{target}'")
-        # Opening the process (draft -> advice) is a deliberate manual move.
-        if current == "draft" and target == "advice":
-            proposal.status = "advice"
-            await s.commit()
-            return {"proposal_id": proposal.proposal_id, "status": "advice", "auto_transitions": []}
-        advance = await maybe_auto_advance_proposal(s, proposal)
-        if proposal.status != target:
-            await s.rollback()
-            raise _gates_error(
-                f"Gate conditions not met to move '{proposal.status}' toward '{target}'",
-                advance["gates"],
-            )
+        statuses = ["draft", "advice", "consent", "test", "ratified", "withdrawn"]
+        if target not in statuses:
+            raise ValueError(f"status must be one of {statuses}")
+        if target == proposal.status:
+            return {"proposal_id": proposal.proposal_id, "status": proposal.status, "auto_transitions": []}
+        try:
+            outcome = await apply_proposal_transition(s, proposal, to=target, caller=member)
+        except TransitionRefused as refusal:
+            raise _refused(refusal) from None
         await s.commit()
-        return {
-            "proposal_id": proposal.proposal_id,
-            "status": proposal.status,
-            "auto_transitions": advance["transitions"],
-            "decision_record_id": advance["decision_record_id"],
-        }
+        return _outcome(outcome, proposal_id=proposal.proposal_id)
 
 
 # ---------------------------------------------------------------------------

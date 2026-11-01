@@ -38,7 +38,11 @@ from neos_agent.db.models import (
     SharesNeeds,
 )
 from neos_agent.db.course_models import Quiz, QuizResult
-from neos_agent.api.helpers import ROLE_RANK, require_auth, require_ecosystem_role, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import get_ecosystem_ids, apply_ecosystem_name_filter, parse_pagination, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.policy import can_create_domain, can_edit_domain, is_domain_steward, is_profile_admin
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
 
@@ -86,21 +90,8 @@ def _clean_name(value: str | None) -> str | None:
     return (value or "").strip() or None
 
 
-async def _member_in_ecosystem(session, user_id: uuid.UUID | None, ecosystem_id: uuid.UUID) -> Member | None:
-    """The caller's Member row in one ecosystem (request.ctx.member is an arbitrary row)."""
-    if user_id is None:
-        return None
-    return await session.scalar(select(Member).where(
-        Member.user_id == user_id,
-        Member.ecosystem_id == ecosystem_id,
-    ))
-
-
-def _can_edit_domain(caller: Member | None, d: Domain) -> bool:
-    """The domain's steward, or an ecosystem steward (mod+)."""
-    if caller is None:
-        return False
-    return d.steward_id == caller.id or ROLE_RANK.get(caller.role, 0) >= ROLE_RANK["mod"]
+# Loader options shared by every handler that serializes a full domain.
+_DETAIL_OPTIONS = (selectinload(Domain.domain_elements), selectinload(Domain.domain_metrics))
 
 
 def _domain_to_list_item(d: Domain, *, is_participant: bool = False, is_steward: bool = False) -> dict:
@@ -175,9 +166,9 @@ def _domain_to_detail(
     ).model_dump(mode="json")
 
 
-async def _domain_detail_payload(session, d: Domain, user_id: uuid.UUID | None) -> dict:
+async def _domain_detail_payload(session, request: Request, d: Domain) -> dict:
     """Detail JSON plus the caller's standing and the active participant roster."""
-    caller = await _member_in_ecosystem(session, user_id, d.ecosystem_id)
+    caller = await caller_in(session, request, d.ecosystem_id)
     rows = (await session.execute(
         select(CircleMembership.member_id, CircleMembership.role, Member.display_name)
         .join(Member, Member.id == CircleMembership.member_id)
@@ -191,8 +182,8 @@ async def _domain_detail_payload(session, d: Domain, user_id: uuid.UUID | None) 
     return _domain_to_detail(
         d,
         is_participant=caller is not None and any(p.member_id == caller.id for p in participants),
-        is_steward=caller is not None and d.steward_id == caller.id,
-        can_edit=_can_edit_domain(caller, d),
+        is_steward=is_domain_steward(caller, d),
+        can_edit=can_edit_domain(caller, d),
         participants=participants,
     )
 
@@ -203,6 +194,7 @@ async def _domain_detail_payload(session, d: Domain, user_id: uuid.UUID | None) 
 
 
 @domains_api_bp.get("/")
+@authenticated
 async def list_domains(request: Request):
     """GET /api/v1/domains -- Paginated domain list with filtering.
 
@@ -211,21 +203,16 @@ async def list_domains(request: Request):
     Items carry caller_is_participant / caller_is_steward; the envelope
     carries caller_can_create (mod+ in a scoped ecosystem).
     """
-    member, err = require_auth(request)
-    if err:
-        return err
+    member = request.ctx.member
 
     eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
+    page_request = parse_pagination(request)
+    page, per_page = page_request.page, page_request.per_page
 
     async with request.app.ctx.db() as session:
         stmt = select(Domain).order_by(Domain.created_at.desc())
 
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
+        stmt = restrict_to_ecosystems(stmt, Domain, eco_ids)
         stmt = apply_ecosystem_name_filter(stmt, Domain, request)
 
         status = request.args.get("status")
@@ -241,7 +228,7 @@ async def list_domains(request: Request):
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
 
-        stmt = stmt.offset(offset).limit(per_page)
+        stmt = stmt.offset(page_request.offset).limit(per_page)
         result = await session.execute(stmt)
         domains = result.scalars().all()
 
@@ -249,8 +236,8 @@ async def list_domains(request: Request):
         # query for their active participation across this page.
         caller_rows = []
         if member.user_id is not None:
-            caller_rows = (await session.execute(
-                select(Member.id, Member.ecosystem_id, Member.role).where(Member.user_id == member.user_id)
+            caller_rows = (await session.scalars(
+                select(Member).where(Member.user_id == member.user_id)
             )).all()
         caller_member_ids = {row.id for row in caller_rows}
         participating: set[uuid.UUID] = set()
@@ -262,9 +249,9 @@ async def list_domains(request: Request):
                     CircleMembership.status == "active",
                 )
             )).scalars())
-        scope = set(eco_ids) if eco_ids else {row.ecosystem_id for row in caller_rows}
+        scope = set(eco_ids)
         caller_can_create = any(
-            row.ecosystem_id in scope and ROLE_RANK.get(row.role, 0) >= ROLE_RANK["mod"]
+            row.ecosystem_id in scope and can_create_domain(row)
             for row in caller_rows
         )
 
@@ -285,62 +272,36 @@ async def list_domains(request: Request):
 
 
 @domains_api_bp.get("/<domain_id:uuid>")
+@authenticated
 async def get_domain(request: Request, domain_id: uuid.UUID):
     """GET /api/v1/domains/:id -- Domain detail with elements and metrics."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        stmt = (
-            select(Domain)
-            .options(
-                selectinload(Domain.domain_elements),
-                selectinload(Domain.domain_metrics),
-            )
-            .where(Domain.id == domain_id)
-        )
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
-
-        result = await session.execute(stmt)
-        d = result.scalar_one_or_none()
-        if d is None:
-            return json({"error": "Domain not found"}, status=404)
-
-        payload = await _domain_detail_payload(session, d, member.user_id)
+        d = await get_scoped_or_404(session, request, Domain, domain_id, options=_DETAIL_OPTIONS, label="Domain")
+        payload = await _domain_detail_payload(session, request, d)
 
     return json(payload)
 
 
 @domains_api_bp.post("/")
+@authenticated
 async def create_domain(request: Request):
     """POST /api/v1/domains -- Create a new domain.
 
     Accepts JSON: DomainCreateRequest
     Returns JSON: DomainDetail with 201 status.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = DomainCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied: ecosystem not in scope"}, status=403)
+    if create_req.ecosystem_id not in get_ecosystem_ids(request):
+        raise ApiError(403, "Access denied: ecosystem not in scope")
 
-    _, role_err = await require_ecosystem_role(request, create_req.ecosystem_id, "mod")
-    if role_err is not None:
-        if role_err.status == 403:
-            return json({"error": CREATE_DENIED}, status=403)
-        return role_err
+    async with request.app.ctx.db() as session:
+        if not can_create_domain(await caller_in(session, request, create_req.ecosystem_id)):
+            raise ApiError(403, CREATE_DENIED)
 
     short_id = uuid.uuid4().hex[:8].upper()
     domain_id_str = f"DOM-{short_id}"
@@ -369,49 +330,29 @@ async def create_domain(request: Request):
         await session.commit()
 
         # Reload with relationships
-        stmt = (
-            select(Domain)
-            .options(
-                selectinload(Domain.domain_elements),
-                selectinload(Domain.domain_metrics),
-            )
-            .where(Domain.id == domain.id)
-        )
-        result = await session.execute(stmt)
-        domain = result.scalar_one()
-        payload = await _domain_detail_payload(session, domain, auth_member.user_id)
+        domain = (await session.execute(
+            select(Domain).options(*_DETAIL_OPTIONS).where(Domain.id == domain.id)
+        )).scalar_one()
+        payload = await _domain_detail_payload(session, request, domain)
 
     return json(payload, status=201)
 
 
 @domains_api_bp.put("/<domain_id:uuid>")
+@authenticated
 async def update_domain(request: Request, domain_id: uuid.UUID):
     """PUT /api/v1/domains/:id -- Update non-None fields of a domain."""
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = DomainUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
-        stmt = select(Domain).where(Domain.id == domain_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Domain, eco_ids)
+        d = await get_scoped_or_404(session, request, Domain, domain_id, label="Domain")
 
-        result = await session.execute(stmt)
-        d = result.scalar_one_or_none()
-        if d is None:
-            return json({"error": "Domain not found"}, status=404)
-
-        caller = await _member_in_ecosystem(session, auth_member.user_id, d.ecosystem_id)
-        if not _can_edit_domain(caller, d):
-            return json({"error": EDIT_DENIED}, status=403)
+        if not can_edit_domain(await caller_in(session, request, d.ecosystem_id), d):
+            raise ApiError(403, EDIT_DENIED)
 
         update_data = update_req.model_dump(exclude_none=True)
         if "name" in body:
@@ -431,17 +372,10 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         await session.commit()
 
         # Reload with relationships
-        stmt = (
-            select(Domain)
-            .options(
-                selectinload(Domain.domain_elements),
-                selectinload(Domain.domain_metrics),
-            )
-            .where(Domain.id == d.id)
-        )
-        result = await session.execute(stmt)
-        d = result.scalar_one()
-        payload = await _domain_detail_payload(session, d, auth_member.user_id)
+        d = (await session.execute(
+            select(Domain).options(*_DETAIL_OPTIONS).where(Domain.id == d.id)
+        )).scalar_one()
+        payload = await _domain_detail_payload(session, request, d)
 
     return json(payload)
 
@@ -452,39 +386,30 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
 
 
 @domains_api_bp.post("/<domain_id:uuid>/participation")
+@authenticated
 async def join_domain_participation(request: Request, domain_id: uuid.UUID):
     """Join a domain after satisfying its ecosystem's agreement gates."""
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     role = body.get("role", "member")
     if role != "member":
-        return json({"error": "Participation grants member access; stewardship roles require a separate governance action"}, status=403)
+        raise ApiError(403, "Participation grants member access; stewardship roles require a separate governance action")
 
     async with request.app.ctx.db() as session:
-        domain = await session.get(Domain, domain_id)
-        if domain is None:
-            return json({"error": "Domain not found"}, status=404)
-        local_member = await session.scalar(select(Member).where(
-            Member.user_id == auth_member.user_id,
-            Member.ecosystem_id == domain.ecosystem_id,
-        ))
+        domain = await get_scoped_or_404(session, request, Domain, domain_id, label="Domain")
+        local_member = await caller_in(session, request, domain.ecosystem_id)
         if local_member is None or local_member.current_status != "active":
-            return json({"error": "Active ecosystem membership is required for domain participation"}, status=403)
+            raise ApiError(403, "Active ecosystem membership is required for domain participation")
 
         missing = await missing_agreement_consents(
             session, local_member.id, domain.ecosystem_id, "domain", domain.id
         )
         if missing:
-            return json({
-                "error": "Agreement consent is required before domain participation",
+            raise ApiError(409, "Agreement consent is required before domain participation", {
                 "required_agreements": [
                     {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
                     for agreement in missing
                 ],
-            }, status=409)
+            })
 
         participation = await session.scalar(select(CircleMembership).where(
             CircleMembership.domain_id == domain.id,
@@ -514,13 +439,11 @@ async def join_domain_participation(request: Request, domain_id: uuid.UUID):
 
 
 @domains_api_bp.get("/<domain_id_q:uuid>/quizzes")
+@authenticated
 async def list_domain_quizzes(request: Request, domain_id_q: uuid.UUID):
     """GET /api/v1/domains/:id/quizzes -- List quizzes assigned to this domain."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
+        await get_scoped_or_404(session, request, Domain, domain_id_q, label="Domain")
         stmt = (
             select(Quiz)
             .where(Quiz.domain_id == domain_id_q)
@@ -547,35 +470,30 @@ async def list_domain_quizzes(request: Request, domain_id_q: uuid.UUID):
 
 
 @domains_api_bp.post("/<domain_id_a:uuid>/quizzes/assign")
+@authenticated
 async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
     """POST /api/v1/domains/:id/quizzes/assign -- Assign a quiz to this domain.
 
     Accepts JSON: {"quiz_id": "...", "is_entry_quiz": true/false}
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     quiz_id_str = body.get("quiz_id")
     is_entry = body.get("is_entry_quiz", False)
 
     if not quiz_id_str:
-        return json({"error": "quiz_id is required"}, status=400)
+        raise ApiError(400, "quiz_id is required")
 
     try:
         quiz_id = uuid.UUID(quiz_id_str)
     except ValueError:
-        return json({"error": "Invalid quiz_id"}, status=400)
+        raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as session:
-        domain = await session.get(Domain, domain_id_a)
-        if domain is None:
-            return json({"error": "Domain not found"}, status=404)
+        await get_scoped_or_404(session, request, Domain, domain_id_a, label="Domain")
 
         quiz = await session.get(Quiz, quiz_id)
         if quiz is None:
-            return json({"error": "Quiz not found"}, status=404)
+            raise ApiError(404, "Quiz not found")
 
         if is_entry:
             from sqlalchemy import update
@@ -593,33 +511,28 @@ async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
 
 
 @domains_api_bp.post("/<domain_id_u:uuid>/quizzes/unassign")
+@authenticated
 async def unassign_quiz_from_domain(request: Request, domain_id_u: uuid.UUID):
     """POST /api/v1/domains/:id/quizzes/unassign -- Unassign a quiz from this domain.
 
     Accepts JSON: {"quiz_id": "..."}
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     quiz_id_str = body.get("quiz_id")
     if not quiz_id_str:
-        return json({"error": "quiz_id is required"}, status=400)
+        raise ApiError(400, "quiz_id is required")
 
     try:
         quiz_id = uuid.UUID(quiz_id_str)
     except ValueError:
-        return json({"error": "Invalid quiz_id"}, status=400)
+        raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as session:
-        domain = await session.get(Domain, domain_id_u)
-        if domain is None:
-            return json({"error": "Domain not found"}, status=404)
+        await get_scoped_or_404(session, request, Domain, domain_id_u, label="Domain")
 
         quiz = await session.get(Quiz, quiz_id)
         if quiz is None or quiz.domain_id != domain_id_u:
-            return json({"error": "Quiz not found in this domain"}, status=404)
+            raise ApiError(404, "Quiz not found in this domain")
 
         quiz.domain_id = None
         quiz.is_entry_quiz = False
@@ -629,13 +542,11 @@ async def unassign_quiz_from_domain(request: Request, domain_id_u: uuid.UUID):
 
 
 @domains_api_bp.get("/<domain_id_r:uuid>/quiz-results")
+@authenticated
 async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
     """GET /api/v1/domains/:id/quiz-results -- View quiz results for domain quizzes."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
+        await get_scoped_or_404(session, request, Domain, domain_id_r, label="Domain")
         quiz_stmt = select(Quiz.id, Quiz.title).where(Quiz.domain_id == domain_id_r)
         quiz_rows = await session.execute(quiz_stmt)
         quiz_map = {row.id: row.title for row in quiz_rows}
@@ -681,31 +592,18 @@ async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
 
 
 @domains_api_bp.get("/<domain_id_sn:uuid>/shares-needs")
+@authenticated
 async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
     """GET /api/v1/domains/:id/shares-needs -- List shares & needs for this domain.
 
     Query params: type, category, status
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        domain = await session.get(Domain, domain_id_sn)
-        if domain is None:
-            return json({"error": "Domain not found"}, status=404)
+        domain = await get_scoped_or_404(session, request, Domain, domain_id_sn, label="Domain")
 
-        # Verify the requester is a member of this domain's ecosystem
-        is_admin = auth_member.profile in ("co_creator", "builder")
-        if not is_admin:
-            membership = await session.execute(
-                select(Member).where(
-                    Member.ecosystem_id == domain.ecosystem_id,
-                    Member.user_id == auth_member.user_id,
-                )
-            )
-            if not membership.scalars().first():
-                return json({"error": "You are not a member of this domain's ecosystem"}, status=403)
+        # Verify the requester is a member of this domain's ecosystem (profile admins bootstrap past it)
+        if not is_profile_admin(request.ctx.member) and await caller_in(session, request, domain.ecosystem_id) is None:
+            raise ApiError(403, "You are not a member of this domain's ecosystem")
 
         filters = [SharesNeeds.domain_id == domain_id_sn]
         type_filter = request.args.get("type")

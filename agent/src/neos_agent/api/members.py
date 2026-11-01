@@ -34,7 +34,11 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.api.helpers import require_auth, require_admin, require_ecosystem_role, ROLE_RANK, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import require_admin, get_ecosystem_ids, apply_ecosystem_name_filter, parse_pagination, serialize_shared_ecosystem_ids, build_search_filter
+from neos_agent.api.policy import can_assign_role, has_role_at_least, is_steward
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
     MemberRole,
@@ -170,27 +174,21 @@ def _member_to_profile(
 
 
 @members_api_bp.get("/")
+@authenticated
 async def list_members(request: Request):
     """GET /api/v1/members -- Paginated member list with filtering.
 
     Query params: status, profile, q (search display_name/member_id),
     page (default 1), per_page (default 25, max 100).
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
+    page_request = parse_pagination(request)
+    page, per_page = page_request.page, page_request.per_page
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).order_by(Member.created_at.desc())
 
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
+        stmt = restrict_to_ecosystems(stmt, Member, eco_ids)
         stmt = apply_ecosystem_name_filter(stmt, Member, request)
 
         status = request.args.get("status")
@@ -210,7 +208,7 @@ async def list_members(request: Request):
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = await session.scalar(count_stmt) or 0
 
-        stmt = stmt.options(selectinload(Member.user)).offset(offset).limit(per_page)
+        stmt = stmt.options(selectinload(Member.user)).offset(page_request.offset).limit(per_page)
         result = await session.execute(stmt)
         members = result.scalars().all()
 
@@ -223,59 +221,33 @@ async def list_members(request: Request):
 
 
 @members_api_bp.get("/<member_id:uuid>")
+@authenticated
 async def get_member(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id -- Member detail with onboarding status."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        stmt = (
-            select(Member)
-            .options(selectinload(Member.onboarding), selectinload(Member.user))
-            .where(Member.id == member_id)
+        m = await get_scoped_or_404(
+            session, request, Member, member_id,
+            options=(selectinload(Member.onboarding), selectinload(Member.user)),
+            label="Member",
         )
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
-
-        result = await session.execute(stmt)
-        m = result.scalar_one_or_none()
-
-    if m is None:
-        return json({"error": "Member not found"}, status=404)
 
     return json(_member_to_detail(m, ob=m.onboarding, user=m.user))
 
 
 @members_api_bp.get("/<member_id:uuid>/profile")
+@authenticated
 async def get_member_profile(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id/profile -- Enriched member profile.
 
     Returns the full member + user schema plus quiz progress summary,
     earned badges, and profile tags inline.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        stmt = (
-            select(Member)
-            .options(selectinload(Member.onboarding), selectinload(Member.user))
-            .where(Member.id == member_id)
+        m = await get_scoped_or_404(
+            session, request, Member, member_id,
+            options=(selectinload(Member.onboarding), selectinload(Member.user)),
+            label="Member",
         )
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
-
-        result = await session.execute(stmt)
-        m = result.scalar_one_or_none()
-
-        if m is None:
-            return json({"error": "Member not found"}, status=404)
 
         # Fetch all quiz results for this member
         results_stmt = select(QuizResult).where(QuizResult.member_id == member_id)
@@ -401,25 +373,23 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
 
 
 @members_api_bp.post("/")
+@authenticated
 async def create_member(request: Request):
     """POST /api/v1/members -- Create a new member.
 
     Accepts JSON: MemberCreateRequest
     Returns JSON: MemberDetail with 201 status.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
+    auth_member = request.ctx.member
 
     body = request.json or {}
     try:
         create_req = MemberCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied: ecosystem not in scope"}, status=403)
+    if create_req.ecosystem_id not in get_ecosystem_ids(request):
+        raise ApiError(403, "Access denied: ecosystem not in scope")
 
     short_id = uuid.uuid4().hex[:8].upper()
     member_id_str = f"MEM-{short_id}"
@@ -449,6 +419,7 @@ async def create_member(request: Request):
 
 
 @members_api_bp.put("/<member_id:uuid>")
+@authenticated
 async def update_member(request: Request, member_id: uuid.UUID):
     """PUT /api/v1/members/:id -- Update the caller's OWN member profile.
 
@@ -456,35 +427,26 @@ async def update_member(request: Request, member_id: uuid.UUID):
     actions on other members live on dedicated endpoints (PUT /members/:id/role,
     POST /members/:id/status) — never through profile edits.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = MemberUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
-        stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
-
-        result = await session.execute(stmt)
-        m = result.scalar_one_or_none()
-        if m is None:
-            return json({"error": "Member not found"}, status=404)
+        m = await get_scoped_or_404(
+            session, request, Member, member_id,
+            options=(selectinload(Member.user),),
+            label="Member",
+        )
 
         # Self-service only: profile content belongs to the member alone.
         req_user = getattr(request.ctx, "user", None)
         if req_user is None or m.user_id != req_user.id:
-            return json(
-                {"error": "Members can only edit their own profile. "
-                          "Governance actions use PUT /members/:id/role or POST /members/:id/status."},
-                status=403,
+            raise ApiError(
+                403,
+                "Members can only edit their own profile. "
+                "Governance actions use PUT /members/:id/role or POST /members/:id/status.",
             )
 
         update_data = update_req.model_dump(exclude_none=True)
@@ -510,58 +472,31 @@ async def update_member(request: Request, member_id: uuid.UUID):
 
 
 @members_api_bp.put("/<member_id:uuid>/role")
+@authenticated
 async def update_member_role(request: Request, member_id: uuid.UUID):
     """PUT /api/v1/members/:id/role -- Set a member's per-ecosystem role tier.
 
     owner -> any grant; admin -> only 'user'/'mod' targets and grants;
     self-demotion allowed; profile-admin bootstrap until owners designated.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         role_req = RoleUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     user = getattr(request.ctx, "user", None)
-    if user is None:
-        return json({"error": "Authentication required"}, status=401)
 
     async with request.app.ctx.db() as session:
-        result = await session.execute(
-            select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
+        m = await get_scoped_or_404(
+            session, request, Member, member_id,
+            options=(selectinload(Member.user),),
+            label="Member",
         )
-        m = result.scalar_one_or_none()
-        if m is None:
-            return json({"error": "Member not found"}, status=404)
 
-        caller = await session.scalar(
-            select(Member).where(
-                Member.user_id == user.id,
-                Member.ecosystem_id == m.ecosystem_id,
-            )
-        )
-        caller_rank = ROLE_RANK.get(caller.role, -1) if caller else -1
-        # transitional bootstrap until owners designated
-        is_profile_admin = caller is not None and caller.profile in ("co_creator", "builder")
-
-        target_rank = ROLE_RANK.get(m.role, 0)
-        new_rank = ROLE_RANK[role_req.role]
-
-        if is_profile_admin or caller_rank == ROLE_RANK["owner"]:
-            allowed = True
-        elif caller is not None and caller.id == m.id and new_rank <= caller_rank:
-            allowed = True  # self-demotion (checked before admin branch)
-        elif caller_rank == ROLE_RANK["admin"]:
-            allowed = target_rank < ROLE_RANK["admin"] and new_rank < ROLE_RANK["admin"]
-        else:
-            allowed = False
-
-        if not allowed:
-            return json({"error": "Ecosystem role 'admin' or higher required for this role change"}, status=403)
+        caller = await caller_in(session, request, m.ecosystem_id)
+        if not can_assign_role(caller, m, role_req.role):
+            raise ApiError(403, "Ecosystem role 'admin' or higher required for this role change")
 
         old_role = m.role
         m.role = role_req.role
@@ -573,37 +508,28 @@ async def update_member_role(request: Request, member_id: uuid.UUID):
 
 
 @members_api_bp.post("/<member_id:uuid>/status")
+@authenticated
 async def member_status_transition(request: Request, member_id: uuid.UUID):
     """POST /api/v1/members/:id/status -- Status transition.
 
     Accepts JSON: StatusTransitionRequest
     Records a MemberStatusTransition and updates current_status.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         req = StatusTransitionRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
-        stmt = select(Member).options(selectinload(Member.user)).where(Member.id == member_id)
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, Member, eco_ids)
+        m = await get_scoped_or_404(
+            session, request, Member, member_id,
+            options=(selectinload(Member.user),),
+            label="Member",
+        )
 
-        result = await session.execute(stmt)
-        m = result.scalar_one_or_none()
-        if m is None:
-            return json({"error": "Member not found"}, status=404)
-
-        _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "mod")
-        if role_err:
-            return role_err
+        if not is_steward(await caller_in(session, request, m.ecosystem_id)):
+            raise ApiError(403, "Ecosystem role 'mod' or higher required")
 
         old_status = m.current_status
 
@@ -627,28 +553,19 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
 
 
 @members_api_bp.get("/<member_id:uuid>/onboarding")
+@authenticated
 async def get_member_onboarding(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id/onboarding -- Onboarding checklist state."""
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
         # Verify member exists and is accessible
-        m_stmt = select(Member.id).where(Member.id == member_id)
-        if eco_ids:
-            m_stmt = apply_ecosystem_filter(m_stmt, Member, eco_ids)
-        if await session.scalar(m_stmt) is None:
-            return json({"error": "Member not found"}, status=404)
+        await get_scoped_or_404(session, request, Member, member_id, label="Member")
 
         stmt = select(MemberOnboarding).where(MemberOnboarding.member_id == member_id)
         result = await session.execute(stmt)
         ob = result.scalar_one_or_none()
 
     if ob is None:
-        return json({"error": "No onboarding record found"}, status=404)
+        raise ApiError(404, "No onboarding record found")
 
     data = OnboardingChecklistItem(
         id=ob.id,
@@ -666,26 +583,19 @@ async def get_member_onboarding(request: Request, member_id: uuid.UUID):
 
 
 @members_api_bp.post("/<member_id:uuid>/resend-invite")
+@authenticated
 async def resend_invite(request: Request, member_id: uuid.UUID):
     """POST /api/v1/members/:id/resend-invite -- Re-send a member's invite.
 
     No email/delivery infra exists yet; this records the intent and reports
     success. Actual delivery depends on future notification infra.
     """
-    auth_member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        m = await session.get(Member, member_id)
-        if m is None:
-            return json({"error": "Member not found"}, status=404)
+        m = await get_scoped_or_404(session, request, Member, member_id, label="Member")
         # profile-admin OR >=admin tier in this ecosystem (transitional OR)
         _, admin_err = require_admin(request)
-        if admin_err:
-            _, role_err = await require_ecosystem_role(request, m.ecosystem_id, "admin")
-            if role_err:
-                return role_err
+        if admin_err and not has_role_at_least(await caller_in(session, request, m.ecosystem_id), "admin"):
+            raise ApiError(403, "Ecosystem role 'admin' or higher required")
         display_name = m.display_name
 
     return json({

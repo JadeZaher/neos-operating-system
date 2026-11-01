@@ -37,17 +37,25 @@ from .agreement_vocabulary import (
     canonical_agreement_status,
     canonical_agreement_type,
 )
-from .helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter, serialize_shared_ecosystem_ids
+from .errors import ApiError, get_scoped_or_404
+from .guards import authenticated, caller_in, reachable_ecosystem_ids
+from .helpers import get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_name_filter, build_search_filter, parse_pagination, serialize_shared_ecosystem_ids
+from .policy import can_conduct_agreement_ceremony, is_active_member_in
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.agreement_consent import (
     agreement_consent_summary,
     missing_agreement_consents,
     synchronize_agreement_requirements,
 )
 from neos_agent.services.act_gates import (
+    AGREEMENT_LIFECYCLE,
+    EVIDENCED_CEREMONIES,
+    ActOutcome,
+    TransitionRefused,
+    advance_agreement,
     agreement_gate_status,
-    maybe_auto_advance_agreement,
+    apply_agreement_move,
     normalize_act_policy,
-    record_agreement_commitment,
 )
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
@@ -84,10 +92,9 @@ def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
 
 
-def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID] | None = None):
-    """Apply optional query-param filters to an Agreement select statement."""
-    if eco_ids:
-        stmt = apply_ecosystem_filter(stmt, Agreement, eco_ids)
+def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID]):
+    """Apply query-param filters to an Agreement select statement (no ecosystems -> no rows)."""
+    stmt = restrict_to_ecosystems(stmt, Agreement, eco_ids)
 
     stmt = apply_ecosystem_name_filter(stmt, Agreement, request)
 
@@ -203,30 +210,33 @@ def _agreement_to_detail(a: Agreement) -> dict:
     return data
 
 
-async def _agreement_detail_payload(db, agreement: Agreement, user_id: uuid.UUID | None) -> dict:
-    """Add consent progress and the authenticated member's attestation to detail."""
+def _detail_options() -> tuple:
+    """Eager loads the detail payload reads (async sessions cannot lazy-load)."""
+    return (selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
+
+
+async def _reload_for_detail(db, agreement_id: uuid.UUID) -> Agreement:
+    """The agreement with every relationship the detail payload reads."""
+    statement = select(Agreement).options(*_detail_options()).where(Agreement.id == agreement_id)
+    return (await db.execute(statement)).scalar_one()
+
+
+async def _agreement_detail_payload(db, agreement: Agreement, caller: Member | None,
+                                    outcome: ActOutcome | None = None) -> dict:
+    """Detail plus consent progress, gates, the ACT outcome when one ran, and the caller's attestation."""
     payload = _agreement_to_detail(agreement)
     summary = await agreement_consent_summary(db, agreement)
     payload["consent_summary"] = AgreementConsentSummary(**summary).model_dump(mode="json")
     payload["gates"] = await agreement_gate_status(db, agreement)
-    if user_id is None:
+    if outcome is not None:
+        outcome.attach(payload)
+    payload["caller_role"] = caller.role if caller else None
+    payload["caller_can_conduct"] = can_conduct_agreement_ceremony(caller, agreement)
+    if caller is None:
         return payload
-
-    member = await db.scalar(select(Member).where(
-        Member.user_id == user_id,
-        Member.ecosystem_id == agreement.ecosystem_id,
-    ))
-    if member is None:
-        payload["caller_role"] = None
-        payload["caller_can_conduct"] = False
-        return payload
-    payload["caller_role"] = member.role
-    payload["caller_can_conduct"] = (
-        member.current_status == "active" and member.role in {"admin", "owner"}
-    )
     consent = await db.scalar(select(AgreementMemberConsent).where(
         AgreementMemberConsent.agreement_id == agreement.id,
-        AgreementMemberConsent.member_id == member.id,
+        AgreementMemberConsent.member_id == caller.id,
         AgreementMemberConsent.agreement_version == agreement.version,
     ))
     if consent is None:
@@ -300,16 +310,71 @@ def _snapshot_agreement(agreement: Agreement, change_reason: str | None = None, 
     )
 
 
-# Valid status transitions: current -> allowed targets (ACT lifecycle)
-_VALID_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"advice"},
-    "advice": {"consent"},
-    "consent": {"test"},
-    "test": {"active"},
-    "active": {"under_review"},
-    "under_review": {"sunset", "active"},
-    "sunset": {"archived"},
-}
+def _regenerate_fingerprint(agreement: Agreement) -> None:
+    """Fingerprint the current title, text, version and status."""
+    agreement.version_fingerprint = generate_fingerprint(
+        agreement.title, agreement.text, agreement.version, agreement.status
+    )
+
+
+CEREMONY_DENIED = "Only an active ecosystem steward (admin or owner) may conduct this ceremony"
+
+
+async def transition_agreement(db, agreement: Agreement, *, to: str | None = None, caller: Member | None,
+                               evidence: str | None = None) -> ActOutcome:
+    """Conduct the ceremony to `to` (steward rule, table, evidence, gate), then the automatic cascade.
+
+    Shared by REST, MCP and the chat tool. Snapshots the version before each change and
+    regenerates the fingerprint; the caller commits. Moves and gates:
+    services/act_gates.py AGREEMENT_LIFECYCLE.
+    """
+    moved, minted = None, None
+    if to is not None:
+        if not can_conduct_agreement_ceremony(caller, agreement):
+            raise TransitionRefused(403, CEREMONY_DENIED)
+        move = AGREEMENT_LIFECYCLE.manual_move(agreement.status, to)
+        if move is None:
+            raise TransitionRefused(
+                400,
+                f"Invalid transition: {agreement.status} -> {to}",
+                {"allowed": AGREEMENT_LIFECYCLE.manual_targets(agreement.status)},
+            )
+        evidence = (evidence or "").strip()
+        if to in EVIDENCED_CEREMONIES and len(evidence) < 8:
+            raise TransitionRefused(400, f"Documented evidence is required for the {to} ceremony")
+        if move.gate is not None:
+            gates = await agreement_gate_status(db, agreement)
+            if not gates[move.gate]["met"]:
+                raise TransitionRefused(
+                    409,
+                    f"The {move.gate} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first",
+                    {"gates": gates},
+                )
+        db.add(_snapshot_agreement(
+            agreement,
+            change_reason=f"Status transition: {agreement.status} -> {to}",
+            changed_by=caller.display_name,
+        ))
+        moved = f"{agreement.status}->{to}"
+        minted = await apply_agreement_move(db, agreement, move, caller=caller, evidence=evidence)
+        _regenerate_fingerprint(agreement)
+
+    outcome = await advance_agreement(db, agreement, caller=caller)
+    if outcome.auto_transitions:
+        db.add(_snapshot_agreement(
+            agreement,
+            change_reason="Auto-advanced by ACT gate engine: " + ", ".join(outcome.auto_transitions),
+            changed_by="ACT gate engine",
+        ))
+        _regenerate_fingerprint(agreement)
+    outcome.moved = moved
+    outcome.decision_record_id = outcome.decision_record_id or minted
+    return outcome
+
+
+async def _consent_gate_scope(db, request: Request) -> list[uuid.UUID]:
+    """Active plus pending-consent ecosystems: a newcomer reads and consents from the consent gate."""
+    return await reachable_ecosystem_ids(db, request, include_pending=True)
 
 
 # ---------------------------------------------------------------------------
@@ -318,11 +383,9 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 
 
 @agreements_api_bp.get("/vocabulary")
+@authenticated
 async def agreement_vocabulary(request: Request):
     """GET /api/v1/agreements/vocabulary -- canonical filter and form values."""
-    _member, err = require_auth(request)
-    if err:
-        return err
     return json({
         "types": sorted(AGREEMENT_TYPES),
         "statuses": sorted(AGREEMENT_STATUSES),
@@ -330,113 +393,76 @@ async def agreement_vocabulary(request: Request):
 
 
 @agreements_api_bp.get("/")
+@authenticated
 async def list_agreements(request: Request):
     """GET /api/v1/agreements -- paginated list with filters.
 
     Query params: type, status, domain, q, page (default 1), per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
+    page = parse_pagination(request)
 
     async with request.app.ctx.db() as db:
         stmt = select(Agreement).order_by(Agreement.created_at.desc())
         try:
-            stmt = _apply_filters(stmt, request, eco_ids=eco_ids)
+            stmt = _apply_filters(stmt, request, get_ecosystem_ids(request))
         except ValueError as exc:
-            return json({"error": str(exc)}, status=400)
+            raise ApiError(400, str(exc)) from None
 
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = await db.scalar(count_stmt) or 0
-
-        stmt = stmt.offset(offset).limit(per_page)
-        result = await db.execute(stmt)
-        agreements = result.scalars().all()
+        total = await db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        agreements = (await db.execute(stmt.offset(page.offset).limit(page.per_page))).scalars().all()
 
     return json({
         "items": [_agreement_to_list_item(a) for a in agreements],
         "total": total,
-        "page": page,
-        "per_page": per_page,
+        "page": page.page,
+        "per_page": page.per_page,
     })
 
 
 @agreements_api_bp.get("/<agreement_id:uuid>")
+@authenticated
 async def get_agreement(request: Request, agreement_id: uuid.UUID):
     """GET /api/v1/agreements/:id -- detail with ratification records.
 
-    Verifies ecosystem ownership.
+    Scoped to active and pending-consent ecosystems (owned or shared).
     Returns JSON: AgreementDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-
     async with request.app.ctx.db() as db:
-        if not eco_ids:
-            eco_ids = list((await db.execute(select(Member.ecosystem_id).where(
-                Member.user_id == member.user_id,
-                Member.current_status.in_({"active", "pending_consent"}),
-            ))).scalars().all())
-        if not eco_ids:
-            return json({"error": "Access denied"}, status=403)
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
+            ecosystem_ids=await _consent_gate_scope(db, request),
         )
-        if eco_ids:
-            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
-
-        result = await db.execute(stmt)
-        agreement = result.scalar_one_or_none()
-
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-
-        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
+        caller = await caller_in(db, request, agreement.ecosystem_id)
+        return json(await _agreement_detail_payload(db, agreement, caller))
 
 
 @agreements_api_bp.post("/")
+@authenticated
 async def create_agreement(request: Request):
     """POST /api/v1/agreements -- create a new agreement.
 
     Accepts JSON: AgreementCreateRequest
     Returns JSON: AgreementDetail with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = AgreementCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
-    # Verify the ecosystem_id is in the member's scope
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied: ecosystem not in scope"}, status=403)
+    # Authorized ecosystems are the caller's active memberships (policy.is_active_member_in).
+    if create_req.ecosystem_id not in get_authorized_ecosystem_ids(request):
+        raise ApiError(403, "Access denied: ecosystem not in scope")
 
-    short_id = uuid.uuid4().hex[:8].upper()
-    agreement_id_str = f"AGR-{short_id}"
+    agreement_id_str = f"AGR-{uuid.uuid4().hex[:8].upper()}"
 
     async with request.app.ctx.db() as db:
         domain_error = await _validate_prerequisite_domains(
             db, create_req.ecosystem_id, create_req.prerequisite_domain_ids
         )
         if domain_error:
-            return json({"error": domain_error}, status=400)
+            raise ApiError(400, domain_error)
         agreement = Agreement(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
@@ -462,87 +488,52 @@ async def create_agreement(request: Request):
                 create_req.act_policy.model_dump() if create_req.act_policy else None
             ),
         )
-        agreement.version_fingerprint = generate_fingerprint(
-            agreement.title, agreement.text, agreement.version, agreement.status
-        )
+        _regenerate_fingerprint(agreement)
         db.add(agreement)
         await db.flush()
         await synchronize_agreement_requirements(db, agreement)
         await db.commit()
 
-        # Reload with ratification records for response
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement.id)
-        )
-        result = await db.execute(stmt)
-        agreement = result.scalar_one()
-
-        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)), status=201)
+        agreement = await _reload_for_detail(db, agreement.id)
+        caller = await caller_in(db, request, agreement.ecosystem_id)
+        return json(await _agreement_detail_payload(db, agreement, caller), status=201)
 
 
 @agreements_api_bp.put("/<agreement_id:uuid>")
+@authenticated
 async def update_agreement(request: Request, agreement_id: uuid.UUID):
     """PUT /api/v1/agreements/:id -- update an agreement.
 
     Accepts JSON: AgreementUpdateRequest (only non-None fields are applied).
     Returns JSON: AgreementDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = AgreementUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "Access denied"}, status=403)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
     async with request.app.ctx.db() as db:
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
         )
-        if eco_ids:
-            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
-
-        result = await db.execute(stmt)
-        agreement = result.scalar_one_or_none()
-
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-
-        actor = await db.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == agreement.ecosystem_id,
-            Member.current_status == "active",
-        ))
-        if actor is None:
-            return json({"error": "Only an active ecosystem member may edit an agreement"}, status=403)
+        actor = await caller_in(db, request, agreement.ecosystem_id)
+        if not is_active_member_in(actor, agreement.ecosystem_id):
+            raise ApiError(403, "Only an active ecosystem member may edit an agreement")
 
         if agreement.status not in {"draft", "advice"}:
-            return json(
-                {"error": "Only draft or advice agreements can be edited; reopen governance before changing agreement terms."},
-                status=409,
-            )
+            raise ApiError(409, "Only draft or advice agreements can be edited; reopen governance before changing agreement terms.")
 
         if update_req.prerequisite_domain_ids is not None:
             domain_error = await _validate_prerequisite_domains(
                 db, agreement.ecosystem_id, update_req.prerequisite_domain_ids
             )
             if domain_error:
-                return json({"error": domain_error}, status=400)
+                raise ApiError(400, domain_error)
 
         # Save snapshot of current state before applying changes
         change_reason = body.get("change_reason", "Manual edit")
-        snapshot = _snapshot_agreement(agreement, change_reason=change_reason, changed_by=member.display_name)
-        db.add(snapshot)
+        db.add(_snapshot_agreement(agreement, change_reason=change_reason, changed_by=actor.display_name))
 
         update_data = update_req.model_dump(exclude_none=True)
         if "act_policy" in update_data:
@@ -560,169 +551,55 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         for field, value in update_data.items():
             setattr(agreement, field, value)
 
-        # Bump version
         _bump_version(agreement)
         await synchronize_agreement_requirements(db, agreement)
-
-        agreement.version_fingerprint = generate_fingerprint(
-            agreement.title, agreement.text, agreement.version, agreement.status
-        )
+        _regenerate_fingerprint(agreement)
 
         await db.commit()
         await db.refresh(agreement)
 
-        # Re-load with ratification records
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement.id)
-        )
-        result = await db.execute(stmt)
-        agreement = result.scalar_one()
-
-        return json(await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None)))
+        agreement = await _reload_for_detail(db, agreement.id)
+        return json(await _agreement_detail_payload(db, agreement, actor))
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/status")
+@authenticated
 async def status_transition(request: Request, agreement_id: uuid.UUID):
-    """POST /api/v1/agreements/:id/status -- transition agreement status.
+    """POST /api/v1/agreements/:id/status -- conduct a status ceremony.
 
     Each transition is recorded as a governance ceremony. Advice, consent, and
     test are mandatory before activation; activation also needs test evidence.
-    Returns JSON: AgreementDetail
+    Returns JSON: AgreementDetail plus auto_transitions (and decision_record_id when minted).
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     new_status = body.get("status")
     if not new_status:
-        return json({"error": "\"status\" field is required"}, status=400)
+        raise ApiError(400, "\"status\" field is required")
     try:
         new_status = canonical_agreement_status(new_status)
     except ValueError as exc:
-        return json({"error": str(exc)}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "Access denied"}, status=403)
+        raise ApiError(400, str(exc)) from None
 
     async with request.app.ctx.db() as db:
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
         )
-        if eco_ids:
-            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
-
-        result = await db.execute(stmt)
-        agreement = result.scalar_one_or_none()
-
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-
-        actor = await db.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == agreement.ecosystem_id,
-        ).with_for_update())
-        if actor is None or actor.current_status != "active" or actor.role not in {"admin", "owner"}:
-            return json({"error": "Only an active ecosystem steward (admin or owner) may conduct this ceremony"}, status=403)
-
-        allowed = _VALID_TRANSITIONS.get(agreement.status, set())
-        if new_status not in allowed:
-            return json(
-                {"error": f"Invalid transition: {agreement.status} -> {new_status}"},
-                status=400,
-            )
-
-        ceremony_evidence = (body.get("evidence") or "").strip()
-        if new_status in {"advice", "consent", "test", "active"} and len(ceremony_evidence) < 8:
-            return json({"error": f"Documented evidence is required for the {new_status} ceremony"}, status=400)
-
-        # ACT gates: forward moves require the conditions declared at the
-        # agreement level. draft->advice opens the process and has no gate.
-        gate_key = {"consent": "advice", "test": "consent", "active": "test"}.get(new_status)
-        if gate_key:
-            gates = await agreement_gate_status(db, agreement)
-            if not gates[gate_key]["met"]:
-                return json(
-                    {
-                        "error": f"The {gate_key} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first",
-                        "gates": gates,
-                    },
-                    status=409,
-                )
-        # Snapshot before status change
-        snapshot = _snapshot_agreement(
-            agreement,
-            change_reason=f"Status transition: {agreement.status} -> {new_status}",
-            changed_by=actor.display_name,
-        )
-        db.add(snapshot)
-
+        actor = await caller_in(db, request, agreement.ecosystem_id)
         old_status = agreement.status
-        agreement.status = new_status
-        if new_status == "active" and agreement.ratification_date is None:
-            agreement.ratification_date = _dt.date.today()
-
-        db.add(AgreementCeremony(
-            id=uuid.uuid4(),
-            agreement_id=agreement.id,
-            stage=new_status,
-            completed_by_member_id=actor.id,
-            outcome={"advice": "opened", "consent": "opened", "test": "started", "active": "passed"}.get(new_status, "completed"),
-            evidence=ceremony_evidence or None,
-            completed_at=_utcnow(),
-        ))
-
-        agreement.version_fingerprint = generate_fingerprint(
-            agreement.title, agreement.text, agreement.version, agreement.status
+        outcome = await transition_agreement(
+            db, agreement, to=new_status, caller=actor, evidence=body.get("evidence"),
         )
-
-        # Activation produces the agreement's commitment decision artifact.
-        if new_status == "active":
-            await record_agreement_commitment(db, agreement)
-
-        # Cascade through any further gates now satisfied, recording each
-        # automatic transition as a system ceremony.
-        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
-        if advance["transitions"]:
-            db.add(_snapshot_agreement(
-                agreement,
-                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
-                changed_by="ACT gate engine",
-            ))
-            agreement.version_fingerprint = generate_fingerprint(
-                agreement.title, agreement.text, agreement.version, agreement.status
-            )
-
         await db.commit()
         await db.refresh(agreement)
 
-        logger.info(
-            "Agreement %s status: %s -> %s",
-            agreement_id, old_status, new_status,
-        )
+        logger.info("Agreement %s status: %s -> %s", agreement_id, old_status, new_status)
 
-        # Re-load with ratification records
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement.id)
-        )
-        result = await db.execute(stmt)
-        agreement = result.scalar_one()
-
-        payload = await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None))
-        payload["auto_transitions"] = advance["transitions"]
-        if advance["decision_record_id"]:
-            payload["decision_record_id"] = advance["decision_record_id"]
-        return json(payload)
+        agreement = await _reload_for_detail(db, agreement.id)
+        return json(await _agreement_detail_payload(db, agreement, actor, outcome))
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/ceremonies")
+@authenticated
 async def record_ceremony_evidence(request: Request, agreement_id: uuid.UUID):
     """POST /api/v1/agreements/:id/ceremonies -- record an advice round or test evidence.
 
@@ -733,44 +610,24 @@ async def record_ceremony_evidence(request: Request, agreement_id: uuid.UUID):
     Accepts JSON: {"stage": "advice"|"test", "note": "..."}
     Returns JSON: AgreementDetail with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
     try:
         evidence_request = AgreementCeremonyEvidenceRequest(**(request.json or {}))
     except Exception as exc:
-        return json({"error": f"Invalid request: {exc}"}, status=400)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "Access denied"}, status=403)
+        raise ApiError(400, f"Invalid request: {exc}") from None
 
     async with request.app.ctx.db() as db:
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
         )
-        if eco_ids:
-            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
-        result = await db.execute(stmt)
-        agreement = result.scalar_one_or_none()
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-
-        actor = await db.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == agreement.ecosystem_id,
-            Member.current_status == "active",
-        ))
-        if actor is None:
-            return json({"error": "Only an active ecosystem member may record ceremony evidence"}, status=403)
+        actor = await caller_in(db, request, agreement.ecosystem_id)
+        if not is_active_member_in(actor, agreement.ecosystem_id):
+            raise ApiError(403, "Only an active ecosystem member may record ceremony evidence")
 
         stage = evidence_request.stage
         if agreement.status != stage:
-            return json(
-                {"error": f"Evidence for the {stage} stage can only be recorded while the agreement is in {stage} (current: {agreement.status})"},
-                status=409,
+            raise ApiError(
+                409,
+                f"Evidence for the {stage} stage can only be recorded while the agreement is in {stage} (current: {agreement.status})",
             )
 
         db.add(AgreementCeremony(
@@ -783,64 +640,41 @@ async def record_ceremony_evidence(request: Request, agreement_id: uuid.UUID):
             completed_at=_utcnow(),
         ))
 
-        # ACT gate engine: advance automatically when the declared
-        # conditions are now met.
-        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
-        if advance["transitions"]:
-            db.add(_snapshot_agreement(
-                agreement,
-                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
-                changed_by="ACT gate engine",
-            ))
-            agreement.version_fingerprint = generate_fingerprint(
-                agreement.title, agreement.text, agreement.version, agreement.status
-            )
+        outcome = await transition_agreement(db, agreement, caller=actor)
         await db.commit()
 
-        # Re-load with ceremonies
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement.id)
-        )
-        result = await db.execute(stmt)
-        agreement = result.scalar_one()
+        agreement = await _reload_for_detail(db, agreement.id)
+        return json(await _agreement_detail_payload(db, agreement, actor, outcome), status=201)
 
-        payload = await _agreement_detail_payload(db, agreement, getattr(member, "user_id", None))
-        payload["auto_transitions"] = advance["transitions"]
-        if advance["decision_record_id"]:
-            payload["decision_record_id"] = advance["decision_record_id"]
-        return json(payload, status=201)
+
+async def _locked_caller(db, request: Request, agreement: Agreement) -> Member | None:
+    """The caller's row in the agreement's ecosystem, row-locked: consent changes their alignment score."""
+    caller = await caller_in(db, request, agreement.ecosystem_id)
+    if caller is not None:
+        await db.refresh(caller, with_for_update=True)
+    return caller
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/consent")
+@authenticated
 async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
     """Record the caller's explicit acceptance of the current agreement version."""
-    member, err = require_auth(request)
-    if err:
-        return err
     try:
         consent_request = AgreementConsentRequest(**(request.json or {}))
     except Exception as exc:
-        return json({"error": f"Invalid request: {exc}"}, status=400)
+        raise ApiError(400, f"Invalid request: {exc}") from None
 
     async with request.app.ctx.db() as db:
-        agreement = await db.scalar(
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
+            ecosystem_ids=await _consent_gate_scope(db, request),
         )
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
         if agreement.status not in {"consent", "test", "active", "under_review"}:
-            return json({"error": "Agreement consent opens during the consent ceremony"}, status=409)
+            raise ApiError(409, "Agreement consent opens during the consent ceremony")
 
-        actor = await db.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == agreement.ecosystem_id,
-        ).with_for_update())
+        actor = await _locked_caller(db, request, agreement)
         if actor is None:
-            return json({"error": "Only an ecosystem member may attest agreement consent"}, status=403)
+            raise ApiError(403, "Only an ecosystem member may attest agreement consent")
 
         consent = await db.scalar(select(AgreementMemberConsent).where(
             AgreementMemberConsent.agreement_id == agreement.id,
@@ -886,54 +720,33 @@ async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
                 actor.current_status = "active"
                 actor.onboarding_status = "complete"
 
-        # ACT gate engine: a completed consent ceremony advances the
-        # agreement automatically (and mints the commitment artifact if the
-        # test gate is already satisfied).
-        advance = await maybe_auto_advance_agreement(db, agreement, actor_member_id=actor.id)
-        if advance["transitions"]:
-            db.add(_snapshot_agreement(
-                agreement,
-                change_reason="Auto-advanced by ACT gate engine: " + ", ".join(advance["transitions"]),
-                changed_by="ACT gate engine",
-            ))
-            agreement.version_fingerprint = generate_fingerprint(
-                agreement.title, agreement.text, agreement.version, agreement.status
-            )
+        # A completed consent ceremony advances the agreement automatically
+        # (and mints the commitment artifact if the test gate is already met).
+        outcome = await transition_agreement(db, agreement, caller=actor)
         await db.commit()
         await db.refresh(agreement)
 
-        payload = await _agreement_detail_payload(db, agreement, member.user_id)
-        payload["auto_transitions"] = advance["transitions"]
-        if advance["decision_record_id"]:
-            payload["decision_record_id"] = advance["decision_record_id"]
+        payload = await _agreement_detail_payload(db, agreement, actor, outcome)
         return json(payload, status=201)
 
 
 @agreements_api_bp.delete("/<agreement_id:uuid>/consent")
+@authenticated
 async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
     """Withdraw the caller's personal consent and reverse its alignment credit."""
-    member, err = require_auth(request)
-    if err:
-        return err
     try:
         withdrawal = AgreementConsentWithdrawalRequest(**(request.json or {}))
     except Exception as exc:
-        return json({"error": f"Invalid request: {exc}"}, status=400)
+        raise ApiError(400, f"Invalid request: {exc}") from None
 
     async with request.app.ctx.db() as db:
-        agreement = await db.scalar(
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records), selectinload(Agreement.ceremonies))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
+            ecosystem_ids=await _consent_gate_scope(db, request),
         )
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-        actor = await db.scalar(select(Member).where(
-            Member.user_id == member.user_id,
-            Member.ecosystem_id == agreement.ecosystem_id,
-        ).with_for_update())
+        actor = await _locked_caller(db, request, agreement)
         if actor is None:
-            return json({"error": "Only an ecosystem member may withdraw agreement consent"}, status=403)
+            raise ApiError(403, "Only an ecosystem member may withdraw agreement consent")
         consent = await db.scalar(select(AgreementMemberConsent).where(
             AgreementMemberConsent.agreement_id == agreement.id,
             AgreementMemberConsent.member_id == actor.id,
@@ -941,7 +754,7 @@ async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
             AgreementMemberConsent.withdrawn_at.is_(None),
         ).with_for_update())
         if consent is None:
-            return json({"error": "No current agreement consent to withdraw"}, status=404)
+            raise ApiError(404, "No current agreement consent to withdraw")
 
         current_delta = int(await db.scalar(
             select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
@@ -968,33 +781,22 @@ async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
             actor.onboarding_status = "agreement_consent_required"
         await db.commit()
         await db.refresh(agreement)
-        return json(await _agreement_detail_payload(db, agreement, member.user_id))
+        return json(await _agreement_detail_payload(db, agreement, actor))
 
 
 @agreements_api_bp.get("/<agreement_id:uuid>/history")
+@authenticated
 async def get_history(request: Request, agreement_id: uuid.UUID):
     """GET /api/v1/agreements/:id/history -- amendment and review history.
 
     Returns JSON: AgreementHistoryResponse
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "Access denied"}, status=403)
-
     async with request.app.ctx.db() as db:
-        # Verify agreement exists and is in scope
-        agr_stmt = select(Agreement.id).where(Agreement.id == agreement_id)
-        if eco_ids:
-            agr_stmt = agr_stmt.where(Agreement.ecosystem_id.in_(eco_ids))
-        exists = await db.scalar(agr_stmt)
-        if exists is None:
-            return json({"error": "Agreement not found"}, status=404)
+        await get_scoped_or_404(
+            db, request, Agreement, agreement_id, label="Agreement",
+            ecosystem_ids=await _consent_gate_scope(db, request),
+        )
 
-        # Load amendments
         amend_result = await db.execute(
             select(AmendmentRecord)
             .where(AmendmentRecord.parent_agreement_id == agreement_id)
@@ -1002,7 +804,6 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         )
         amendments = amend_result.scalars().all()
 
-        # Load reviews
         review_result = await db.execute(
             select(ReviewRecord)
             .where(ReviewRecord.agreement_id == agreement_id)
@@ -1010,7 +811,7 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         )
         reviews = review_result.scalars().all()
 
-        # Load versions (capped at 50 most recent)
+        # Versions (capped at 50 most recent)
         version_result = await db.execute(
             select(AgreementVersion)
             .where(AgreementVersion.agreement_id == agreement_id)
@@ -1077,73 +878,47 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/rollback/<version_id:uuid>")
+@authenticated
 async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_id: uuid.UUID):
     """POST /api/v1/agreements/:id/rollback/:version_id -- restore agreement to a previous version.
 
-    Requires the member to be the agreement proposer or have 'active'/'steward' status.
-    Status rollback is restricted: cannot rollback to a status that isn't reachable
-    from the current status (or the same status). Content fields are always restored.
+    Requires an active membership in the agreement's ecosystem. Status rollback
+    is restricted: the restored status must be the current one or a manual
+    move from it (AGREEMENT_LIFECYCLE). Content fields are always restored.
 
     Creates a snapshot of the current state, then restores from the specified version.
     Returns JSON: AgreementDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    # Permission check: only proposers or steward/active members can rollback
-    member_status = getattr(member, "current_status", None)
-    if member_status not in ("active", "steward", "co_creator"):
-        return json({"error": "Insufficient permissions: rollback requires active/steward/co_creator status"}, status=403)
-
-    eco_ids = get_authorized_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "Access denied"}, status=403)
-
     async with request.app.ctx.db() as db:
-        # Load current agreement
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
-            .where(Agreement.id == agreement_id)
+        agreement = await get_scoped_or_404(
+            db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
         )
-        if eco_ids:
-            stmt = stmt.where(Agreement.ecosystem_id.in_(eco_ids))
+        actor = await caller_in(db, request, agreement.ecosystem_id)
+        if not is_active_member_in(actor, agreement.ecosystem_id):
+            raise ApiError(403, "Insufficient permissions: rollback requires active/steward/co_creator status")
 
-        result = await db.execute(stmt)
-        agreement = result.scalar_one_or_none()
-
-        if agreement is None:
-            return json({"error": "Agreement not found"}, status=404)
-
-        # Load the target version
-        ver_result = await db.execute(
+        target_version = (await db.execute(
             select(AgreementVersion).where(
                 AgreementVersion.id == version_id,
                 AgreementVersion.agreement_id == agreement_id,
             )
-        )
-        target_version = ver_result.scalar_one_or_none()
-
+        )).scalar_one_or_none()
         if target_version is None:
-            return json({"error": "Version not found"}, status=404)
+            raise ApiError(404, "Version not found")
 
-        # Validate status rollback: only allow if same status or a valid transition
+        # Validate status rollback: only allow if same status or a manual move from it
         if target_version.status != agreement.status:
-            allowed = _VALID_TRANSITIONS.get(agreement.status, set())
-            if target_version.status not in allowed:
-                return json(
-                    {"error": f"Cannot rollback to status '{target_version.status}' from current '{agreement.status}'. Invalid transition."},
-                    status=400,
+            if target_version.status not in AGREEMENT_LIFECYCLE.manual_targets(agreement.status):
+                raise ApiError(
+                    400,
+                    f"Cannot rollback to status '{target_version.status}' from current '{agreement.status}'. Invalid transition.",
                 )
 
-        # Snapshot current state before rollback
-        snapshot = _snapshot_agreement(
+        db.add(_snapshot_agreement(
             agreement,
             change_reason=f"Rollback to version {target_version.version}",
-            changed_by=member.display_name,
-        )
-        db.add(snapshot)
+            changed_by=actor.display_name,
+        ))
 
         # Restore fields from target version
         agreement.status = target_version.status
@@ -1164,25 +939,14 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
 
         # Bump version (don't restore old version number — always move forward)
         _bump_version(agreement)
-
-        # Regenerate fingerprint for the restored state
-        agreement.version_fingerprint = generate_fingerprint(
-            agreement.title, agreement.text, agreement.version, agreement.status
-        )
+        _regenerate_fingerprint(agreement)
         await synchronize_agreement_requirements(db, agreement)
 
         await db.commit()
         await db.refresh(agreement)
 
-        logger.info("Agreement %s rolled back to version %s by %s", agreement_id, target_version.version, member.display_name)
+        logger.info("Agreement %s rolled back to version %s by %s", agreement_id, target_version.version, actor.display_name)
 
-        # Re-load with ratification records
-        stmt = (
-            select(Agreement)
-            .options(selectinload(Agreement.ratification_records))
-            .where(Agreement.id == agreement.id)
-        )
-        result = await db.execute(stmt)
-        agreement = result.scalar_one()
+        agreement = await _reload_for_detail(db, agreement.id)
 
     return json(_agreement_to_detail(agreement))

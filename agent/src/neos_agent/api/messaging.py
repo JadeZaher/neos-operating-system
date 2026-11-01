@@ -28,7 +28,10 @@ from neos_agent.db.models import (
     Member,
     Message,
 )
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.errors import ApiError
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +49,14 @@ messaging_api_bp = Blueprint("messaging_api", url_prefix="/api/v1/messaging")
 
 
 
-async def _get_current_member_id(session, member_or_did, eco_ids: list[uuid.UUID]) -> uuid.UUID | None:
-    """Resolve the authenticated member to a member id within the active ecosystems."""
-    ids = await _get_current_member_ids(session, member_or_did, eco_ids)
-    return ids[0] if ids else None
-
-
-async def _get_current_member_ids(session, member_or_did, eco_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+async def _get_current_member_ids(
+    session, member_or_did, eco_ids: list[uuid.UUID], *, all_ecosystems: bool = False
+) -> list[uuid.UUID]:
     """Resolve the authenticated member to ALL their member ids within the given ecosystems.
 
     A user holds one Member row per ecosystem. Messaging must operate across all of
     them — resolving a single arbitrary row hides conversations and people from the
-    user's other ecosystems.
+    user's other ecosystems. An empty `eco_ids` matches nothing unless `all_ecosystems`.
     """
     from neos_agent.db.models import User
     if isinstance(member_or_did, str):
@@ -78,7 +77,9 @@ async def _get_current_member_ids(session, member_or_did, eco_ids: list[uuid.UUI
         return [member_or_did.id]
     else:
         return []
-    if eco_ids:
+    if not all_ecosystems:
+        if not eco_ids:
+            return []
         stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -104,15 +105,13 @@ async def _load_participants(session, conversation_id: uuid.UUID) -> list[Partic
 
 
 @messaging_api_bp.get("/conversations")
+@authenticated
 async def list_conversations(request: Request):
     """GET /api/v1/messaging/conversations -- List conversations for current member.
 
     Returns JSON: {"conversations": [ConversationSummary]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
@@ -201,21 +200,19 @@ async def list_conversations(request: Request):
 
 
 @messaging_api_bp.get("/conversations/<conversation_id:uuid>")
+@authenticated
 async def get_conversation(request: Request, conversation_id: uuid.UUID):
     """GET /api/v1/messaging/conversations/:id -- Conversation detail with recent messages.
 
     Returns JSON: ConversationDetailSchema
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_ids = await _get_current_member_ids(session, member, eco_ids)
         if not member_ids:
-            return json({"error": "Member not found"}, status=404)
+            raise ApiError(404, "Member not found")
 
         # Verify participation via any of the user's member rows
         participant_check = await session.execute(
@@ -223,13 +220,13 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
             .where(ConversationParticipant.conversation_id == conversation_id)
             .where(ConversationParticipant.member_id.in_(member_ids))
         )
-        if participant_check.scalar_one_or_none() is None:
-            return json({"error": "Conversation not found"}, status=404)
+        if participant_check.first() is None:
+            raise ApiError(404, "Conversation not found")
 
         # Load conversation
         conv = await session.get(Conversation, conversation_id)
         if conv is None:
-            return json({"error": "Conversation not found"}, status=404)
+            raise ApiError(404, "Conversation not found")
 
         # Participants
         participants = await _load_participants(session, conversation_id)
@@ -281,39 +278,40 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
 
 
 @messaging_api_bp.post("/conversations")
+@authenticated
 async def create_conversation(request: Request):
     """POST /api/v1/messaging/conversations -- Create a conversation.
 
     Accepts JSON: CreateConversationRequest
     Returns JSON: ConversationDetailSchema with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     body = request.json or {}
     try:
         create_req = CreateConversationRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}")
 
     # Normalize type: accept "direct" as alias for "dm"
     if create_req.type == "direct":
         create_req.type = "dm"
     if create_req.type not in ("dm", "group"):
-        return json({"error": "type must be 'dm' or 'group'"}, status=400)
+        raise ApiError(400, "type must be 'dm' or 'group'")
 
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
-            return json({"error": "Member not found"}, status=404)
+        # The conversation belongs to one ecosystem; its creator is the caller's row THERE.
+        conversation_ecosystem_id = eco_ids[0] if eco_ids else None
+        creator = await caller_in(session, request, conversation_ecosystem_id)
+        if creator is None:
+            raise ApiError(404, "Member not found")
+        member_id = creator.id
 
         # Create conversation
         conv = Conversation(
             id=uuid.uuid4(),
-            ecosystem_id=eco_ids[0] if eco_ids else member.ecosystem_id,
+            ecosystem_id=conversation_ecosystem_id,
             type=create_req.type,
             title=create_req.title,
             created_by=member_id,
@@ -358,6 +356,7 @@ async def create_conversation(request: Request):
 
 
 @messaging_api_bp.post("/conversations/<conversation_id:uuid>/messages")
+@authenticated
 async def send_message(request: Request, conversation_id: uuid.UUID):
     """POST /api/v1/messaging/conversations/:id/messages -- Send a message (REST fallback).
 
@@ -367,23 +366,20 @@ async def send_message(request: Request, conversation_id: uuid.UUID):
     This is the REST alternative to WebSocket message sending, ensuring
     messages can be sent even when WebSocket connections fail.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     body = request.json or {}
     content = (body.get("content") or "").strip()
     if not content:
-        return json({"error": "content is required"}, status=400)
+        raise ApiError(400, "content is required")
     if len(content) > 10_000:
-        return json({"error": "Message too long (max 10000 chars)"}, status=400)
+        raise ApiError(400, "Message too long (max 10000 chars)")
 
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_ids = await _get_current_member_ids(session, member, eco_ids)
         if not member_ids:
-            return json({"error": "Member not found"}, status=404)
+            raise ApiError(404, "Member not found")
 
         # Verify participation and resolve WHICH of the user's member rows is in this conversation
         participant_row = (await session.execute(
@@ -392,7 +388,7 @@ async def send_message(request: Request, conversation_id: uuid.UUID):
             .where(ConversationParticipant.member_id.in_(member_ids))
         )).first()
         if participant_row is None:
-            return json({"error": "Not a participant"}, status=403)
+            raise ApiError(403, "Not a participant")
         member_id = participant_row.member_id
 
         # Persist message
@@ -453,26 +449,22 @@ async def send_message(request: Request, conversation_id: uuid.UUID):
 
 
 @messaging_api_bp.get("/conversations/<conversation_id:uuid>/messages")
+@authenticated
 async def list_messages(request: Request, conversation_id: uuid.UUID):
     """GET /api/v1/messaging/conversations/:id/messages -- Paginated message history.
 
     Query params: page (default 1), per_page (default 50)
     Returns JSON: {"messages": [MessageSchema], "total": N}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 50))))
-    offset = (page - 1) * per_page
+    member = request.ctx.member
+    page = parse_pagination(request, default=50)
 
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
         member_ids = await _get_current_member_ids(session, member, eco_ids)
         if not member_ids:
-            return json({"error": "Member not found"}, status=404)
+            raise ApiError(404, "Member not found")
 
         # Verify participation via any of the user's member rows
         participant_check = await session.execute(
@@ -480,8 +472,8 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
             .where(ConversationParticipant.conversation_id == conversation_id)
             .where(ConversationParticipant.member_id.in_(member_ids))
         )
-        if participant_check.scalar_one_or_none() is None:
-            return json({"error": "Conversation not found"}, status=404)
+        if participant_check.first() is None:
+            raise ApiError(404, "Conversation not found")
 
         # Total count
         total_stmt = (
@@ -499,8 +491,8 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
             .where(Message.conversation_id == conversation_id)
             .where(Message.deleted_at.is_(None))
             .order_by(Message.created_at.desc())
-            .offset(offset)
-            .limit(per_page)
+            .offset(page.offset)
+            .limit(page.per_page)
         )
         msg_result = await session.execute(msg_stmt)
         msg_rows = msg_result.all()
@@ -522,6 +514,7 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
 
 
 @messaging_api_bp.get("/search")
+@authenticated
 async def search_messages(request: Request):
     """GET /api/v1/messaging/search -- Search messages across conversations.
 
@@ -529,10 +522,7 @@ async def search_messages(request: Request):
     Scoped to conversations the member participates in.
     Returns JSON: {"messages": [MessageSchema]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     query = request.args.get("q", "").strip()
     if not query:
         return json({"messages": []})
@@ -540,14 +530,14 @@ async def search_messages(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_id = await _get_current_member_id(session, member, eco_ids)
-        if member_id is None:
+        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        if not member_ids:
             return json({"messages": []})
 
         # Get conversation ids the member participates in
         conv_ids_stmt = (
             select(ConversationParticipant.conversation_id)
-            .where(ConversationParticipant.member_id == member_id)
+            .where(ConversationParticipant.member_id.in_(member_ids))
         )
         conv_ids_result = await session.execute(conv_ids_stmt)
         conv_ids = [row[0] for row in conv_ids_result.all()]
@@ -586,6 +576,7 @@ async def search_messages(request: Request):
 
 
 @messaging_api_bp.get("/members")
+@authenticated
 async def list_members_for_picker(request: Request):
     """GET /api/v1/messaging/members -- Member picker for starting conversations.
 
@@ -594,25 +585,21 @@ async def list_members_for_picker(request: Request):
     Excludes all of the user's own member rows.
     Returns JSON: {"members": [MemberPickerItem]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    member = request.ctx.member
     from neos_agent.db.models import Ecosystem
     from neos_agent.api.helpers import get_authorized_ecosystem_ids
 
     eco_ids = get_authorized_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        own_ids = await _get_current_member_ids(session, member, [])
+        own_ids = await _get_current_member_ids(session, member, [], all_ecosystems=True)
 
         stmt = (
             select(Member.id, Member.display_name, Member.profile, Member.role,
                    Member.ecosystem_id, Ecosystem.name.label("ecosystem_name"))
             .outerjoin(Ecosystem, Ecosystem.id == Member.ecosystem_id)
         )
-        if eco_ids:
-            stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
+        stmt = restrict_to_ecosystems(stmt, Member, eco_ids, include_shared=False)
 
         # Exclude every member row belonging to the current user
         if own_ids:

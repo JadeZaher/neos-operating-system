@@ -15,6 +15,7 @@ import pytest
 from sanic import Sanic
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from neos_agent.api.errors import register_api_errors
 from neos_agent.api.helpers import ROLE_RANK
 from neos_agent.api.members import members_api_bp
 from neos_agent.db.models import Base, Ecosystem, Member, User
@@ -87,6 +88,7 @@ def _create_app(auth_member_id: uuid.UUID | None, auth_user_id: uuid.UUID | None
         request.ctx.selected_ecosystem_ids = [ECO_A, ECO_B]
         request.ctx.authorized_ecosystem_ids = [ECO_A, ECO_B]
 
+    register_api_errors(app)
     app.blueprint(members_api_bp)
     return app
 

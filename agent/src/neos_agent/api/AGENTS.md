@@ -38,7 +38,8 @@ stored `own_act_policy`, and a `governing_agreement` brief — never recompute
 any of this in a view. Agreement advice rounds and test evidence are recorded
 via `POST /agreements/:id/ceremonies` (`outcome` "round"/"evidence"); manual
 forward transitions that skip unmet gates are rejected 409 with the gates
-payload.
+payload. Which moves exist, their gates and which are automatic live in the
+lifecycle tables; see `services/AGENTS.md` "ACT lifecycle".
 
 ## Proposal authorship and manage rule
 
@@ -57,10 +58,10 @@ Participation and management are separate:
   (`ROLE_RANK >= mod`). Otherwise the response is 403 with `MANAGE_DENIED`.
   A proposal with a NULL author link (legacy, or created by a path that does not
   set it) is steward-only, the same rule `discover.py` applies to legacy
-  shares and needs. MCP `transition_proposal` applies the rule to withdrawing
-  and to `draft -> advice`; its forward moves only run the gate engine. The
-  transition table and gate check live in `manual_transition_error`, shared by
-  REST `POST /status` and the chat tool `update_proposal_status`.
+  shares and needs. REST `POST /status`, MCP `transition_proposal` and the
+  chat tool `update_proposal_status` all call
+  `act_gates.transition_proposal(..., to=...)`, which applies the manage rule,
+  the table and the gate (MCP forward moves used to skip the manage rule).
 
 Advice integrity: blank advice is rejected with 400, because a blank entry would
 still count toward the advice gate. The author cannot advise their own proposal
@@ -104,22 +105,62 @@ Updating requires the domain's steward or mod+ (403 `EDIT_DENIED`). Moving
 
 The in-app assistant (`api/chat.py`, legacy `views/chat.py`) runs
 `agent/governance_tools.execute_tool` with `caller_user_id` = the signed-in
-user. Tools in `CALLER_SCOPED_TOOLS` act as that member and return
-`CALLER_REQUIRED` without one, so a model-chosen argument can never stand in
-for identity:
+user. Every state-changing tool is in `CALLER_SCOPED_TOOLS`: it acts as that
+member, returns `CALLER_REQUIRED` without one, resolves the caller's row in
+the record's ecosystem (`_caller_row`, the request-free `caller_in`) and asks
+the same `policy` predicate as REST. A model-chosen argument never stands in
+for identity: `participant`, `declared_by`, `recorder`, `auditor`,
+`reporter_id`, `created_by` and `member_name` are ignored or refused.
 
-- `create_proposal`: author = the caller's row in the scoped ecosystem
-  (`proposer_member_id`); `proposer` is optional display text; status `draft`.
-- `record_advice`: advisor = the caller (no `advisor` argument); blank advice
-  and self-advice are refused; the advice gate auto-advances as in REST.
-- `update_proposal_status`: `can_manage_proposal`, then
-  `manual_transition_error` (same table and ACT gates as REST), then cascade.
-  `created` is accepted as a legacy alias of `draft`.
-- `create_domain_draft`: caller's row must be mod+ (`CREATE_DENIED`).
+| Tool | Rule (policy) | Identity from the caller |
+|---|---|---|
+| `create_proposal` | a member row in the scoped ecosystem | author (`proposer_member_id`); `proposer` is display text |
+| `record_advice` | not the author (`is_proposal_author`) | advisor |
+| `record_consent_position` | `can_participate` | participant; `objection` stored as `object`; the gate cascades as in REST |
+| `update_proposal_status` | `transition_proposal` (manage rule, table, gate) | actor |
+| `create_agreement_draft` | `is_active_member_in` (REST: authorized ids) | proposer text defaults to the caller |
+| `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate) | conductor; the version never changes |
+| `create_decision_record` | `can_record_decision` (steward; no REST route, decisions are minted by ACT) | recorder |
+| `declare_emergency` | `can_declare_emergency` (any active member, owner decision) | declarer |
+| `create_exit_record` | `is_active_member_in`; only one's own exit (`EXIT_SELF_ONLY`) | the leaving member |
+| `create_conflict_case`, `triage_conflict`, `create_repair_agreement`, `create_safeguard_audit` | `is_active_member_in` the record's ecosystem (as REST) | reporter / auditor |
+| `create_domain_draft` | `is_steward_in` (REST `require_ecosystem_role` mod) | `created_by` |
+| `create_ecosystem` | signed in (as REST) | founder joins as an active `co_creator` and stewards a core domain |
 
-Other mutating chat tools (consent positions, agreement drafts/status,
-decisions, emergencies, exits, ecosystems) still take identities from model
-arguments; bring each under `CALLER_SCOPED_TOOLS` before relying on it.
+Proposal tools accept the page's UUID as well as the `PROP-` key.
+
+`update_agreement_status` used to keep its own table (`consent -> active`),
+skip the gates and evidence, and bump the version on advice, consent and
+active. The bump silently voided every member's consent, which is bound to
+`agreement.version`; it now calls the REST/MCP engine, so a ceremony records
+its `AgreementCeremony`, snapshots an `AgreementVersion`, and activation mints
+the commitment artifact. Deliberately unchanged here, for the governance wave
+(`uxqa/governance/review-core.md`): REST consent positions are not
+de-duplicated; an objection cannot be lifted; one passed test report ratifies. REST `POST /emergency/declare` still has no
+membership check (`emergency.py`, another lane); `can_declare_emergency` is
+the predicate to adopt there, and the co-signer joins it.
+
+## ACT parity
+
+One script of ACT moves runs through REST, MCP and chat in
+`tests/test_uxqa_p1_mcp_parity.py`; every surface must refuse and allow the
+same moves and leave the same status.
+
+| Move | REST | MCP | Chat |
+|---|---|---|---|
+| open draft -> advice | `POST /proposals/:id/status` | `transition_proposal` | `update_proposal_status` |
+| forward move with unmet gate | 409 + `gates` | `ValueError` with gates | refusal text |
+| advice | `POST /advice` (author refused) | `record_proposal_advice` | `record_advice` |
+| consent position | `POST /consent` (caller, body name ignored) | `submit_proposal_consent` | `record_consent_position` |
+| test report | `POST /test` | `submit_test_report` | none yet |
+| withdraw | manage rule | manage rule | manage rule |
+| agreement ceremony | `POST /agreements/:id/status` | `transition_agreement` | `update_agreement_status` (with `evidence`) |
+| agreement round / evidence | `POST /agreements/:id/ceremonies` | `record_agreement_ceremony` | none yet |
+
+The agreement script also refuses short evidence, an unmet advice gate and a
+skipped stage on every surface, and checks that no surface changes the
+version. An agreement move the table lacks is a 400 carrying `allowed`, as
+for proposals, so MCP and chat can name the valid next stages.
 
 ## Sign-up placement and the consent gate
 
@@ -141,6 +182,32 @@ gated newcomer to the client route `/welcome/consent` (`CONSENT_GATE_PATH`);
 `GET /auth/me` returns `pending_consents` (ecosystem + missing agreements per
 pending membership) so the client can show the gate after any sign-in path.
 
+## Join-first self-service writes
+
+Orientation progress (`POST /orientation/ethos/:id/progress`) and ethos
+participation consent (`POST /ethos/:id/access/consent`) are stored per
+member row, so they need the caller's row in that ecosystem (any status: a
+pending-consent row is enough). A member of A opening public ecosystem B has
+none. `guards.caller_in_or_join_required` answers 404 (`"Ecosystem not
+found"` / `"Ethos not found"`) only when the ecosystem does not exist, and
+otherwise 409 `{"error": "Join this ecosystem to …", "code":
+"JOIN_REQUIRED"}`. Beginning an orientation or consenting is an intent to
+join, so the client joins first (`POST /ecosystems/:id/join`, which creates
+the row as active or pending consent) and then retries; see
+`client/src/AGENTS.md` "Orientation journeys". The reads (`GET .../progress`,
+`GET .../access/me`) still answer empty for a non-member.
+
+## Chat sessions
+
+A session belongs to the member row of its own ecosystem
+(`_save_session` uses `caller_in` for the session's ecosystem). Reads match
+the caller's rows in scope: the selection for the list, every authorized
+ecosystem for one session. A caller with no authorized ecosystem (only
+pending or exited rows) would match nothing, so `_member_ids_in` falls back
+to all of the caller's own rows, any status. It is always filtered by the
+caller's `user_id`, so the fallback widens the caller's own history only,
+never anyone else's.
+
 ## Handler contracts
 
 Shared building blocks for JSON handlers (craft plan BE1/BE2, wave 0). Each
@@ -153,6 +220,7 @@ in `tests/test_api_contracts.py` is the executable version of the examples.
 | `guards.authenticated` | `@authenticated` above `async def handler(request, ...)` | `member, err = require_auth(request)` boilerplate |
 | `guards.caller_in` | `await caller_in(session, request, ecosystem_id) -> Member \| None` | per-ecosystem decisions made on the session's default row |
 | `guards.reachable_ecosystem_ids` | `await reachable_ecosystem_ids(session, request, include_pending=True) -> list[UUID]` | the inline active+pending membership query in `get_agreement` |
+| `guards.caller_in_or_join_required` | `await caller_in_or_join_required(session, request, ecosystem_id, *, not_found=..., join_message=...) -> Member` | a 404 that told a non-member the ecosystem does not exist; see "Join-first self-service writes" |
 | `policy` | `is_steward(member)`, `is_steward_in(member, ecosystem_id)`, `can_manage_proposal(member, proposal)`, `can_edit_domain(member, domain)`, `can_conduct_agreement_ceremony(member, agreement)`, `can_assign_role(caller, target, new_role)`; also `ROLE_RANK`, `role_rank`, `has_role_at_least`, `is_proposal_author`, `is_domain_steward`, `is_profile_admin` | rules restated in REST, MCP and chat |
 | `errors.ApiError` | `raise ApiError(status, message, extra=None)` -> `{"error": message, **extra}` | hand-built error JSON |
 | `errors.get_scoped_or_404` | `await get_scoped_or_404(session, request, Model, entity_id, *, options=(), label="Proposal", ecosystem_ids=None, include_shared=True)` | fail-open detail scoping; 403s that confirm a row exists |
@@ -252,9 +320,8 @@ Migration rules for wave-1 lanes:
 2. Every authorization decision: `caller_in(...)` for the resource's
    ecosystem, then a `policy` predicate. Delete local `_caller_member`,
    `_member_in_ecosystem` and inline `select(Member).where(user_id,
-   ecosystem_id)` copies. Code with no request (MCP, chat tools) keeps
-   `proposals.caller_member(session, user_id, ecosystem_id)` until BE-ACT
-   moves it.
+   ecosystem_id)` copies. Code with no request resolves the same row itself:
+   `mcp_server._row` and `governance_tools._caller_row`.
 3. `ROLE_RANK.get(m.role, 0) >= ROLE_RANK["mod"]` -> `is_steward(m)` when `m`
    is a `caller_in` row, else `is_steward_in(m, ecosystem_id)`; the
    `members.py` role matrix -> `can_assign_role`; active plus
@@ -307,9 +374,11 @@ Migration rules for wave-1 lanes:
 Drift found while unifying, deliberately not changed in wave 0:
 
 - "Steward" has two rules: proposals and domains accept any `mod+` row;
-  agreement ceremonies (`agreements.py` ~225, ~630; `mcp_server.py` ~529)
-  require an active `admin+` row. `caller_can_conduct` means "may
-  participate" on proposals but "may conduct ceremonies" on agreements.
+  agreement ceremonies require an active `admin+` row. Kept, under separate
+  names: `is_steward` / `can_manage_proposal` versus
+  `can_conduct_agreement_ceremony` (REST, MCP and chat all call the latter).
+  `caller_can_conduct` means "may participate" (`can_participate`) on
+  proposals but "may conduct ceremonies" on agreements.
 - `ecosystems.py` ~333 lets "a steward of any domain, or the sole member"
   update ecosystem settings: a third rule, outside `policy`.
 - The chat tool `check_domain_authority` (`governance_tools.py` ~556) accepts
@@ -323,16 +392,15 @@ Drift found while unifying, deliberately not changed in wave 0:
   profile of `caller_in(session, request, resource.ecosystem_id)`
   (`is_profile_admin`).
 - Per-member rows keyed on `ctx.member.id` follow the default row, so they
-  change with the selection. Orientation progress (`orientation.py` ~350,
-  ~400, ~445) reads and writes `UserJourneyProgress` for `ctx.member.id`
-  while its route names the ecosystem; it must key on
-  `caller_in(session, request, ecosystem_id)` (BE-Journey lane). The same
-  pattern (`grep "member_id == member.id"`) runs through chat sessions,
-  notifications, messaging, ethos access and onboarding.
-- `chat.py` ~785: the shared-chat "ecosystem" privacy check compares
-  `ctx.member.ecosystem_id` with the session's ecosystem, so a member of that
-  ecosystem whose default row is elsewhere gets 403. Use
-  `caller_in(session, request, sess.ecosystem_id) is not None`.
+  change with the selection. Fixed in wave 1 for orientation progress, ethos
+  access and chat sessions (they key on `caller_in` for the route's
+  ecosystem); migration `o7c3e9a5d2f8` moved the existing progress and access
+  rows (rule: `alembic/AGENTS.md` "Data revisions"). The same pattern
+  (`grep "member_id == member.id"`) still runs through notifications,
+  messaging and onboarding.
+- `chat.py` shared-chat "ecosystem" privacy: fixed in wave 1. It reads the
+  caller's row in the session's ecosystem and requires it to be active
+  (`is_active_member_in`), so an exited or suspended member is refused.
 - `auth.existing_membership` (the `/auth/me` `member`) is NOT the same rule
   as `guards.default_member`: it orders by `created_at, id` across every
   status, with no active-first key and no selection, so for a user whose

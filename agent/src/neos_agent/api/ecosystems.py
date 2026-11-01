@@ -20,7 +20,10 @@ from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
 
-from .helpers import _escape_like, require_auth
+from .errors import ApiError
+from .guards import authenticated, caller_in
+from .helpers import _escape_like, parse_pagination
+from .policy import can_update_ecosystem
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
@@ -58,6 +61,19 @@ async def _get_member_count(db, ecosystem_id: uuid.UUID) -> int:
         select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id)
     )
     return result.scalar() or 0
+
+
+async def _ecosystem_as_member_or_error(db, request: Request, ecosystem_id: uuid.UUID) -> tuple[Ecosystem, Member]:
+    """The ecosystem and the caller's row in it; a private ecosystem the caller is outside of is a 404, a public one a 403."""
+    eco = await db.get(Ecosystem, ecosystem_id)
+    if eco is None:
+        raise ApiError(404, "Ecosystem not found")
+    caller = await caller_in(db, request, ecosystem_id)
+    if caller is None:
+        if eco.visibility != "public":
+            raise ApiError(404, "Ecosystem not found")
+        raise ApiError(403, "Access denied")
+    return eco, caller
 
 
 def _ecosystem_to_summary(eco: Ecosystem, count: int) -> EcosystemSummary:
@@ -98,24 +114,19 @@ def _ecosystem_to_detail(eco: Ecosystem, count: int) -> EcosystemDetail:
 
 
 @ecosystems_api_bp.get("/")
+@authenticated
 async def list_ecosystems(request: Request):
     """List ecosystems the authenticated member belongs to.
 
     Optional query params: ?status=, ?q= (search name/description), ?page=, ?per_page=
     Returns JSON: {"ecosystems": [...], "total": N, "page": N, "per_page": N}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
+    member = request.ctx.member
 
     status_filter = request.args.get("status")
     search_query = request.args.get("q")
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-        per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    except (ValueError, TypeError):
-        return json({"error": "Invalid pagination parameters"}, status=400)
-    offset = (page - 1) * per_page
+    page_request = parse_pagination(request)
+    page, per_page = page_request.page, page_request.per_page
 
     async with request.app.ctx.db() as db:
         eco_ids = await _get_member_ecosystem_ids(db, member)
@@ -139,7 +150,7 @@ async def list_ecosystems(request: Request):
         total_count = total_result.scalar() or 0
 
         # Apply pagination
-        paginated_query = base_query.offset(offset).limit(per_page)
+        paginated_query = base_query.offset(page_request.offset).limit(per_page)
         result = await db.execute(paginated_query)
         ecosystems = list(result.scalars().all())
 
@@ -157,26 +168,19 @@ async def list_ecosystems(request: Request):
 
 
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>")
+@authenticated
 async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Return detail for a specific ecosystem.
 
-    Verifies the member belongs to this ecosystem or it is public.
+    Opens for a member or when public; a private ecosystem the caller is outside of is a 404.
     Includes steward contacts (admin/owner members) and the caller's role.
     Returns JSON: EcosystemDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
-
-        # Check access: member belongs to ecosystem or it's public
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids and eco.visibility != "public":
-            return json({"error": "Access denied"}, status=403)
+        caller = await caller_in(db, request, ecosystem_id)
+        if eco is None or (caller is None and eco.visibility != "public"):
+            raise ApiError(404, "Ecosystem not found")
 
         count = await _get_member_count(db, eco.id)
         detail = _ecosystem_to_detail(eco, count)
@@ -198,35 +202,26 @@ async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
         ]
 
         # Caller's own role tier in this ecosystem (drives role-management UI gating)
-        user_id = getattr(member, "user_id", None)
-        if user_id:
-            caller = await db.scalar(
-                select(Member.role).where(
-                    Member.user_id == user_id,
-                    Member.ecosystem_id == ecosystem_id,
-                )
-            )
-            detail.caller_role = caller
+        detail.caller_role = caller.role if caller else None
 
     return json(detail.model_dump(mode="json"))
 
 
 @ecosystems_api_bp.post("/")
+@authenticated
 async def create_ecosystem(request: Request):
     """Create a new ecosystem and add the current member to it.
 
     Accepts JSON: EcosystemCreateRequest
     Returns JSON: EcosystemDetail with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
+    member = request.ctx.member
 
     body = request.json or {}
     try:
         create_req = EcosystemCreateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     # Sanitize website URL
     website = create_req.website
@@ -293,6 +288,7 @@ async def create_ecosystem(request: Request):
 
 
 @ecosystems_api_bp.put("/<ecosystem_id:uuid>")
+@authenticated
 async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Update an existing ecosystem.
 
@@ -300,54 +296,24 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     Accepts JSON: EcosystemUpdateRequest
     Returns JSON: EcosystemDetail
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = EcosystemUpdateRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
+        eco, caller = await _ecosystem_as_member_or_error(db, request, ecosystem_id)
 
-        # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids:
-            return json({"error": "Access denied"}, status=403)
-
-        # Verify steward role: must be steward of any domain in this ecosystem
-        # Resolve the authenticated user to a member id within this ecosystem
-        member_row = await db.execute(
-            select(Member.id).where(
-                Member.user_id == member.user_id,
-                Member.ecosystem_id == ecosystem_id,
+        stewards_a_domain = await db.scalar(
+            select(Domain.id).where(
+                Domain.ecosystem_id == ecosystem_id,
+                Domain.steward_id == caller.id,
             ).limit(1)
-        )
-        local_member_id = member_row.scalar_one_or_none()
-
-        is_steward = False
-        if local_member_id is not None:
-            steward_check = await db.execute(
-                select(Domain.id).where(
-                    Domain.ecosystem_id == ecosystem_id,
-                    Domain.steward_id == local_member_id,
-                ).limit(1)
-            )
-            is_steward = steward_check.scalar_one_or_none() is not None
-
-        if not is_steward:
-            # Also allow if member is the only member (ecosystem creator)
-            member_count = await _get_member_count(db, ecosystem_id)
-            if member_count > 1:
-                return json(
-                    {"error": "Only ecosystem stewards can update ecosystem settings"},
-                    status=403,
-                )
+        ) is not None
+        member_count = await _get_member_count(db, ecosystem_id)
+        if not can_update_ecosystem(caller, stewards_a_domain=stewards_a_domain, member_count=member_count):
+            raise ApiError(403, "Only ecosystem stewards can update ecosystem settings")
 
         # Update fields that are not None
         update_data = update_req.model_dump(exclude_none=True)
@@ -370,32 +336,25 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/join")
+@authenticated
 async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Join an ecosystem.
 
     Creates a pending member when agreement consent is a participation gate.
     The member becomes active after attesting to each required agreement.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
+    member = request.ctx.member
 
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
+            raise ApiError(404, "Ecosystem not found")
 
         # Check if already a member
         user = getattr(request.ctx, "user", None)
         user_id = user.id if user else member.user_id
-        existing = await db.execute(
-            select(Member.id).where(
-                Member.ecosystem_id == ecosystem_id,
-                Member.user_id == user_id,
-            ).limit(1)
-        )
-        if existing.scalar_one_or_none() is not None:
-            return json({"error": "Already a member of this ecosystem"}, status=409)
+        if await caller_in(db, request, ecosystem_id) is not None:
+            raise ApiError(409, "Already a member of this ecosystem")
 
         # A gate is evaluated only after a member identity exists so consent is
         # self-attested, auditable, and bound to this ecosystem membership.
@@ -441,19 +400,16 @@ async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/quizzes")
+@authenticated
 async def list_ecosystem_quizzes(request: Request, ecosystem_id: uuid.UUID):
     """List quizzes assigned to an ecosystem.
 
     Returns JSON: {"quizzes": [...]}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
+            raise ApiError(404, "Ecosystem not found")
 
         result = await db.execute(
             select(Quiz)
@@ -481,41 +437,31 @@ async def list_ecosystem_quizzes(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/quizzes/assign")
+@authenticated
 async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Assign a quiz to an ecosystem.
 
     Accepts JSON: {"quiz_id": "...", "is_entry_quiz": true/false}
     Returns JSON: {"status": "assigned", "quiz_id": "...", "is_entry_quiz": ...}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     quiz_id_str = body.get("quiz_id")
     is_entry_quiz = body.get("is_entry_quiz", False)
 
     if not quiz_id_str:
-        return json({"error": "quiz_id is required"}, status=400)
+        raise ApiError(400, "quiz_id is required")
 
     try:
         quiz_id = uuid.UUID(quiz_id_str)
     except ValueError:
-        return json({"error": "Invalid quiz_id"}, status=400)
+        raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
-
-        # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids:
-            return json({"error": "Access denied"}, status=403)
+        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
 
         quiz = await db.get(Quiz, quiz_id)
         if quiz is None:
-            return json({"error": "Quiz not found"}, status=404)
+            raise ApiError(404, "Quiz not found")
 
         # If marking as entry quiz, clear any existing entry quiz for this ecosystem
         if is_entry_quiz:
@@ -540,38 +486,29 @@ async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/quizzes/unassign")
+@authenticated
 async def unassign_quiz_from_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Unassign a quiz from an ecosystem.
 
     Accepts JSON: {"quiz_id": "..."}
     Clears the quiz's ecosystem_id and is_entry_quiz flag.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     body = request.json or {}
     quiz_id_str = body.get("quiz_id")
     if not quiz_id_str:
-        return json({"error": "quiz_id is required"}, status=400)
+        raise ApiError(400, "quiz_id is required")
 
     try:
         quiz_id = uuid.UUID(quiz_id_str)
     except ValueError:
-        return json({"error": "Invalid quiz_id"}, status=400)
+        raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
-
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids:
-            return json({"error": "Access denied"}, status=403)
+        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
 
         quiz = await db.get(Quiz, quiz_id)
         if quiz is None or quiz.ecosystem_id != ecosystem_id:
-            return json({"error": "Quiz not found in this ecosystem"}, status=404)
+            raise ApiError(404, "Quiz not found in this ecosystem")
 
         quiz.ecosystem_id = None
         quiz.is_entry_quiz = False
@@ -581,25 +518,15 @@ async def unassign_quiz_from_ecosystem(request: Request, ecosystem_id: uuid.UUID
 
 
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/quiz-results")
+@authenticated
 async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
     """View quiz results for all quizzes assigned to this ecosystem.
 
     Returns JSON: {"results": [...]}
     Each result includes member display_name and quiz title.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
-
-        # Verify membership
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids:
-            return json({"error": "Access denied"}, status=403)
+        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
 
         # Get all quizzes for this ecosystem
         quiz_result = await db.execute(
@@ -654,24 +581,15 @@ async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/shares-needs")
+@authenticated
 async def list_ecosystem_shares_needs(request: Request, ecosystem_id: uuid.UUID):
     """GET /api/v1/ecosystems/:id/shares-needs -- List shares & needs for this ecosystem.
 
     Returns all items (not just public/active) so members can manage them.
     Query params: type, category, status
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
-
-        eco_ids = await _get_member_ecosystem_ids(db, member)
-        if ecosystem_id not in eco_ids:
-            return json({"error": "Access denied"}, status=403)
+        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
 
         filters = [SharesNeeds.ecosystem_id == ecosystem_id]
         type_filter = request.args.get("type")

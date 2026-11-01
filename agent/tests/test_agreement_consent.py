@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from neos_agent.api.agreement_vocabulary import canonical_agreement_status, canonical_agreement_type
-from neos_agent.api.agreements import _VALID_TRANSITIONS
+from neos_agent.services.act_gates import AGREEMENT_LIFECYCLE
 from neos_agent.api.schemas.agreements import AgreementUpdateRequest
 from neos_agent.db.models import Agreement, AgreementMemberConsent, AgreementRequirement, Member
 from neos_agent.services.agreement_consent import (
@@ -63,5 +63,5 @@ def test_agreement_vocabulary_and_lifecycle_cannot_bypass_ceremonies():
     assert canonical_agreement_type("constitutional") == "constitutional"
     assert canonical_agreement_type("universal_field") == "uaf"
     assert canonical_agreement_status("ratified") == "active"
-    assert _VALID_TRANSITIONS["consent"] == {"test"}
+    assert AGREEMENT_LIFECYCLE.manual_targets("consent") == ["test"]
     assert "status" not in AgreementUpdateRequest(status="active").model_dump(exclude_none=True)

@@ -1,4 +1,4 @@
-"""ACT gate engine: declared gates, evaluation, and automatic advancement.
+"""ACT lifecycle tables, gate engine and transitions; see services/AGENTS.md "ACT lifecycle".
 
 Both proposals and agreements move through the ACT sequence
 (draft -> advice -> consent -> test -> ratified/active). Each record declares
@@ -13,9 +13,10 @@ its own gate policy in ``act_policy``:
 
 Gate status is computed from the live sub-records (advice logs, consent
 records, test reports for proposals; ceremonies + member consents for
-agreements). ``maybe_auto_advance_*`` moves the status forward while the
-declared conditions are met, recording ceremonies for agreements and minting
-the browsable decision artifact when the process completes:
+agreements). ``PROPOSAL_LIFECYCLE`` / ``AGREEMENT_LIFECYCLE`` say which moves
+exist, which gate each needs and which the engine takes by itself;
+``transition_proposal`` and ``advance_agreement`` apply them, minting the
+browsable decision artifact when the process completes:
 
 - proposal ratified  -> DecisionRecord(artifact_type="proposal")
 - agreement active   -> DecisionRecord(artifact_type="commitment")
@@ -28,9 +29,13 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import uuid
+from dataclasses import dataclass, field
+from typing import Awaitable, Callable, Mapping
 
 from sqlalchemy import func, select
 
+from neos_agent.api.errors import ApiError
+from neos_agent.api.policy import can_manage_proposal, is_steward_in
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
@@ -67,6 +72,241 @@ DEFAULT_ACT_POLICY: dict = {
 def _utcnow() -> _dt.datetime:
     """Naive UTC — governance tables use TIMESTAMP WITHOUT TIME ZONE."""
     return _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle tables
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Move:
+    """One status change: `gate` must be met first; the engine takes `automatic` moves by itself.
+
+    `steward_only` narrows who may make it by hand from the manage rule to stewards.
+    """
+
+    source: str
+    target: str
+    gate: str | None = None
+    automatic: bool = False
+    steward_only: bool = False
+
+
+# State machine as data: every allowed move, its gate and whether it is automatic.
+@dataclass(frozen=True)
+class Lifecycle:
+    """A record type's status graph; `withdrawn` is reachable from any status by a manual move."""
+
+    moves: tuple[Move, ...]
+    aliases: Mapping[str, str] = field(default_factory=dict)
+    withdrawn: str | None = None
+
+    def canonical(self, status: str) -> str:
+        """The table's name for a stored status (legacy aliases resolved)."""
+        return self.aliases.get(status, status)
+
+    def manual_move(self, current: str, target: str) -> Move | None:
+        """The move a caller may request from `current` to `target`, or None."""
+        source = self.canonical(current)
+        if self.withdrawn is not None and target == self.withdrawn:
+            return Move(source, target)
+        return next((move for move in self.moves if (move.source, move.target) == (source, target)), None)
+
+    def manual_targets(self, current: str) -> list[str]:
+        """Every status a caller may request from `current`, sorted."""
+        source = self.canonical(current)
+        targets = {move.target for move in self.moves if move.source == source}
+        if self.withdrawn is not None:
+            targets.add(self.withdrawn)
+        return sorted(targets)
+
+    def automatic_move(self, current: str) -> Move | None:
+        """The move the engine takes from `current` once its gate is met, or None."""
+        source = self.canonical(current)
+        return next((move for move in self.moves if move.source == source and move.automatic), None)
+
+
+PROPOSAL_LIFECYCLE = Lifecycle(
+    moves=(
+        Move("draft", "advice"),  # opening the process is always deliberate
+        # Owner decision, not yet live: drop automatic=True (the proposer closes advice; deadline backstop later).
+        Move("advice", "consent", gate="advice", automatic=True),
+        Move("consent", "test", gate="consent", automatic=True),
+        # Owner decision, not yet live: automatic=True -> steward_only=True (a steward confirms ratification).
+        Move("test", "ratified", gate="test", automatic=True),
+    ),
+    aliases={"created": "draft"},  # legacy chat-assistant drafts
+    withdrawn="withdrawn",
+)
+
+# Kept separate from proposals: agreements add review and sunset after activation.
+AGREEMENT_LIFECYCLE = Lifecycle(
+    moves=(
+        Move("draft", "advice"),
+        Move("advice", "consent", gate="advice", automatic=True),
+        Move("consent", "test", gate="consent", automatic=True),
+        Move("test", "active", gate="test", automatic=True),
+        Move("active", "under_review"),
+        Move("under_review", "sunset"),
+        Move("under_review", "active", gate="test"),
+        Move("sunset", "archived"),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Outcomes, refusals and the transition hook
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ActOutcome:
+    """What one ACT action did: the requested move, the automatic cascade, the artifact, the gates after."""
+
+    status: str
+    gates: dict
+    moved: str | None = None
+    auto_transitions: list[str] = field(default_factory=list)
+    decision_record_id: str | None = None
+
+    @property
+    def transitions(self) -> list[str]:
+        """Every applied move in order, the requested one first."""
+        return ([self.moved] if self.moved else []) + self.auto_transitions
+
+    def attach(self, payload: dict, *, gates: bool = False) -> dict:
+        """Add `auto_transitions`, `decision_record_id` when one was minted, and `gates` when asked."""
+        if gates:
+            payload["gates"] = self.gates
+        payload["auto_transitions"] = list(self.auto_transitions)
+        if self.decision_record_id:
+            payload["decision_record_id"] = self.decision_record_id
+        return payload
+
+
+class TransitionRefused(ApiError):
+    """A requested ACT move the caller may not make, shaped as its REST refusal (403, 400 or 409)."""
+
+
+MANAGE_DENIED = "Only the proposer or an ecosystem steward can change this proposal"
+STEWARD_MOVE_DENIED = "Only an ecosystem steward can confirm this move"
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One applied move, as handed to on_transition listeners."""
+
+    record: Proposal | Agreement
+    source: str
+    target: str
+    automatic: bool
+    actor: Member | None
+
+
+TransitionListener = Callable[[object, Transition], Awaitable[None]]
+_TRANSITION_LISTENERS: list[TransitionListener] = []
+
+
+# Observer pattern: the one hook point for side effects of a move (nothing registers yet).
+def on_transition(listener: TransitionListener) -> TransitionListener:
+    """Run `listener(session, transition)` after every applied move, inside the caller's transaction."""
+    _TRANSITION_LISTENERS.append(listener)
+    return listener
+
+
+# Assistant vocabulary -> engine vocabulary; the gate blocks only on "object".
+_POSITION_ALIASES = {"objection": "object"}
+
+
+def consent_position(raw: str | None) -> str:
+    """A consent position in the engine's vocabulary (lower case, 'objection' -> 'object')."""
+    position = (raw or "").strip().lower()
+    return _POSITION_ALIASES.get(position, position)
+
+
+# ---------------------------------------------------------------------------
+# Transition engine
+# ---------------------------------------------------------------------------
+
+StageEntry = Callable[..., Awaitable[str | None]]
+GateEvaluation = Callable[..., Awaitable[dict]]
+
+
+async def _apply(session, record, move: Move, *, enter: StageEntry, actor: Member | None,
+                 automatic: bool, evidence: str | None = None) -> str | None:
+    """Enter `move.target`, then notify listeners; returns a minted decision record id."""
+    source = record.status
+    minted = await enter(session, record, move.target, actor=actor, automatic=automatic, evidence=evidence)
+    for listener in list(_TRANSITION_LISTENERS):
+        await listener(session, Transition(record, source, move.target, automatic, actor))
+    return minted
+
+
+async def _advance(session, record, lifecycle: Lifecycle, *, evaluate: GateEvaluation,
+                   enter: StageEntry, actor: Member | None) -> ActOutcome:
+    """Take every automatic move whose gate is met, re-evaluating the gates after each one."""
+    gates = await evaluate(session, record)
+    outcome = ActOutcome(status=record.status, gates=gates)
+    while (move := lifecycle.automatic_move(record.status)) is not None:
+        if move.gate is not None and not gates[move.gate]["met"]:
+            break
+        outcome.auto_transitions.append(f"{record.status}->{move.target}")
+        minted = await _apply(session, record, move, enter=enter, actor=actor, automatic=True)
+        outcome.decision_record_id = minted or outcome.decision_record_id
+        gates = await evaluate(session, record)
+    outcome.status, outcome.gates = record.status, gates
+    if outcome.auto_transitions:
+        logger.info("%s %s auto-advanced: %s", type(record).__name__, record.id, ", ".join(outcome.auto_transitions))
+    return outcome
+
+
+async def _enter_proposal_stage(session, proposal: Proposal, target: str, **_context) -> str | None:
+    """Set the status; entering ratified mints the decision artifact (idempotent)."""
+    proposal.status = target
+    if target != "ratified":
+        return None
+    record = await record_proposal_decision(session, proposal)
+    return str(record.id) if record else None
+
+
+async def transition_proposal(session, proposal: Proposal, *, to: str | None = None,
+                              caller: Member | None) -> ActOutcome:
+    """Make the requested move (manage rule, table, gate), then every automatic move whose gate is met.
+
+    `caller` is the acting member's row in the proposal's ecosystem, always resolved
+    from the authenticated identity and never from a request field. The caller commits.
+    """
+    moved, minted = None, None
+    if to is not None:
+        if not can_manage_proposal(caller, proposal):
+            raise TransitionRefused(403, MANAGE_DENIED)
+        move = PROPOSAL_LIFECYCLE.manual_move(proposal.status, to)
+        if move is None:
+            raise TransitionRefused(
+                400,
+                f"Invalid transition from '{proposal.status}' to '{to}'",
+                {"allowed": PROPOSAL_LIFECYCLE.manual_targets(proposal.status)},
+            )
+        if move.steward_only and not is_steward_in(caller, proposal.ecosystem_id):
+            raise TransitionRefused(403, STEWARD_MOVE_DENIED)
+        if move.gate is not None:
+            gates = await proposal_gate_status(session, proposal)
+            if not gates[move.gate]["met"]:
+                raise TransitionRefused(
+                    409,
+                    f"The {move.gate} gate is not satisfied — the conditions declared in the ACT policy must be met first",
+                    {"gates": gates},
+                )
+        moved = f"{proposal.status}->{to}"
+        minted = await _apply(session, proposal, move, enter=_enter_proposal_stage, actor=caller, automatic=False)
+    outcome = await _advance(
+        session, proposal, PROPOSAL_LIFECYCLE,
+        evaluate=proposal_gate_status, enter=_enter_proposal_stage, actor=caller,
+    )
+    outcome.moved = moved
+    outcome.decision_record_id = outcome.decision_record_id or minted
+    return outcome
 
 
 def normalize_act_policy(raw: object) -> dict:
@@ -144,8 +384,9 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
         participants = list((await session.execute(
             select(ConsentParticipant).where(ConsentParticipant.consent_record_id == latest_consent.id)
         )).scalars().all())
-    active_positions = [p for p in participants if (p.position or "").lower() not in _WITHDRAWN_POSITIONS]
-    objections = [p for p in active_positions if (p.position or "").lower() in _BLOCKING_POSITIONS]
+    # Classified through consent_position, so a legacy spelling ("Objection") blocks like "object".
+    active_positions = [p for p in participants if consent_position(p.position) not in _WITHDRAWN_POSITIONS]
+    objections = [p for p in active_positions if consent_position(p.position) in _BLOCKING_POSITIONS]
     quorum = policy["consent_quorum"] or 1
     consent_met = (not policy["consent_required"]) or (
         latest_consent is not None
@@ -200,41 +441,6 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
     }
     gates["complete"] = advice_met and consent_met and test_met
     return gates
-
-
-async def maybe_auto_advance_proposal(session, proposal: Proposal) -> dict:
-    """Advance a proposal through ACT while its declared gates are satisfied.
-
-    Mints the decision artifact on ratification. Returns the gate status plus
-    the transitions applied (empty when nothing moved).
-    """
-    gates = await proposal_gate_status(session, proposal)
-    transitions: list[str] = []
-    decision_id: uuid.UUID | None = None
-
-    while True:
-        if proposal.status == "advice" and gates["advice"]["met"]:
-            proposal.status = "consent"
-            transitions.append("advice->consent")
-        elif proposal.status == "consent" and gates["consent"]["met"]:
-            proposal.status = "test"
-            transitions.append("consent->test")
-        elif proposal.status == "test" and gates["test"]["met"]:
-            proposal.status = "ratified"
-            transitions.append("test->ratified")
-            record = await record_proposal_decision(session, proposal)
-            decision_id = record.id if record else None
-        else:
-            break
-
-    if transitions:
-        logger.info("Proposal %s auto-advanced: %s", proposal.id, ", ".join(transitions))
-    return {
-        "status": proposal.status,
-        "transitions": transitions,
-        "decision_record_id": str(decision_id) if decision_id else None,
-        "gates": gates,
-    }
 
 
 async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecord | None:
@@ -308,7 +514,7 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
     await session.flush()
 
     for participant in participants:
-        if (participant.position or "").lower() in _WITHDRAWN_POSITIONS:
+        if consent_position(participant.position) in _WITHDRAWN_POSITIONS:
             continue
         session.add(DecisionParticipant(
             id=uuid.uuid4(),
@@ -389,66 +595,50 @@ async def agreement_gate_status(session, agreement: Agreement) -> dict:
     return gates
 
 
-async def maybe_auto_advance_agreement(
-    session,
-    agreement: Agreement,
-    *,
-    actor_member_id: uuid.UUID | None = None,
-) -> dict:
-    """Advance an agreement through ACT while its declared gates are satisfied.
+# Ceremony vocabulary per entered stage; these stages also need documented evidence when conducted by hand.
+_CEREMONY_OUTCOME = {"advice": "opened", "consent": "opened", "test": "started", "active": "passed"}
+EVIDENCED_CEREMONIES = frozenset(_CEREMONY_OUTCOME)
+_AUTOMATIC_EVIDENCE = {
+    "consent": "Auto-advanced: minimum advice rounds completed.",
+    "test": "Auto-advanced: consent ceremony complete.",
+    "active": "Auto-advanced: declared test cases evidenced.",
+}
 
-    Each automatic transition is recorded as a governance ceremony with no
-    conducting member (system-recorded). Activation mints the commitment
-    decision artifact. The caller owns commit, version snapshots, and
-    fingerprint regeneration.
-    """
-    gates = await agreement_gate_status(session, agreement)
-    transitions: list[str] = []
-    decision_id: uuid.UUID | None = None
-    outcome_by_stage = {"consent": "opened", "test": "started", "active": "passed"}
-    evidence_by_stage = {
-        "consent": "Auto-advanced: minimum advice rounds completed.",
-        "test": "Auto-advanced: consent ceremony complete.",
-        "active": "Auto-advanced: declared test cases evidenced.",
-    }
 
-    while True:
-        if agreement.status == "advice" and gates["advice"]["met"]:
-            new_status = "consent"
-        elif agreement.status == "consent" and gates["consent"]["met"]:
-            new_status = "test"
-        elif agreement.status == "test" and gates["test"]["met"]:
-            new_status = "active"
-        else:
-            break
+async def _enter_agreement_stage(session, agreement: Agreement, target: str, *, actor: Member | None,
+                                 automatic: bool, evidence: str | None) -> str | None:
+    """Set the status and record its ceremony; entering active mints the commitment artifact."""
+    agreement.status = target
+    session.add(AgreementCeremony(
+        id=uuid.uuid4(),
+        agreement_id=agreement.id,
+        stage=target,
+        completed_by_member_id=actor.id if actor is not None else None,
+        outcome=_CEREMONY_OUTCOME.get(target, "completed"),
+        evidence=_AUTOMATIC_EVIDENCE.get(target) if automatic else (evidence or None),
+        completed_at=_utcnow(),
+    ))
+    if target != "active":
+        return None
+    if agreement.ratification_date is None:
+        agreement.ratification_date = _dt.date.today()
+    record = await record_agreement_commitment(session, agreement)
+    return str(record.id) if record else None
 
-        transitions.append(f"{agreement.status}->{new_status}")
-        agreement.status = new_status
-        session.add(AgreementCeremony(
-            id=uuid.uuid4(),
-            agreement_id=agreement.id,
-            stage=new_status,
-            completed_by_member_id=actor_member_id,
-            outcome=outcome_by_stage.get(new_status, "completed"),
-            evidence=evidence_by_stage.get(new_status),
-            completed_at=_utcnow(),
-        ))
-        if new_status == "active":
-            if agreement.ratification_date is None:
-                agreement.ratification_date = _dt.date.today()
-            record = await record_agreement_commitment(session, agreement)
-            decision_id = record.id if record else None
-        # Re-evaluate against the new stage before any further advance.
-        gates = await agreement_gate_status(session, agreement)
 
-    if transitions:
-        logger.info("Agreement %s auto-advanced: %s", agreement.id, ", ".join(transitions))
-    return {
-        "status": agreement.status,
-        "transitions": transitions,
-        "decision_record_id": str(decision_id) if decision_id else None,
-        "gates": gates,
-    }
+async def apply_agreement_move(session, agreement: Agreement, move: Move, *, caller: Member,
+                               evidence: str | None) -> str | None:
+    """Enter one already-validated manual agreement move; returns a minted decision record id."""
+    return await _apply(session, agreement, move, enter=_enter_agreement_stage, actor=caller,
+                        automatic=False, evidence=evidence)
+
+
+async def advance_agreement(session, agreement: Agreement, *, caller: Member | None) -> ActOutcome:
+    """Every automatic agreement move whose gate is met; the caller snapshots, fingerprints and commits."""
+    return await _advance(
+        session, agreement, AGREEMENT_LIFECYCLE,
+        evaluate=agreement_gate_status, enter=_enter_agreement_stage, actor=caller,
+    )
 
 
 async def record_agreement_commitment(session, agreement: Agreement) -> DecisionRecord | None:

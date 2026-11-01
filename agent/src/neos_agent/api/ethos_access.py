@@ -22,8 +22,10 @@ from neos_agent.api.schemas.ethos_access import (
     EthosAccessGrantRequest,
     EthosAccessStatus,
 )
-from neos_agent.db.models import Ecosystem, EthosUserAccess, Member
-from neos_agent.api.helpers import require_admin, require_auth
+from neos_agent.db.models import EthosUserAccess, Member
+from neos_agent.api.errors import ApiError
+from neos_agent.api.guards import authenticated, caller_in, caller_in_or_join_required
+from neos_agent.api.helpers import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -53,33 +55,32 @@ def _access_to_grant(a: EthosUserAccess, member_name: str | None) -> dict:
 
 
 @ethos_access_api_bp.get("/<ecosystem_id:uuid>/access/me")
+@authenticated
 async def get_my_ethos_access(request: Request, ecosystem_id: uuid.UUID):
     """GET /api/v1/ethos/:ecosystem_id/access/me -- Current member's access/consent status."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        stmt = select(EthosUserAccess).where(
-            EthosUserAccess.member_id == member.id,
-            EthosUserAccess.ecosystem_id == ecosystem_id,
-        )
-        access = (await session.execute(stmt)).scalar_one_or_none()
+        # Access is per (member, ecosystem): the caller's row in THIS ethos, not the default row.
+        member = await caller_in(session, request, ecosystem_id)
+        access = None
+        if member is not None:
+            stmt = select(EthosUserAccess).where(
+                EthosUserAccess.member_id == member.id,
+                EthosUserAccess.ecosystem_id == ecosystem_id,
+            )
+            access = (await session.execute(stmt)).scalar_one_or_none()
 
     return json(_access_to_status(access))
 
 
 @ethos_access_api_bp.post("/<ecosystem_id:uuid>/access/consent")
+@authenticated
 async def consent_ethos_access(request: Request, ecosystem_id: uuid.UUID):
     """POST /api/v1/ethos/:ecosystem_id/access/consent -- Record self-service participation consent (idempotent)."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        eco = await session.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ethos not found"}, status=404)
+        member = await caller_in_or_join_required(
+            session, request, ecosystem_id,
+            not_found="Ethos not found", join_message="Join this ecosystem to consent to participate in it",
+        )
 
         stmt = select(EthosUserAccess).where(
             EthosUserAccess.member_id == member.id,
@@ -138,7 +139,8 @@ async def grant_ethos_access(request: Request, ecosystem_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         target = await session.get(Member, grant_req.member_id)
         if target is None:
-            return json({"error": "Member not found"}, status=404)
+            raise ApiError(404, "Member not found")
+        granter = await caller_in(session, request, ecosystem_id) or admin
 
         stmt = select(EthosUserAccess).where(
             EthosUserAccess.member_id == grant_req.member_id,
@@ -152,7 +154,7 @@ async def grant_ethos_access(request: Request, ecosystem_id: uuid.UUID):
                 ecosystem_id=ecosystem_id,
                 role_in_ethos=grant_req.role_in_ethos or "member",
                 access_level=grant_req.access_level or "member",
-                granted_by=admin.id,
+                granted_by=granter.id,
             )
             session.add(access)
         else:
@@ -180,7 +182,7 @@ async def revoke_ethos_access(request: Request, ecosystem_id: uuid.UUID, member_
         )
         access = (await session.execute(stmt)).scalar_one_or_none()
         if access is None:
-            return json({"error": "Access grant not found"}, status=404)
+            raise ApiError(404, "Access grant not found")
         await session.delete(access)
         await session.commit()
 

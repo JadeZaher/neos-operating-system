@@ -9,10 +9,14 @@ from sanic.request import Request
 from sanic.response import HTTPResponse
 from sqlalchemy import select
 
+from neos_agent.api.errors import ApiError
 from neos_agent.api.helpers import get_authorized_ecosystem_ids, require_auth
-from neos_agent.db.models import Member
+from neos_agent.db.models import Ecosystem, Member
 
 HandlerArguments = ParamSpec("HandlerArguments")
+
+# Machine code for "the ecosystem exists but the caller holds no row there": the client joins, then acts.
+JOIN_REQUIRED = "JOIN_REQUIRED"
 Handler = Callable[Concatenate[Request, HandlerArguments], Awaitable[HTTPResponse]]
 
 
@@ -48,6 +52,19 @@ async def caller_in(session, request: Request, ecosystem_id: uuid.UUID | None) -
         Member.user_id == user_id,
         Member.ecosystem_id == ecosystem_id,
     ))
+
+
+# Join-first refusal for per-ecosystem self-service writes (orientation progress, ethos consent).
+async def caller_in_or_join_required(
+    session, request: Request, ecosystem_id: uuid.UUID, *, not_found: str, join_message: str,
+) -> Member:
+    """The caller's row (any status) in `ecosystem_id`; 404 `not_found` without the ecosystem, 409 JOIN_REQUIRED without a row."""
+    if await session.get(Ecosystem, ecosystem_id) is None:
+        raise ApiError(404, not_found)
+    member = await caller_in(session, request, ecosystem_id)
+    if member is None:
+        raise ApiError(409, join_message, {"code": JOIN_REQUIRED})
+    return member
 
 
 # Scope widening for the consent gate: a pending newcomer reads and consents to agreements before they are active.

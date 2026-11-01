@@ -2,6 +2,7 @@
 
 Each tool is an async function with signature:
     async def handler(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict
+State-changing tools also take a keyword-only `caller_user_id` (see CALLER_SCOPED_TOOLS).
 
 Returns {"success": True, "data": {...}} or {"success": False, "error": "..."}.
 
@@ -48,36 +49,30 @@ from neos_agent.db.models import (
     Member,
     Proposal,
     RepairAgreementRecord,
+    User,
 )
+from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
 from neos_agent.api.domains import CREATE_DENIED as DOMAIN_CREATE_DENIED
-from neos_agent.api.helpers import ROLE_RANK
-from neos_agent.api.proposals import (
-    MANAGE_DENIED,
-    SELF_ADVICE_DENIED,
-    can_manage_proposal,
-    caller_member,
+from neos_agent.api.policy import (
+    can_declare_emergency,
+    can_participate,
+    can_record_decision,
+    is_active_member_in,
     is_proposal_author,
-    manual_transition_error,
+    is_steward_in,
 )
-from neos_agent.services.act_gates import maybe_auto_advance_proposal
+from neos_agent.api.proposals import SELF_ADVICE_DENIED
+from neos_agent.services.act_gates import TransitionRefused, consent_position, transition_proposal
+from neos_agent.services.fingerprint import generate_fingerprint
 
 # Caller-scoped tools act as the signed-in member; see api/AGENTS.md "Chat assistant tools".
 CALLER_REQUIRED = "This action needs a signed-in member."
+MEMBER_REQUIRED = "Only an active member of this ecosystem can do this."
+DECISION_DENIED = "Only an ecosystem steward can record a decision outside the ACT process."
+EXIT_SELF_ONLY = "The assistant can only start the signed-in member's own exit."
 
 
-# ---------------------------------------------------------------------------
-# Valid agreement status transitions
-# ---------------------------------------------------------------------------
-
-VALID_TRANSITIONS: dict[str, list[str]] = {
-    "draft": ["advice"],
-    "advice": ["consent"],
-    "consent": ["test", "active"],
-    "test": ["active"],
-    "active": ["under_review"],
-    "under_review": ["sunset", "active"],
-    "sunset": ["archived"],
-}
+# Agreement status moves live in services/act_gates.py AGREEMENT_LIFECYCLE (update_agreement_status uses it).
 
 # Default review periods by agreement type (in months)
 _REVIEW_MONTHS: dict[str, int] = {
@@ -88,9 +83,6 @@ _REVIEW_MONTHS: dict[str, int] = {
     "culture_code": 12,
 }
 
-# Transitions that bump version (content-modifying)
-_VERSION_BUMP_TRANSITIONS: set[str] = {"advice", "consent", "active"}
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,14 +90,6 @@ _VERSION_BUMP_TRANSITIONS: set[str] = {"advice", "consent", "active"}
 
 def _today() -> date:
     return date.today()
-
-
-def _increment_version(version: str) -> str:
-    """Increment a dotted version string: '0.1' -> '0.2', '1.3' -> '1.4'."""
-    parts = version.rsplit(".", 1)
-    if len(parts) == 2:
-        return f"{parts[0]}.{int(parts[1]) + 1}"
-    return f"{version}.1"
 
 
 def _status_priority(status: str) -> int:
@@ -171,6 +155,40 @@ async def _get_first_ecosystem_id(
     if len(rows) == 1:
         return rows[0]
     return None
+
+
+async def _scoped_ecosystem_id(db: AsyncSession, ecosystem_ids: list | None) -> uuid.UUID | None:
+    """The ecosystem a creating tool acts in (first of the scope), as a UUID."""
+    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    return uuid.UUID(str(eco_id)) if eco_id is not None else None
+
+
+async def _caller_row(db: AsyncSession, caller_user_id: uuid.UUID | None, ecosystem_id) -> Member | None:
+    """The signed-in user's Member row in `ecosystem_id` (the request-free guards.caller_in)."""
+    if caller_user_id is None or ecosystem_id is None:
+        return None
+    return await db.scalar(select(Member).where(
+        Member.user_id == caller_user_id,
+        Member.ecosystem_id == uuid.UUID(str(ecosystem_id)),
+    ))
+
+
+async def _find_proposal(db: AsyncSession, key: str, ecosystem_ids: list | None, *options) -> Proposal | None:
+    """A proposal by business key (PROP-...) or UUID, as the page links it, within the scope."""
+    try:
+        match = Proposal.id == uuid.UUID(str(key).strip())
+    except ValueError:
+        match = Proposal.proposal_id == key
+    stmt = select(Proposal).options(*options).where(match)
+    if ecosystem_ids:
+        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
+    return (await db.execute(stmt)).scalars().first()
+
+
+def _refusal_text(refusal: TransitionRefused) -> str:
+    """The engine's REST refusal as one assistant-readable sentence."""
+    allowed = refusal.extra.get("allowed")
+    return refusal.message + (f". Allowed: {', '.join(allowed)}." if allowed else "")
 
 
 # ===================================================================
@@ -342,23 +360,30 @@ async def get_agreement(args: dict, db: AsyncSession, ecosystem_ids: list | None
 # TOOL 3: create_agreement_draft
 # ===================================================================
 
-async def create_agreement_draft(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a new agreement in draft status."""
-    required = ("title", "type", "proposer", "domain", "text")
+async def create_agreement_draft(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a new agreement in draft status (an active member of the ecosystem, as REST POST /agreements)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    required = ("title", "type", "domain", "text")
     for field in required:
         if not args.get(field):
             return {"success": False, "error": f"'{field}' is required."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    author = await _caller_row(db, caller_user_id, eco_id)
+    if not is_active_member_in(author, eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
 
-    # Validate proposer
-    proposer = await _resolve_member(db, args["proposer"], ecosystem_ids)
-    if proposer is None:
+    # The proposer text defaults to the caller; a named proposer must be an active member.
+    proposer_text = str(args.get("proposer") or "").strip() or author.display_name
+    if args.get("proposer") and await _resolve_member(db, proposer_text, ecosystem_ids) is None:
         return {
             "success": False,
-            "error": f"Proposer '{args['proposer']}' is not an active member.",
+            "error": f"Proposer '{proposer_text}' is not an active member.",
         }
 
     # Validate affected parties
@@ -419,7 +444,7 @@ async def create_agreement_draft(args: dict, db: AsyncSession, ecosystem_ids: li
         title=args["title"],
         version="0.1",
         status="draft",
-        proposer=args["proposer"],
+        proposer=proposer_text,
         affected_parties=affected if affected else None,
         domain=args["domain"],
         text=args.get("text"),
@@ -451,10 +476,19 @@ async def create_agreement_draft(args: dict, db: AsyncSession, ecosystem_ids: li
 # TOOL 4: update_agreement_status
 # ===================================================================
 
-async def update_agreement_status(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Transition an agreement's status along the valid lifecycle."""
+async def update_agreement_status(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Conduct an agreement ceremony through the REST/MCP engine (api/agreements.transition_agreement).
+
+    Same rules as REST POST /agreements/:id/status: ceremony steward, lifecycle
+    table, documented evidence, declared gate; then the automatic cascade. A
+    status change never bumps the version (consent is bound to it).
+    """
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     agreement_id = args.get("agreement_id", "")
-    new_status = args.get("new_status", "")
+    new_status = str(args.get("new_status") or "").strip().lower()
     if not agreement_id or not new_status:
         return {"success": False, "error": "agreement_id and new_status are required."}
 
@@ -466,23 +500,14 @@ async def update_agreement_status(args: dict, db: AsyncSession, ecosystem_ids: l
     if agr is None:
         return {"success": False, "error": f"Agreement '{agreement_id}' not found."}
 
+    conductor = await _caller_row(db, caller_user_id, agr.ecosystem_id)
     current = agr.status
-    allowed = VALID_TRANSITIONS.get(current, [])
-    if new_status not in allowed:
-        return {
-            "success": False,
-            "error": (
-                f"Cannot transition from '{current}' to '{new_status}'. "
-                f"Valid transitions from '{current}': {allowed}."
-            ),
-        }
-
-    agr.status = new_status
-
-    # Version bump on content-modifying transitions
-    if new_status in _VERSION_BUMP_TRANSITIONS:
-        agr.version = _increment_version(agr.version)
-
+    try:
+        outcome = await conduct_agreement_transition(
+            db, agr, to=new_status, caller=conductor, evidence=args.get("evidence"),
+        )
+    except TransitionRefused as refusal:
+        return {"success": False, "error": _refusal_text(refusal)}
     await db.flush()
 
     return {
@@ -490,8 +515,10 @@ async def update_agreement_status(args: dict, db: AsyncSession, ecosystem_ids: l
         "data": {
             "agreement_id": agreement_id,
             "previous_status": current,
-            "new_status": new_status,
+            "new_status": outcome.status,
             "version": agr.version,
+            "auto_transitions": outcome.auto_transitions,
+            "decision_record_id": outcome.decision_record_id,
         },
     }
 
@@ -658,14 +685,13 @@ async def create_proposal(
         if not args.get(field):
             return {"success": False, "error": f"'{field}' is required."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
-    eco_id = uuid.UUID(str(eco_id))
 
     # The caller is the author (manage rule); `proposer` is display text that
     # may name someone else and defaults to the caller's name.
-    author = await caller_member(db, caller_user_id, eco_id)
+    author = await _caller_row(db, caller_user_id, eco_id)
     if author is None:
         return {"success": False, "error": "Only a member of this ecosystem can create a proposal here."}
     proposer_text = str(args.get("proposer") or "").strip() or author.display_name
@@ -762,12 +788,7 @@ async def record_advice(
         # A blank entry would still count toward the advice gate.
         return {"success": False, "error": "Advice text is required."}
 
-    # Find proposal
-    prop_stmt = select(Proposal).where(Proposal.proposal_id == proposal_id)
-    if ecosystem_ids:
-        prop_stmt = prop_stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
-    result = await db.execute(prop_stmt)
-    prop = result.scalars().first()
+    prop = await _find_proposal(db, proposal_id, ecosystem_ids)
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
 
@@ -779,7 +800,7 @@ async def record_advice(
 
     # The advisor is the caller: their row in the proposal's ecosystem, else
     # (shared-ecosystem advice, as in REST) their row in a scoped ecosystem.
-    advisor_member = await caller_member(db, caller_user_id, prop.ecosystem_id)
+    advisor_member = await _caller_row(db, caller_user_id, prop.ecosystem_id)
     if is_proposal_author(advisor_member, prop):
         return {"success": False, "error": SELF_ADVICE_DENIED}
     if advisor_member is None:
@@ -817,16 +838,16 @@ async def record_advice(
     )
     db.add(entry)
     await db.flush()
-    advance = await maybe_auto_advance_proposal(db, prop)
+    outcome = await transition_proposal(db, prop, caller=advisor_member)
 
     return {
         "success": True,
         "data": {
-            "proposal_id": proposal_id,
+            "proposal_id": prop.proposal_id,
             "advisor": advisor_member.display_name,
             "recorded_date": str(_today()),
-            "status": prop.status,
-            "auto_transitions": advance["transitions"],
+            "status": outcome.status,
+            "auto_transitions": outcome.auto_transitions,
             "message": "Advice recorded successfully.",
         },
     }
@@ -836,37 +857,31 @@ async def record_advice(
 # TOOL 9: record_consent_position
 # ===================================================================
 
-async def record_consent_position(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Record a consent/stand-aside/objection for a proposal."""
+async def record_consent_position(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Record the signed-in member's consent position; the consent gate then advances as in REST."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     proposal_id = args.get("proposal_id", "")
-    participant = args.get("participant", "")
-    position = args.get("position", "")  # consent | stand_aside | objection
+    raw_position = str(args.get("position") or "")
+    position = consent_position(raw_position)  # "objection" -> "object", the value the gate blocks on
     reason = args.get("reason")
     consent_round = args.get("round", 1)
 
-    if not proposal_id or not participant or not position:
+    if not proposal_id or not position:
         return {
             "success": False,
-            "error": "proposal_id, participant, and position are required.",
+            "error": "proposal_id and position are required.",
         }
 
-    valid_positions = {"consent", "stand_aside", "objection"}
-    if position not in valid_positions:
+    if position not in {"consent", "stand_aside", "object"}:
         return {
             "success": False,
-            "error": f"Invalid position '{position}'. Must be one of: {valid_positions}.",
+            "error": f"Invalid position '{raw_position}'. Must be one of: consent, stand_aside, objection.",
         }
 
-    # Find proposal
-    prop_stmt = (
-        select(Proposal)
-        .options(selectinload(Proposal.consent_records).selectinload(ConsentRecord.participants))
-        .where(Proposal.proposal_id == proposal_id)
-    )
-    if ecosystem_ids:
-        prop_stmt = prop_stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
-    result = await db.execute(prop_stmt)
-    prop = result.scalars().first()
+    prop = await _find_proposal(db, proposal_id, ecosystem_ids)
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
 
@@ -875,6 +890,11 @@ async def record_consent_position(args: dict, db: AsyncSession, ecosystem_ids: l
             "success": False,
             "error": f"Proposal is in '{prop.status}' phase, not 'consent'.",
         }
+
+    # The participant is always the caller; any name argument is ignored.
+    participant = await _caller_row(db, caller_user_id, prop.ecosystem_id)
+    if not can_participate(participant, prop):
+        return {"success": False, "error": "Only a member of this proposal's ecosystem can record a consent position."}
 
     consent_mode = prop.decision_type or "consent"
 
@@ -886,16 +906,21 @@ async def record_consent_position(args: dict, db: AsyncSession, ecosystem_ids: l
         }
 
     # Require reason for stand_aside and objection
-    if position in ("stand_aside", "objection") and not reason:
+    if position in ("stand_aside", "object") and not reason:
         return {
             "success": False,
-            "error": f"A reason is required for '{position}'.",
+            "error": f"A reason is required for '{raw_position.strip().lower()}'.",
         }
 
-    # Get or create ConsentRecord
-    if prop.consent_records:
-        consent_rec = prop.consent_records[0]
-    else:
+    # The latest consent record is the one the gate counts.
+    consent_rec = (await db.execute(
+        select(ConsentRecord)
+        .options(selectinload(ConsentRecord.participants))
+        .where(ConsentRecord.proposal_id == prop.id)
+        .order_by(ConsentRecord.created_at.desc())
+        .limit(1)
+    )).scalars().first()
+    if consent_rec is None:
         consent_rec = ConsentRecord(
             id=uuid.uuid4(),
             proposal_id=prop.id,
@@ -904,41 +929,39 @@ async def record_consent_position(args: dict, db: AsyncSession, ecosystem_ids: l
         )
         db.add(consent_rec)
         await db.flush()
-        # Re-fetch to load empty participants list
-        result2 = await db.execute(
-            select(ConsentRecord)
-            .options(selectinload(ConsentRecord.participants))
-            .where(ConsentRecord.id == consent_rec.id)
-        )
-        consent_rec = result2.scalars().first()
+        prior_positions = []
+    else:
+        prior_positions = consent_rec.participants
 
-    # Check for duplicate in same round
-    for p in consent_rec.participants:
-        if p.name.lower() == participant.lower() and p.round == consent_round:
-            return {
-                "success": False,
-                "error": f"'{participant}' has already recorded a position in round {consent_round}.",
-            }
+    name = participant.display_name
+    if any(p.name.lower() == name.lower() and p.round == consent_round for p in prior_positions):
+        return {
+            "success": False,
+            "error": f"'{name}' has already recorded a position in round {consent_round}.",
+        }
 
-    cp = ConsentParticipant(
+    db.add(ConsentParticipant(
         id=uuid.uuid4(),
         consent_record_id=consent_rec.id,
-        name=participant,
+        name=name,
         position=position,
         reason=reason,
         round=consent_round,
-    )
-    db.add(cp)
+    ))
     await db.flush()
+    outcome = await transition_proposal(db, prop, caller=participant)
 
     return {
         "success": True,
         "data": {
-            "proposal_id": proposal_id,
-            "participant": participant,
+            "proposal_id": prop.proposal_id,
+            "participant": name,
             "position": position,
             "round": consent_round,
-            "message": f"Position '{position}' recorded for '{participant}'.",
+            "status": outcome.status,
+            "auto_transitions": outcome.auto_transitions,
+            "gates": outcome.gates,
+            "message": f"Position '{position}' recorded for '{name}'.",
         },
     }
 
@@ -1016,8 +1039,12 @@ async def check_quorum(args: dict, db: AsyncSession, ecosystem_ids: list | None 
 # TOOL 11: create_decision_record
 # ===================================================================
 
-async def create_decision_record(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a universal decision record."""
+async def create_decision_record(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Record a decision outside the ACT engine (an ecosystem steward), recorded by the caller."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     holding = args.get("holding", "")
     rationale = args.get("rationale", "")
     if not holding:
@@ -1025,9 +1052,12 @@ async def create_decision_record(args: dict, db: AsyncSession, ecosystem_ids: li
     if not rationale:
         return {"success": False, "error": "'rationale' is required."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    recorder = await _caller_row(db, caller_user_id, eco_id)
+    if not can_record_decision(recorder, eco_id):
+        return {"success": False, "error": DECISION_DENIED}
 
     # Generate record ID using MAX approach
     year = _today().year
@@ -1058,8 +1088,8 @@ async def create_decision_record(args: dict, db: AsyncSession, ecosystem_ids: li
         domain=args.get("domain"),
         precedent_level=args.get("precedent_level", "domain"),
         status="active",
-        recorder=args.get("recorder"),
-        recorder_role=args.get("recorder_role"),
+        recorder=recorder.display_name,
+        recorder_role=args.get("recorder_role") or recorder.role,
     )
     db.add(dr)
     await db.flush()
@@ -1281,8 +1311,12 @@ async def get_active_members(args: dict, db: AsyncSession, ecosystem_ids: list |
 # TOOL 15: create_conflict_case
 # ===================================================================
 
-async def create_conflict_case(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Report a new conflict or harm requiring governance process."""
+async def create_conflict_case(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Report a new conflict or harm requiring governance process; the caller is the reporter."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     title = args.get("title", "")
     description = args.get("description", "")
     if not title:
@@ -1290,19 +1324,12 @@ async def create_conflict_case(args: dict, db: AsyncSession, ecosystem_ids: list
     if not description:
         return {"success": False, "error": "'description' is required."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
-
-    # Resolve reporter_id (UUID string to member.id)
-    reporter_uuid = None
-    reporter_id_str = args.get("reporter_id")
-    if reporter_id_str:
-        try:
-            reporter_uuid_val = uuid.UUID(reporter_id_str)
-            reporter_uuid = reporter_uuid_val
-        except ValueError:
-            return {"success": False, "error": f"Invalid reporter_id UUID: '{reporter_id_str}'."}
+    reporter = await _caller_row(db, caller_user_id, eco_id)
+    if not is_active_member_in(reporter, eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
 
     # Resolve facilitator_id (UUID string to member.id)
     facilitator_uuid = None
@@ -1325,7 +1352,7 @@ async def create_conflict_case(args: dict, db: AsyncSession, ecosystem_ids: list
         urgency=args.get("urgency", "normal"),
         safety_flag=args.get("safety_flag", False),
         parties=args.get("parties"),
-        reporter_id=reporter_uuid,
+        reporter_id=reporter.id,
         facilitator_id=facilitator_uuid,
         domain=args.get("domain"),
         triage_notes=args.get("triage_notes"),
@@ -1340,8 +1367,12 @@ async def create_conflict_case(args: dict, db: AsyncSession, ecosystem_ids: list
 # TOOL 16: triage_conflict
 # ===================================================================
 
-async def triage_conflict(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Assess and route a conflict to the appropriate resolution tier."""
+async def triage_conflict(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Assess and route a conflict to a resolution tier (an active member there, as REST PUT /conflicts)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     case_id = args.get("case_id", "")
     if not case_id:
         return {"success": False, "error": "case_id is required."}
@@ -1352,6 +1383,8 @@ async def triage_conflict(args: dict, db: AsyncSession, ecosystem_ids: list | No
     case = result.scalar_one_or_none()
     if not case:
         return {"success": False, "error": f"Conflict case '{case_id}' not found."}
+    if not is_active_member_in(await _caller_row(db, caller_user_id, case.ecosystem_id), case.ecosystem_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
     case.tier = args.get("tier", 1)
     case.severity = args.get("severity", case.severity)
     case.scope = args.get("scope", case.scope)
@@ -1393,14 +1426,21 @@ async def get_emergency_state(args: dict, db: AsyncSession, ecosystem_ids: list 
 # TOOL 18: declare_emergency
 # ===================================================================
 
-async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Declare an emergency and open the circuit breaker."""
+async def declare_emergency(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Declare an emergency and open the circuit breaker; the declarer is the caller (policy.can_declare_emergency)."""
     # Local import to avoid module-level circular dep with the API layer.
     from neos_agent.api.emergency import ACTIVE_STATES
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    declarer = await _caller_row(db, caller_user_id, eco_id)
+    if not can_declare_emergency(declarer, eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
     result = await db.execute(
         select(EmergencyState).where(
             EmergencyState.ecosystem_id == eco_id,
@@ -1410,7 +1450,7 @@ async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | 
     if result.scalar_one_or_none():
         return {"success": False, "error": "An emergency is already active."}
     now = datetime.now(timezone.utc)
-    declared_by = args.get("declared_by", "system")
+    declared_by = declarer.display_name
     state = EmergencyState(
         id=uuid.uuid4(),
         ecosystem_id=eco_id,
@@ -1439,18 +1479,22 @@ async def declare_emergency(args: dict, db: AsyncSession, ecosystem_ids: list | 
 # TOOL 19: create_exit_record
 # ===================================================================
 
-async def create_exit_record(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Start a voluntary exit process for a member."""
-    member_name = args.get("member_name", "")
+async def create_exit_record(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Start the signed-in member's own voluntary exit process."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     departure_notice = args.get("departure_notice", "")
-    if not member_name:
-        return {"success": False, "error": "member_name is required."}
     if not departure_notice:
         return {"success": False, "error": "'departure_notice' is required."}
-    member = await _resolve_member(db, member_name, ecosystem_ids)
-    if not member:
-        return {"success": False, "error": f"Member '{member_name}' not found."}
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
+    member = await _caller_row(db, caller_user_id, eco_id)
+    if not is_active_member_in(member, eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
+    named = str(args.get("member_name") or "").strip().lower()
+    if named and named not in {member.display_name.lower(), (member.member_id or "").lower()}:
+        return {"success": False, "error": EXIT_SELF_ONLY}
     exit_type = args.get("exit_type", "standard")
     days = 30 if exit_type == "standard" else 7
 
@@ -1468,7 +1512,7 @@ async def create_exit_record(args: dict, db: AsyncSession, ecosystem_ids: list |
 
     record = ExitRecord(
         id=uuid.uuid4(),
-        ecosystem_id=eco_id if eco_id else member.ecosystem_id,
+        ecosystem_id=eco_id,
         member_id=member.id,
         exit_type=exit_type,
         status="declared",
@@ -1509,14 +1553,13 @@ async def create_domain_draft(
         if "deliverables" not in elements:
             return {"success": False, "error": "'elements.deliverables' is required (list of concrete outputs)."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
-    eco_id = uuid.UUID(str(eco_id))
 
     # Same rule as REST POST /domains: the caller's own row must be mod+ here.
-    creator = await caller_member(db, caller_user_id, eco_id)
-    if creator is None or ROLE_RANK.get(creator.role, 0) < ROLE_RANK["mod"]:
+    creator = await _caller_row(db, caller_user_id, eco_id)
+    if not is_steward_in(creator, eco_id):
         return {"success": False, "error": DOMAIN_CREATE_DENIED}
 
     # Check for duplicates
@@ -1563,7 +1606,7 @@ async def create_domain_draft(
         current_steward=steward_name,
         steward_id=steward_id,
         parent_domain_id=parent_uuid,
-        created_by=args.get("created_by") or creator.display_name,
+        created_by=creator.display_name,
         metric_definitions=args.get("metric_definitions"),
         elements=args.get("elements"),
     )
@@ -1587,8 +1630,13 @@ async def create_domain_draft(
 # TOOL 21: create_ecosystem
 # ===================================================================
 
-async def create_ecosystem(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a new ecosystem."""
+async def create_ecosystem(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a new ecosystem founded by the caller (as REST POST /ecosystems: founding member + core domain)."""
+    founder = await db.get(User, caller_user_id) if caller_user_id is not None else None
+    if founder is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     name = args.get("name", "")
     if not name:
         return {"success": False, "error": "'name' is required."}
@@ -1616,6 +1664,34 @@ async def create_ecosystem(args: dict, db: AsyncSession, ecosystem_ids: list | N
     db.add(eco)
     await db.flush()
 
+    # Mirrors api/ecosystems.create_ecosystem until one shared founding helper exists.
+    founding_member = Member(
+        ecosystem_id=eco.id,
+        user_id=founder.id,
+        member_id=f"did-{founder.did[-12:]}" if founder.did else f"usr-{str(founder.id)[:12]}",
+        display_name=founder.display_name,
+        current_status="active",
+        profile="co_creator",
+    )
+    db.add(founding_member)
+    await db.flush()
+    core_domain = Domain(
+        id=uuid.uuid4(),
+        ecosystem_id=eco.id,
+        domain_id=f"DOM-{uuid.uuid4().hex[:8].upper()}",
+        version="1.0",
+        status="active",
+        purpose=f"Core governance domain for {eco.name}",
+        current_steward=founding_member.display_name,
+        steward_id=founding_member.id,
+        created_by=founding_member.display_name,
+    )
+    core_domain.version_fingerprint = generate_fingerprint(
+        core_domain.domain_id, core_domain.purpose or "", core_domain.version, core_domain.status
+    )
+    db.add(core_domain)
+    await db.flush()
+
     return {
         "success": True,
         "data": {
@@ -1631,18 +1707,23 @@ async def create_ecosystem(args: dict, db: AsyncSession, ecosystem_ids: list | N
 # TOOL 22: create_safeguard_audit
 # ===================================================================
 
-async def create_safeguard_audit(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a governance health audit draft (Layer VII safeguard)."""
-    auditor = args.get("auditor", "")
+async def create_safeguard_audit(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a governance health audit draft (Layer VII safeguard), recorded by the caller."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     findings = args.get("findings", "")
-    if not auditor:
-        return {"success": False, "error": "'auditor' is required."}
     if not findings:
         return {"success": False, "error": "'findings' is required."}
 
-    eco_id = await _get_first_ecosystem_id(db, ecosystem_ids)
+    eco_id = await _scoped_ecosystem_id(db, ecosystem_ids)
     if eco_id is None:
         return {"success": False, "error": "No ecosystem configured."}
+    requester = await _caller_row(db, caller_user_id, eco_id)
+    if not is_active_member_in(requester, eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
+    auditor = requester.display_name
 
     # Generate audit ID using MAX approach
     year = _today().year
@@ -1715,8 +1796,12 @@ async def create_safeguard_audit(args: dict, db: AsyncSession, ecosystem_ids: li
 # TOOL 23: create_repair_agreement
 # ===================================================================
 
-async def create_repair_agreement(args: dict, db: AsyncSession, ecosystem_ids: list | None = None) -> dict:
-    """Create a repair agreement for a conflict case."""
+async def create_repair_agreement(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Create a repair agreement for a conflict case (an active member of the case's ecosystem, as REST)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
     case_id = args.get("case_id", "")
     title = args.get("title", "")
     if not case_id or not title:
@@ -1742,6 +1827,8 @@ async def create_repair_agreement(args: dict, db: AsyncSession, ecosystem_ids: l
     case = result.scalar_one_or_none()
     if not case:
         return {"success": False, "error": f"Conflict case '{case_id}' not found."}
+    if not is_active_member_in(await _caller_row(db, caller_user_id, case.ecosystem_id), case.ecosystem_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
 
     # Parse optional completed_date
     completed_date = None
@@ -1960,19 +2047,13 @@ async def get_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None 
     if not proposal_id:
         return {"success": False, "error": "'proposal_id' is required."}
 
-    stmt = (
-        select(Proposal)
-        .options(
-            selectinload(Proposal.ecosystem),
-            selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
-            selectinload(Proposal.consent_records).selectinload(ConsentRecord.participants),
-        )
-        .where(Proposal.proposal_id == proposal_id)
+    prop = await _find_proposal(
+        db, proposal_id, ecosystem_ids,
+        selectinload(Proposal.ecosystem),
+        selectinload(Proposal.advice_logs).selectinload(AdviceLog.entries),
+        selectinload(Proposal.advice_logs).selectinload(AdviceLog.non_respondents),
+        selectinload(Proposal.consent_records).selectinload(ConsentRecord.participants),
     )
-    if ecosystem_ids:
-        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
-    result = await db.execute(stmt)
-    prop = result.scalars().first()
 
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
@@ -2001,7 +2082,7 @@ async def get_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None 
                     "date_notified": str(nr.date_notified) if nr.date_notified else None,
                     "round": nr.round,
                 }
-                for nr in (log.non_respondents if hasattr(log, "non_respondents") else [])
+                for nr in log.non_respondents
             ],
         })
 
@@ -2010,7 +2091,8 @@ async def get_proposal(args: dict, db: AsyncSession, ecosystem_ids: list | None 
         consent_data.append({
             "consent_mode": rec.consent_mode,
             "date": str(rec.date) if rec.date else None,
-            "round": rec.round,
+            # Rounds live on the positions; the record has no round column.
+            "round": max((p.round for p in rec.participants if p.round is not None), default=None),
             "participants": [
                 {
                     "name": p.name,
@@ -2069,38 +2151,26 @@ async def update_proposal_status(
     if not proposal_id or not new_status:
         return {"success": False, "error": "'proposal_id' and 'new_status' are required."}
 
-    stmt = select(Proposal).where(Proposal.proposal_id == proposal_id)
-    if ecosystem_ids:
-        stmt = stmt.where(Proposal.ecosystem_id.in_(ecosystem_ids))
-    result = await db.execute(stmt)
-    prop = result.scalars().first()
-
+    prop = await _find_proposal(db, proposal_id, ecosystem_ids)
     if prop is None:
         return {"success": False, "error": f"Proposal '{proposal_id}' not found."}
 
-    caller = await caller_member(db, caller_user_id, prop.ecosystem_id)
-    if not can_manage_proposal(caller, prop):
-        return {"success": False, "error": MANAGE_DENIED}
-
+    caller = await _caller_row(db, caller_user_id, prop.ecosystem_id)
     current = prop.status
-    refusal = await manual_transition_error(db, prop, new_status)
-    if refusal is not None:
-        _, body = refusal
-        allowed = f" Allowed: {', '.join(body['allowed'])}." if body.get("allowed") else ""
-        return {"success": False, "error": body["error"] + "." + allowed}
-
-    prop.status = new_status
-    advance = await maybe_auto_advance_proposal(db, prop)
+    try:
+        outcome = await transition_proposal(db, prop, to=new_status, caller=caller)
+    except TransitionRefused as refusal:
+        return {"success": False, "error": _refusal_text(refusal)}
     await db.flush()
 
     return {
         "success": True,
         "data": {
-            "proposal_id": proposal_id,
+            "proposal_id": prop.proposal_id,
             "previous_status": current,
-            "new_status": prop.status,
-            "auto_transitions": advance["transitions"],
-            "decision_record_id": advance["decision_record_id"],
+            "new_status": outcome.status,
+            "auto_transitions": outcome.auto_transitions,
+            "decision_record_id": outcome.decision_record_id,
         },
     }
 
@@ -2207,13 +2277,13 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 3
     ToolDef(
         name="create_agreement_draft",
-        description="Create a new governance agreement in draft status. Generates a unique ID, validates proposer and affected parties as active members, and sets default review dates.",
+        description="Create a new governance agreement in draft status as the signed-in member (who must be an active member of the ecosystem). Generates a unique ID, validates any named proposer and affected parties as active members, and sets default review dates.",
         parameters={
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Concise, action-oriented title (5-15 words) describing what this agreement establishes."},
                 "type": {"type": "string", "description": "Agreement type. Valid values: uaf (Universal Agreement Field), ecosystem, access (access-control agreements), stewardship, ethos, culture_code (cultural norms and code of conduct agreements), space (workspace/resource agreements), organizational (org-structure agreements), policy, protocol, role_definition, domain_contract, guideline."},
-                "proposer": {"type": "string", "description": "Name or member_id of the proposer (must be active member)."},
+                "proposer": {"type": "string", "description": "Optional proposer name or member_id (must be an active member); defaults to the signed-in member."},
                 "domain": {"type": "string", "description": "Domain this agreement applies to."},
                 "text": {"type": "string", "description": "Full agreement body, 200-2000 words. Must include: purpose, scope, parties, terms, exceptions, sunset criteria."},
                 "affected_parties": {"type": "array", "items": {"type": "string"}, "description": "List of affected member names or IDs."},
@@ -2222,19 +2292,20 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "parent_agreement_id": {"type": "string", "description": "If this amends or supersedes an existing agreement, its business key (e.g. AGR-XXXX-2026-001)."},
                 "shared_ecosystem_ids": {"type": "array", "items": {"type": "string"}, "description": "Other ecosystems this agreement applies to (list of ecosystem UUID strings)."},
             },
-            "required": ["title", "type", "proposer", "domain", "text"],
+            "required": ["title", "type", "domain", "text"],
         },
         handler=create_agreement_draft,
     ),
     # 4
     ToolDef(
         name="update_agreement_status",
-        description="Transition an agreement's status along its lifecycle (draft -> advice -> consent -> test/active -> under_review -> sunset -> archived). Enforces valid transitions and increments version.",
+        description="Conduct an agreement ceremony along its ACT lifecycle (draft -> advice -> consent -> test -> active; active -> under_review -> sunset -> archived). Only an active ecosystem admin or owner may conduct it. Forward ceremonies need documented evidence (at least 8 characters) and the declared gate for that stage; satisfied gates then advance automatically. The version does not change.",
         parameters={
             "type": "object",
             "properties": {
                 "agreement_id": {"type": "string", "description": "The agreement business key."},
                 "new_status": {"type": "string", "description": "Target status."},
+                "evidence": {"type": "string", "description": "What happened at the ceremony (required for advice, consent, test and active; at least 8 characters)."},
             },
             "required": ["agreement_id", "new_status"],
         },
@@ -2300,7 +2371,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "proposal_id": {"type": "string", "description": "Proposal business key."},
+                "proposal_id": {"type": "string", "description": "Proposal business key (PROP-...) or id."},
                 "advice_text": {"type": "string", "description": "The advice content (required, not blank)."},
             },
             "required": ["proposal_id", "advice_text"],
@@ -2310,17 +2381,16 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 9
     ToolDef(
         name="record_consent_position",
-        description="Record a consent position (consent, stand_aside, or objection) for a proposal in consent phase. Stand-aside disallowed in consensus mode. Reason required for stand_aside and objection.",
+        description="Record the signed-in member's own consent position (consent, stand_aside, or objection) on a proposal in the consent phase. The participant is always the signed-in member. Stand-aside disallowed in consensus mode. Reason required for stand_aside and objection. The consent gate then advances the proposal as in the app.",
         parameters={
             "type": "object",
             "properties": {
-                "proposal_id": {"type": "string", "description": "Proposal business key."},
-                "participant": {"type": "string", "description": "Participant name."},
+                "proposal_id": {"type": "string", "description": "Proposal business key (PROP-...) or id."},
                 "position": {"type": "string", "description": "Position: consent, stand_aside, or objection."},
                 "reason": {"type": "string", "description": "Reason (required for stand_aside and objection)."},
                 "round": {"type": "integer", "description": "Consent round number (default: 1)."},
             },
-            "required": ["proposal_id", "participant", "position"],
+            "required": ["proposal_id", "position"],
         },
         handler=record_consent_position,
     ),
@@ -2340,7 +2410,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 11
     ToolDef(
         name="create_decision_record",
-        description="Create a universal decision record with auto-generated ID, layer/skill tagging, and semantic tags.",
+        description="Record a decision outside the ACT process (ecosystem stewards only; the signed-in member is the recorder) with auto-generated ID, layer/skill tagging, and semantic tags.",
         parameters={
             "type": "object",
             "properties": {
@@ -2352,7 +2422,6 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "artifact_reference": {"type": "string", "description": "Reference to source artifact."},
                 "domain": {"type": "string", "description": "Domain context."},
                 "precedent_level": {"type": "string", "description": "Precedent level (default: domain)."},
-                "recorder": {"type": "string", "description": "Name of the recorder."},
                 "recorder_role": {"type": "string", "description": "Role of the person recording, e.g. 'facilitator', 'secretary'."},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Semantic tags for discoverability."},
                 "deliberation_summary": {"type": "string", "description": "Summary of the deliberation that led to this decision, 2-5 sentences."},
@@ -2432,7 +2501,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 15
     ToolDef(
         name="create_conflict_case",
-        description="Report a new conflict or harm requiring governance process. Routes through Layer VI conflict resolution.",
+        description="Report a new conflict or harm requiring governance process, as the signed-in member (the reporter). Routes through Layer VI conflict resolution.",
         parameters={
             "type": "object",
             "properties": {
@@ -2443,7 +2512,6 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "urgency": {"type": "string", "enum": ["low", "medium", "high", "critical"], "description": "Urgency level."},
                 "safety_flag": {"type": "boolean", "description": "True if safety is at risk."},
                 "parties": {"type": "array", "items": {"type": "string"}, "description": "Names of involved parties."},
-                "reporter_id": {"type": "string", "description": "UUID of the member who reported the conflict."},
                 "facilitator_id": {"type": "string", "description": "UUID of the assigned facilitator if known."},
                 "domain": {"type": "string", "description": "Affected domain or area of work."},
                 "triage_notes": {"type": "string", "description": "Initial triage observations."},
@@ -2480,33 +2548,31 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 18
     ToolDef(
         name="declare_emergency",
-        description="Declare an emergency and open the circuit breaker. Auto-expires in 30 days. Cannot be called if an emergency is already active.",
+        description="Declare an emergency as the signed-in member (an active member of the ecosystem) and open the circuit breaker. Auto-expires in 30 days. Cannot be called if an emergency is already active.",
         parameters={
             "type": "object",
             "properties": {
-                "declared_by": {"type": "string", "description": "Who is declaring the emergency."},
                 "criteria_met": {"type": "object", "description": "Which emergency criteria were met."},
                 "notes": {"type": "string", "description": "Additional notes."},
             },
-            "required": ["declared_by"],
+            "required": [],
         },
         handler=declare_emergency,
     ),
     # 19
     ToolDef(
         name="create_exit_record",
-        description="Start a voluntary exit process for a member. Creates a 30-day (standard) or 7-day (urgent) departure timeline.",
+        description="Start the signed-in member's own voluntary exit process. Creates a 30-day (standard) or 7-day (urgent) departure timeline. It cannot start anyone else's exit.",
         parameters={
             "type": "object",
             "properties": {
-                "member_name": {"type": "string", "description": "Display name of the departing member."},
                 "departure_notice": {"type": "string", "description": "Explanation of reason for departure, what the member intends to do with their commitments, transition timeline. 3-10 sentences."},
                 "exit_type": {"type": "string", "enum": ["standard", "urgent"], "description": "Exit type (standard=30d, urgent=7d)."},
                 "data_export": {"type": "boolean", "description": "Whether to request portable data export."},
                 "commitment_inventory": {"type": ["string", "array"], "description": "List or description of in-flight commitments the member is leaving behind."},
                 "coordinator": {"type": "string", "description": "Name or member_id of the departure coordinator (must be active member)."},
             },
-            "required": ["member_name", "departure_notice"],
+            "required": ["departure_notice"],
         },
         handler=create_exit_record,
     ),
@@ -2522,7 +2588,6 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "purpose": {"type": "string", "description": "Purpose statement for the domain."},
                 "steward": {"type": "string", "description": "Name or member_id of the domain steward (must be active member)."},
                 "parent_domain_id": {"type": "string", "description": "Parent domain business key (for nested domains)."},
-                "created_by": {"type": "string", "description": "Who created this domain."},
                 "elements": {
                     "type": "object",
                     "description": "S3 domain definition. Required keys: drivers (list of strings — what motivates work in this domain), deliverables (list of strings — concrete outputs), domain_owner (string — accountable role), sub_domains (list of strings, optional). Example: {\"drivers\": [\"Need to coordinate resources\"], \"deliverables\": [\"Monthly budget report\"], \"domain_owner\": \"Finance Lead\", \"sub_domains\": []}",
@@ -2546,7 +2611,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 21
     ToolDef(
         name="create_ecosystem",
-        description="Create a new NEOS ecosystem. Checks for duplicate names. Sets founded date to today.",
+        description="Create a new NEOS ecosystem founded by the signed-in member, who joins it with a core governance domain they steward. Checks for duplicate names. Sets founded date to today.",
         parameters={
             "type": "object",
             "properties": {
@@ -2570,7 +2635,6 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "auditor": {"type": "string", "description": "Name of the auditor or monitoring body."},
                 "findings": {"type": "string", "description": "Detailed findings from the audit, 5-20 sentences covering observed health, risks, and patterns."},
                 "audit_scope": {"type": "string", "description": "What was audited (specific safeguard, domain, or ecosystem-wide)."},
                 "audit_period_start": {"type": "string", "description": "Start of the audit period (ISO date, YYYY-MM-DD)."},
@@ -2592,7 +2656,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                     "description": "Structured recommendations with priority and owner."
                 },
             },
-            "required": ["auditor", "findings"],
+            "required": ["findings"],
         },
         handler=create_safeguard_audit,
     ),
@@ -2680,7 +2744,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "proposal_id": {"type": "string", "description": "The proposal business key (e.g. PROP-2026-001)."},
+                "proposal_id": {"type": "string", "description": "The proposal business key (e.g. PROP-2026-001) or id."},
             },
             "required": ["proposal_id"],
         },
@@ -2693,7 +2757,7 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "proposal_id": {"type": "string", "description": "The proposal business key."},
+                "proposal_id": {"type": "string", "description": "The proposal business key or id."},
                 "new_status": {"type": "string", "description": "Target status (advice, consent, test, ratified, withdrawn)."},
             },
             "required": ["proposal_id", "new_status"],
@@ -2775,12 +2839,23 @@ def _sanitize_db_error(s: str) -> str:
 
 _TOOL_HANDLERS: dict[str, Callable] = {t.name: t.handler for t in GOVERNANCE_TOOLS}
 
-# Tools that act as the signed-in member; they refuse to run without one.
+# Every state-changing tool acts as the signed-in member and refuses to run without one.
 CALLER_SCOPED_TOOLS = frozenset({
+    "create_agreement_draft",
+    "update_agreement_status",
     "create_proposal",
     "record_advice",
-    "update_proposal_status",
+    "record_consent_position",
+    "create_decision_record",
+    "create_conflict_case",
+    "triage_conflict",
+    "declare_emergency",
+    "create_exit_record",
     "create_domain_draft",
+    "create_ecosystem",
+    "create_safeguard_audit",
+    "create_repair_agreement",
+    "update_proposal_status",
 })
 
 

@@ -24,7 +24,10 @@ from sanic.request import Request
 from sanic.response import ResponseStream
 from sqlalchemy import select, or_
 
-from neos_agent.db.models import AgentSession
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_ids
+from neos_agent.api.policy import is_active_member_in
+from neos_agent.db.models import AgentSession, Member
 from neos_agent.ai.provider import acompletion, is_ai_enabled
 from neos_agent.agent.governance_tools import get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
@@ -205,6 +208,23 @@ def _generate_title(messages: list[dict]) -> str | None:
     return None
 
 
+async def _member_ids_in(db, request: Request, member, ecosystem_ids) -> list[uuid.UUID]:
+    """The caller's Member row ids in `ecosystem_ids`; active nowhere, every row of their own (any status).
+
+    A session belongs to the row of its own ecosystem, not the default row; see api/AGENTS.md "Chat sessions".
+    """
+    user_id = getattr(member, "user_id", None)
+    if not user_id:
+        return [member.id]
+    own_rows = select(Member.id).where(Member.user_id == user_id)
+    # No authorized ecosystem (pending consent, exited): the caller's own rows still reach their own sessions.
+    if not get_authorized_ecosystem_ids(request):
+        return list((await db.scalars(own_rows)).all())
+    if not ecosystem_ids:
+        return []
+    return list((await db.scalars(own_rows.where(Member.ecosystem_id.in_(ecosystem_ids)))).all())
+
+
 async def _save_session(
     request: Request,
     session_id: str | None,
@@ -230,7 +250,7 @@ async def _save_session(
                 result = await db.execute(
                     select(AgentSession).where(
                         AgentSession.id == uuid.UUID(session_id),
-                        AgentSession.member_id == member.id,
+                        AgentSession.member_id.in_(await _member_ids_in(db, request, member, get_authorized_ecosystem_ids(request))),
                     )
                 )
                 sess = result.scalar_one_or_none()
@@ -249,6 +269,7 @@ async def _save_session(
                     logger.warning("Cannot save session: no ecosystem_id available")
                     return session_id or str(uuid.uuid4())
                 new_id = uuid.uuid4()
+                member = await caller_in(db, request, eco_id) or member
                 sess = AgentSession(
                     id=new_id,
                     ecosystem_id=eco_id,
@@ -275,6 +296,7 @@ async def _save_session(
 
 
 @chat_api_bp.get("/sessions")
+@authenticated
 async def list_sessions(request: Request):
     """GET /api/v1/chat/sessions — List chat sessions for current member.
 
@@ -283,9 +305,7 @@ async def list_sessions(request: Request):
         limit: Max results (default 30, max 50)
         offset: Pagination offset (default 0)
     """
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Authentication required"}, status=401)
+    member = request.ctx.member
 
     q = request.args.get("q", "").strip()
     try:
@@ -301,7 +321,7 @@ async def list_sessions(request: Request):
         async with request.app.ctx.db() as session:
             query = (
                 select(AgentSession)
-                .where(AgentSession.member_id == member.id)
+                .where(AgentSession.member_id.in_(await _member_ids_in(session, request, member, get_ecosystem_ids(request))))
                 .order_by(AgentSession.updated_at.desc())
             )
 
@@ -336,18 +356,17 @@ async def list_sessions(request: Request):
 
 
 @chat_api_bp.get("/sessions/<session_id:str>")
+@authenticated
 async def get_session(request: Request, session_id: str):
     """GET /api/v1/chat/sessions/:id — Load a specific chat session with messages."""
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Authentication required"}, status=401)
+    member = request.ctx.member
 
     try:
         async with request.app.ctx.db() as db:
             result = await db.execute(
                 select(AgentSession).where(
                     AgentSession.id == uuid.UUID(session_id),
-                    AgentSession.member_id == member.id,
+                    AgentSession.member_id.in_(await _member_ids_in(db, request, member, get_authorized_ecosystem_ids(request))),
                 )
             )
             sess = result.scalar_one_or_none()
@@ -371,18 +390,17 @@ async def get_session(request: Request, session_id: str):
 
 
 @chat_api_bp.delete("/sessions/<session_id:str>")
+@authenticated
 async def delete_session(request: Request, session_id: str):
     """DELETE /api/v1/chat/sessions/:id — Delete a chat session."""
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Authentication required"}, status=401)
+    member = request.ctx.member
 
     try:
         async with request.app.ctx.db() as db:
             result = await db.execute(
                 select(AgentSession).where(
                     AgentSession.id == uuid.UUID(session_id),
-                    AgentSession.member_id == member.id,
+                    AgentSession.member_id.in_(await _member_ids_in(db, request, member, get_authorized_ecosystem_ids(request))),
                 )
             )
             sess = result.scalar_one_or_none()
@@ -398,6 +416,7 @@ async def delete_session(request: Request, session_id: str):
 
 
 @chat_api_bp.post("/send")
+@authenticated
 async def send_message(request: Request):
     """POST /api/v1/chat/send — Agentic SSE streaming chat endpoint.
 
@@ -405,9 +424,7 @@ async def send_message(request: Request):
     executes any tool calls, feeds results back, and streams everything
     as SSE events (append, tool_start, tool_result, usage, session, done).
     """
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Authentication required"}, status=401)
+    member = request.ctx.member
 
     body = request.json or {}
     message = body.get("message", "").strip()
@@ -727,11 +744,10 @@ async def send_message(request: Request):
 
 
 @chat_api_bp.patch("/sessions/<session_id:str>/privacy")
+@authenticated
 async def update_session_privacy(request: Request, session_id: str):
     """PATCH /api/v1/chat/sessions/:id/privacy — Update privacy setting."""
-    member = getattr(request.ctx, "member", None)
-    if not member:
-        return json_response({"error": "Authentication required"}, status=401)
+    member = request.ctx.member
 
     body = request.json or {}
     privacy = body.get("privacy", "").strip()
@@ -743,7 +759,7 @@ async def update_session_privacy(request: Request, session_id: str):
             result = await db.execute(
                 select(AgentSession).where(
                     AgentSession.id == uuid.UUID(session_id),
-                    AgentSession.member_id == member.id,
+                    AgentSession.member_id.in_(await _member_ids_in(db, request, member, get_authorized_ecosystem_ids(request))),
                 )
             )
             sess = result.scalar_one_or_none()
@@ -782,7 +798,10 @@ async def get_shared_session(request: Request, share_token: str):
 
             if sess.privacy == "private":
                 return json_response({"error": "This session is private"}, status=403)
-            if sess.privacy == "ecosystem" and (not member or member.ecosystem_id != sess.ecosystem_id):
+            # The caller's ACTIVE row in the session's ecosystem (not the default row); exited or suspended members are refused.
+            if sess.privacy == "ecosystem" and not (
+                member and is_active_member_in(await caller_in(db, request, sess.ecosystem_id), sess.ecosystem_id)
+            ):
                 return json_response({"error": "Only ecosystem members can view this session"}, status=403)
 
             messages = (sess.context or {}).get("messages", [])
