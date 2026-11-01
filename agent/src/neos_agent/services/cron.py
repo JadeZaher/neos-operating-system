@@ -57,13 +57,15 @@ async def _check_deadlines(app):
 
 async def _cleanup_expired_sessions(app):
     """Remove expired auth sessions and challenges."""
-    from sqlalchemy import delete
-    from neos_agent.db.models import AuthSession, AuthChallenge
+    from sqlalchemy import delete, exists, select
+    from neos_agent.db.models import AgentToken, AuthSession, AuthChallenge
     now = datetime.now(timezone.utc)
     try:
         async with app.ctx.db() as session:
+            # A session an agent token points to stays as that token's history (the token already died with it).
+            referenced = exists(select(AgentToken.id).where(AgentToken.auth_session_id == AuthSession.id))
             result = await session.execute(
-                delete(AuthSession).where(AuthSession.expires_at < now)
+                delete(AuthSession).where(AuthSession.expires_at < now, ~referenced)
             )
             if result.rowcount:
                 logger.info("Cleaned up %d expired sessions", result.rowcount)
