@@ -347,7 +347,7 @@ async def _attention(session, ecosystem_id, window: Window) -> list[dict]:
         Agreement.ecosystem_id == ecosystem_id, Agreement.status.in_(("active", "under_review")),
     ))).scalars() if dates.date_passed(a.review_date, now)]
     items.append({"key": "reviews_overdue", "label": "Agreement reviews overdue", "count": len(overdue_reviews),
-                  "detail": None, "link": "/agreements?review=overdue"})  # the list filtered by the same rule
+                  "detail": None, "link": f"/agreements?review=overdue&ecosystem_id={ecosystem_id}"})  # the same rule and ecosystem
 
     stalled = {"advice past its deadline": 0, "advice with no deadline and no advice for 30 days": 0,
                "consent past its deadline": 0, "test with no report for 30 days": 0}

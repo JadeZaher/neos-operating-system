@@ -867,8 +867,12 @@ history response `caller_can_rollback`.
 `GET /agreements?review=overdue` (uxqa pass 03) lists exactly the agreements whose `review_overdue` is true:
 `review_overdue_clause` is the same rule in SQL (in force, a review date, `review_date < dates.aoe_today()`, which
 is `date_passed` on a date). Any other `review` value is 400. The health snapshot's "Agreement reviews overdue"
-count links to `/agreements?review=overdue` (`services/health._attention`); before, it opened the unfiltered
-registry and the steward had to hunt for the flagged cards.
+count links to `/agreements?review=overdue&ecosystem_id=<id>` (`services/health._attention`); before, it opened the
+unfiltered registry and the steward had to hunt for the flagged cards. `ecosystem_id` narrows the list to that
+ecosystem's own agreements (`include_shared=False`), and only while it is in the caller's scope (`get_ecosystem_ids`);
+any other id matches nothing and a non-UUID is 400. The count is one ecosystem's own agreements, so without it two
+selected ecosystems listed both ecosystems' overdue reviews, and an overdue agreement shared into the ecosystem was
+listed but never counted (review finding on p3-health-audit-and-review-9; `tests/test_uxqa_p3_health.py`).
 
 Rollback (`POST /agreements/:id/rollback/:version_id`) is allowed only where editing is (draft or
 advice, an active member there), restores the terms only (never `status`, `review_date` or

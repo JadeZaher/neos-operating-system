@@ -99,7 +99,15 @@ def _escape_like(value: str) -> str:
 
 def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID]):
     """Apply query-param filters to an Agreement select statement (no ecosystems -> no rows)."""
-    stmt = restrict_to_ecosystems(stmt, Agreement, eco_ids)
+    owner = request.args.get("ecosystem_id")  # one ecosystem's own, inside the selection (api/AGENTS.md "Agreement review")
+    if owner:
+        try:
+            owner_id = uuid.UUID(owner)
+        except ValueError:
+            raise ValueError("'ecosystem_id' must be a UUID") from None
+        stmt = restrict_to_ecosystems(stmt, Agreement, [owner_id] if owner_id in eco_ids else [], include_shared=False)
+    else:
+        stmt = restrict_to_ecosystems(stmt, Agreement, eco_ids)
 
     stmt = apply_ecosystem_name_filter(stmt, Agreement, request)
 
@@ -565,7 +573,8 @@ async def agreement_vocabulary(request: Request):
 async def list_agreements(request: Request):
     """GET /api/v1/agreements -- paginated list with filters.
 
-    Query params: type, status, domain, review (overdue), q, page (default 1), per_page (default 25, max 100).
+    Query params: type, status, domain, review (overdue), ecosystem_id (one selected ecosystem's own), q, page (default 1),
+    per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
     page = parse_pagination(request)
