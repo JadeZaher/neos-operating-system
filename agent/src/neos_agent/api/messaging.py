@@ -15,7 +15,7 @@ import datetime as _dt
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import aliased
 
 from neos_agent.api.schemas.messaging import (
@@ -97,6 +97,33 @@ async def _load_participants(session, conversation_id: uuid.UUID) -> list[Partic
         ParticipantSummary(id=row.id, display_name=row.display_name, role=row.role)
         for row in result.all()
     ]
+
+
+async def _mark_read(session, conversation_id: uuid.UUID, member_ids: list[uuid.UUID]) -> None:
+    """Advance the caller's read watermark to the newest message they were just served.
+
+    The watermark is that message's own created_at (DB clock), so unread counting
+    never compares the app clock against the DB clock. It only moves forward.
+    """
+    newest = (await session.execute(
+        select(func.max(Message.created_at))
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.deleted_at.is_(None))
+    )).scalar()
+    if newest is None:
+        return
+    await session.execute(
+        update(ConversationParticipant)
+        .where(ConversationParticipant.conversation_id == conversation_id)
+        .where(ConversationParticipant.member_id.in_(member_ids))
+        .where(or_(
+            ConversationParticipant.last_read_at.is_(None),
+            ConversationParticipant.last_read_at < newest,
+        ))
+        .values(last_read_at=newest)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +300,8 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
             messages=messages,
             total_messages=total,
         )
+        # Opening a conversation reads it: this is what clears its unread badge.
+        await _mark_read(session, conversation_id, member_ids)
 
     return json(detail.model_dump(mode="json"))
 
@@ -509,6 +538,7 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
             )
             for msg, sender_name in reversed(msg_rows)
         ]
+        await _mark_read(session, conversation_id, member_ids)
 
     return json({"messages": [m.model_dump(mode="json") for m in messages], "total": total})
 
