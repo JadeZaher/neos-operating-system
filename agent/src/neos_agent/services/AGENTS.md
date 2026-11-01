@@ -64,7 +64,12 @@ Send back for revision (consent or test -> advice) needs a note
 version and opens a fresh advice round (the note is its
 `proposer_modifications`) and a fresh consent record, so earlier positions
 stay as history. The advice gate counts rounds that carry advice from the
-latest revision round on, so a revision needs advice of its own. Both new rows
+latest revision round on, so a revision needs advice of its own. The test gate
+likewise counts only reports filed at or after the send-back
+(`reports_since_revision`: `created_at >= ` the revision round's `updated_at`,
+compared in Python), so a report on an earlier version is history and never
+meets the gate of the version being decided; the page's `caller_has_reported`
+and the decision record's report count use the same cut. Both new rows
 are stamped strictly after the proposal's newest row (`created_after_newest`):
 "latest" is ordered by `created_at`, which SQLite stores to the second.
 
@@ -96,7 +101,8 @@ instead of a client copy.
   proposer before). Its summary is plain words (no Python `True`), and its
   counts are the gate's: advice rounds with advice since the latest revision
   (`_advice_rounds_since_revision`), non-withdrawn positions in the final
-  consent record, every test report. The decisions API adds the agreement the
+  consent record, test reports since the latest revision
+  (`reports_since_revision`). The decisions API adds the agreement the
   proposal was registered as (`registered_agreement`), looked up live.
 - Refusals raise `TransitionRefused`, an `ApiError`: REST renders it as is,
   MCP turns it into a `ValueError`, chat into `{"success": false}`.
@@ -231,7 +237,8 @@ same facts, so chat and page say the same words.
   owner question on who may close advice is open): the author "you decide when
   to close advice", a non-author steward "you can also close it for them",
   anyone else "<author> decides". A revision round names who sent it back, the
-  note and the version, and says earlier advice and positions are history.
+  note and the version, and says earlier advice, positions and test reports are
+  history (the gates count none of them).
 - Consent: "N positions recorded, Q needed"; each open objection by name and
   reason; the author is told how to answer (send back, or wait for the
   withdrawal), the objector that they can withdraw. Only objecting needs a

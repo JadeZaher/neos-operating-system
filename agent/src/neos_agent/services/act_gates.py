@@ -359,6 +359,19 @@ async def latest_revision_log(session, proposal: Proposal) -> AdviceLog | None:
     )).scalar_one_or_none()
 
 
+async def reports_since_revision(session, proposal: Proposal) -> list:
+    """Test reports on the current version (filed at or after the latest send-back) as rows of
+    (id, outcome, reporter_member_id, created_at); see services/AGENTS.md "Send back for revision"."""
+    rows = (await session.execute(
+        select(TestReport.id, TestReport.outcome, TestReport.reporter_member_id, TestReport.created_at)
+        .where(TestReport.proposal_id == proposal.id)
+    )).all()
+    revision = await latest_revision_log(session, proposal)
+    since = revision.updated_at if revision is not None else None
+    # Compared in Python: SQLite stores server and client timestamps in different text forms.
+    return [row for row in rows if since is None or (row.created_at is not None and row.created_at >= since)]
+
+
 async def _open_revision(session, proposal: Proposal, source: str, *, actor: Member | None, note: str | None) -> None:
     """Send-back side effects: a minor version, a fresh advice round carrying the note, a fresh consent record."""
     proposal.version = _bump_minor(proposal.version)
@@ -543,11 +556,9 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
         and not (mode == "consensus" and stand_asides)
     )
 
-    # --- Test gate: declared cases must each show met evidence --------------
+    # --- Test gate: declared cases must each show met evidence on this version ---
     declared_cases: list[str] = policy["test_cases"]
-    reports = list((await session.execute(
-        select(TestReport).where(TestReport.proposal_id == proposal.id)
-    )).scalars().all())
+    reports = await reports_since_revision(session, proposal)
     criteria = []
     if reports:
         criteria = list((await session.execute(
@@ -772,7 +783,7 @@ async def record_proposal_decision(session, proposal: Proposal, *, confirmed_by:
 
     Idempotent: one artifact per proposal. Consent participants become
     decision participants — the recorded commitments by members to the
-    proposal. Counts match the gates (advice rounds since the latest revision).
+    proposal. Counts match the gates (advice rounds and test reports since the latest revision).
     """
     existing = await session.scalar(
         select(DecisionRecord.id).where(DecisionRecord.source_proposal_id == proposal.id)
@@ -794,9 +805,7 @@ async def record_proposal_decision(session, proposal: Proposal, *, confirmed_by:
 
     advice_rounds = await _advice_rounds_since_revision(session, proposal)  # what the advice gate counted
     positions = [p for p in participants if consent_position(p.position) not in _WITHDRAWN_POSITIONS]
-    report_count = int(await session.scalar(
-        select(func.count(TestReport.id)).where(TestReport.proposal_id == proposal.id)
-    ) or 0)
+    report_count = len(await reports_since_revision(session, proposal))  # what the test gate counted
     policy, policy_source = await resolve_proposal_policy(session, proposal)
     source_phrase = {
         "proposal": "set on the proposal",

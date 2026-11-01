@@ -46,13 +46,13 @@ from neos_agent.services.act_gates import (
     consent_position,
     current_position,
     created_after_newest,
-    latest_revision_log,
     normalize_act_policy,
     proposal_gate_status,
     proposal_next_moves,
     ratification_confirmers,
     record_consent_position,
     refuse_pending_member,
+    reports_since_revision,
     require_participant,
     transition_proposal,
     withdraw_consent_position,
@@ -376,14 +376,9 @@ async def _caller_contributions(session, proposal: Proposal, caller: Member | No
     advised = latest_log is not None and bool(await session.scalar(select(func.count(AdviceEntry.id)).where(
         AdviceEntry.advice_log_id == latest_log, AdviceEntry.member_id == caller.id,
     )))
-    filed = (await session.scalars(select(TestReport.created_at).where(
-        TestReport.proposal_id == proposal.id, TestReport.reporter_member_id == caller.id,
-    ))).all()
-    revision = await latest_revision_log(session, proposal)
-    # A report on an earlier version is history; the round's updated_at is when the send-back happened.
-    # Compared in Python: SQLite stores server and client timestamps in different text forms.
-    since = revision.updated_at if revision is not None else None
-    return advised, any(since is None or (created is not None and created >= since) for created in filed)
+    # A report on an earlier version is history: the same cut the test gate counts.
+    filed = any(row.reporter_member_id == caller.id for row in await reports_since_revision(session, proposal))
+    return advised, filed
 
 
 async def _proposal_detail_payload(session, proposal: Proposal, caller: Member | None,

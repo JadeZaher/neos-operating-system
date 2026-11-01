@@ -410,3 +410,35 @@ async def test_a_passed_report_hands_off_to_named_stewards_then_registration_wai
     page = (await _call(env, "get", "ada", f"/api/v1/agreements/{agreement['id']}", expect=200)).json
     assert page["registered_from_proposal"] == {"id": proposal_id, "proposal_id": ratified.json["proposal_id"],
                                                 "title": "Bike shed"}
+
+
+async def test_a_report_on_an_earlier_version_is_history_for_the_gate_the_page_and_the_record(env):
+    """The revision banner says earlier test reports are history: the gate, the page and the record count none."""
+    proposal_id = await _proposal(env, proposed_change="Bikes go in the shed.")
+    await _to_consent(env, proposal_id)
+    await _post(env, "ben", proposal_id, "/consent", position="consent")  # meets the quorum: on to test
+    await _post(env, "ben", proposal_id, "/test", observations="Bikes stayed dry all week.", outcome="passed")
+    # Filed an hour before the send-back (the clock is the process edge; SQLite keeps server time to the second).
+    an_hour_ago = dt.datetime.now(dt.UTC).replace(tzinfo=None) - dt.timedelta(hours=1)
+    async with env.db() as session:
+        await session.execute(update(TestReport).where(TestReport.proposal_id == uuid.UUID(proposal_id))
+                              .values(created_at=an_hour_ago))
+        await session.commit()
+    await _post(env, "ada", proposal_id, "/status", expect=200, status="advice", note="Say where the key lives")
+    await _to_consent(env, proposal_id)
+    await _post(env, "ben", proposal_id, "/consent", position="consent")  # v1.1 enters test
+
+    page = await _detail(env, "ben", proposal_id)
+    assert (page["status"], page["version"]) == ("test", "1.1")
+    assert (page["gates"]["test"]["met"], page["gates"]["test"]["reports"]) == (False, 0)
+    assert page["caller_has_reported"] is False
+    assert "Test stage: 0 test reports so far" in (await _explain(env, "ben", proposal_id))["next_step"]
+    assert all(item["action"] != "confirm_ratification" for item in await _queue(env, "mo"))
+    await _post(env, "mo", proposal_id, "/status", expect=409, status="ratified")
+
+    await _post(env, "cy", proposal_id, "/test", observations="Dry again with the rota.", outcome="passed")
+    ratified = await _post(env, "mo", proposal_id, "/status", expect=200, status="ratified")
+    decision = (await _call(env, "get", "ada", f"/api/v1/decisions/{ratified.json['decision_record_id']}",
+                            expect=200)).json
+    summary = decision["deliberation_summary"]
+    assert "On the version that was decided (v1.1)" in summary and "1 test report was filed" in summary, summary
