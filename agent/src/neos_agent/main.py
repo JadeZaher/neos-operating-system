@@ -260,28 +260,39 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     select(MemberModel.ecosystem_id).where(
                         MemberModel.user_id == user.id,
                         MemberModel.current_status == "active",
-                    )
+                    ).order_by(MemberModel.created_at, MemberModel.id)
                 )
-                all_authorized_ids = set(member_result.scalars().all())
-                if all_authorized_ids:
-                    primary_eco_id = next(iter(all_authorized_ids))
+                active_ecosystem_ids = list(member_result.scalars().all())
+                all_authorized_ids = set(active_ecosystem_ids)
+                if active_ecosystem_ids:
+                    # Oldest active membership: the same rule as guards.default_member, so scope and ctx.member agree.
+                    primary_eco_id = active_ecosystem_ids[0]
 
+            # Filter selected_ids to only authorized ones
+            if selected_ids and user:
+                selected_ids = [eid for eid in selected_ids if eid in all_authorized_ids]
             if selected_ids:
-                # Filter selected_ids to only authorized ones
-                if user:
-                    selected_ids = [eid for eid in selected_ids if eid in all_authorized_ids]
-
                 result = await db.execute(
                     select(Ecosystem).where(Ecosystem.id.in_(selected_ids))
                 )
                 ecosystems = list(result.scalars().all())
-                eco_ids = [e.id for e in ecosystems]
-                return ecosystems, eco_ids, list(all_authorized_ids)
+                if ecosystems:
+                    return ecosystems, [e.id for e in ecosystems], list(all_authorized_ids)
+            # Nothing selectable (no cookie, or only stale/pending/foreign ids): the default, never an empty scope.
             if primary_eco_id:
                 eco = await db.get(Ecosystem, primary_eco_id)
                 if eco:
                     return [eco], [eco.id], list(all_authorized_ids)
             return [], [], list(all_authorized_ids)
+
+        # Helper: request.ctx.member is a deterministic DEFAULT row, not the caller in any one
+        # ecosystem; per-ecosystem code must use api.guards.caller_in (api/AGENTS.md "Handler contracts").
+        async def _default_member(db, user, selected_ids, authorized_ids):
+            from neos_agent.api.guards import default_member
+
+            if user is None:
+                return None
+            return await default_member(db, user.id, selected_ids=selected_ids, authorized_ids=authorized_ids)
 
         # Helper: resolve user from session cookie
         async def _try_resolve_user():
@@ -319,14 +330,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             try:
                 async with app.ctx.db() as db:
                     ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
-                    # Load primary member for backward compat
-                    if user:
-                        member_result = await db.execute(
-                            select(MemberModel).where(MemberModel.user_id == user.id).limit(1)
-                        )
-                        request.ctx.member = member_result.scalar_one_or_none()
-                    else:
-                        request.ctx.member = None
+                    request.ctx.member = await _default_member(db, user, eco_ids, all_auth_ids)
             except Exception:
                 ecosystems, eco_ids, all_auth_ids = [], [], []
                 request.ctx.member = None
@@ -375,25 +379,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
                 selected_ids = _parse_selected_cookie()
                 ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
-
-                # Load member in first selected ecosystem for backward compat
-                member = None
-                if user and eco_ids:
-                    member_result = await db.execute(
-                        select(MemberModel).where(
-                            MemberModel.user_id == user.id,
-                            MemberModel.ecosystem_id.in_(eco_ids),
-                        ).limit(1)
-                    )
-                    member = member_result.scalar_one_or_none()
-                if member is None and user:
-                    # Fallback: any member for this user
-                    member_result = await db.execute(
-                        select(MemberModel).where(MemberModel.user_id == user.id).limit(1)
-                    )
-                    member = member_result.scalar_one_or_none()
-
-                request.ctx.member = member
+                request.ctx.member = await _default_member(db, user, eco_ids, all_auth_ids)
                 request.ctx.ecosystems = ecosystems
                 request.ctx.selected_ecosystem_ids = eco_ids
                 request.ctx.authorized_ecosystem_ids = all_auth_ids
@@ -410,6 +396,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         if hasattr(request.ctx, "member") and request.ctx.member:
             return redirect("/dashboard")
         return redirect("/auth/login")
+
+    # ApiError -> {"error": message, **extra} with its status, on every route
+    from neos_agent.api.errors import register_api_errors
+    register_api_errors(app)
 
     # Catch-all: unknown API paths are JSON 404s; unknown browser paths go to the dashboard
     from sanic.exceptions import NotFound

@@ -4,10 +4,14 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 
 from sanic import json
 from sanic.request import Request
 from sqlalchemy import or_, cast, String, Text, select, text, literal
+
+from neos_agent.api.errors import ApiError
+from neos_agent.api.policy import ROLE_RANK  # re-exported; policy.py is the single definition
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +32,6 @@ def require_admin(request: Request):
     if member.profile not in ("co_creator", "builder"):
         return None, json({"error": "Admin access required"}, status=403)
     return member, None
-
-
-# Per-ecosystem role tiers, ordered by privilege.
-ROLE_RANK = {"user": 0, "mod": 1, "admin": 2, "owner": 3}
 
 
 async def require_ecosystem_role(request: Request, ecosystem_id: uuid.UUID, min_role: str):
@@ -164,3 +164,40 @@ def serialize_shared_ecosystem_ids(ids: list[uuid.UUID] | None) -> list[str] | N
     if not ids:
         return None
     return [str(eid) for eid in ids]
+
+
+# Value object: a validated page request.
+@dataclass(frozen=True)
+class Page:
+    """A 1-based page number and page size; `offset` is derived so it cannot drift."""
+
+    page: int
+    per_page: int
+
+    @property
+    def offset(self) -> int:
+        """Rows to skip before this page."""
+        return (self.page - 1) * self.per_page
+
+
+_SQL_BIGINT_MAX = 2**63 - 1
+
+
+# Parser: reject non-integers (400), clamp integers into range.
+def parse_pagination(request: Request, default: int = 25, cap: int = 100) -> Page:
+    """?page and ?per_page as a Page; see api/AGENTS.md "Handler contracts"."""
+    page = max(1, _integer_query_arg(request, "page", 1))
+    per_page = min(cap, max(1, _integer_query_arg(request, "per_page", default)))
+    if (page - 1) * per_page > _SQL_BIGINT_MAX:
+        raise ApiError(400, "Query parameter 'page' is out of range")
+    return Page(page=page, per_page=per_page)
+
+
+def _integer_query_arg(request: Request, name: str, default: int) -> int:
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ApiError(400, f"Query parameter '{name}' must be a whole number") from None

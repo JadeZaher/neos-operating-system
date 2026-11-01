@@ -8,6 +8,18 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
+from sqlalchemy import false
+
+from neos_agent.api.helpers import apply_ecosystem_filter
+
+
+# Fail-closed filter (default deny): see api/AGENTS.md "Handler contracts".
+def restrict_to_ecosystems(stmt, model, ecosystem_ids, *, include_shared: bool = True):
+    """Rows owned by (or, with `include_shared`, shared with) `ecosystem_ids`; an empty list matches no rows."""
+    if not ecosystem_ids:
+        return stmt.where(false())
+    return apply_ecosystem_filter(stmt, model, list(ecosystem_ids), include_shared=include_shared)
+
 
 @dataclass
 class EcosystemScope:
@@ -31,6 +43,10 @@ class EcosystemScope:
         if not self.selected_ids:
             raise ValueError("No ecosystem scope active")
         return self.selected_ids
+
+    def filter(self, stmt, model):
+        """Restrict `stmt` to the selected ecosystems; an empty selection matches no rows."""
+        return restrict_to_ecosystems(stmt, model, self.selected_ids)
 
     @classmethod
     def empty(cls) -> "EcosystemScope":
