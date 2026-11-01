@@ -79,6 +79,15 @@ def _published_label(a: GovernanceHealthAudit) -> str | None:
     return getattr(a, 'overall_health', None) or _health_score_to_label(a.overall_health_score)
 
 
+def _published_on(a: GovernanceHealthAudit) -> _dt.date | None:
+    """The publish date (publish sets `audit_date`); never `updated_at`, which a later write moves."""
+    return a.audit_date if a.status == AUDIT_PUBLISHED else None
+
+
+async def _ecosystem_name(session, ecosystem_id) -> str | None:
+    return await session.scalar(select(Ecosystem.name).where(Ecosystem.id == ecosystem_id))
+
+
 def _audit_to_list_item(a: GovernanceHealthAudit) -> dict:
     return AuditListItem(
         id=a.id,
@@ -89,7 +98,7 @@ def _audit_to_list_item(a: GovernanceHealthAudit) -> dict:
         overall_health_score=_published_score(a),
         status=a.status,
         created_at=a.created_at,
-        completed_at=getattr(a, 'updated_at', None) if a.status == 'completed' else None,
+        completed_at=_published_on(a),
         overall_health=_published_label(a),
         audit_scope=getattr(a, 'audit_scope', None),
         trigger_type=getattr(a, 'trigger_type', None),
@@ -135,18 +144,19 @@ def audit_score(indicator_scores: list[dict] | None) -> int | None:
     return round(sum(points) / len(points)) if points else None
 
 
-def _audit_to_detail(a: GovernanceHealthAudit, caller: Member | None = None) -> dict:
+def _audit_to_detail(a: GovernanceHealthAudit, caller: Member | None = None, ecosystem_name: str | None = None) -> dict:
     return AuditDetail(
         caller_can_edit=a.status == AUDIT_DRAFT and policy.can_finish_audit(caller, a),
         id=a.id,
         audit_id=a.audit_id,
         ecosystem_id=a.ecosystem_id,
+        ecosystem_name=ecosystem_name,
         audit_date=a.audit_date,
         auditor=a.auditor,
         overall_health_score=_published_score(a),
         status=a.status,
         created_at=a.created_at,
-        completed_at=getattr(a, 'updated_at', None) if a.status == 'completed' else None,
+        completed_at=_published_on(a),
         overall_health=_published_label(a),
         audit_scope=getattr(a, 'audit_scope', None),
         trigger_type=getattr(a, 'trigger_type', None),
@@ -217,17 +227,19 @@ async def _ecosystem_health(session, request: Request, eco_ids: list) -> list[di
         latest = await health.latest_published_audit(session, eco_id)
         due = await health.audit_due_date(session, eco_id, latest)
         caller = await caller_in(session, request, eco_id)
-        can_record = await auditor_refusal(session, caller, eco_id) is None
+        refusal = await auditor_refusal(session, caller, eco_id)
+        can_record = refusal is None
         scores = _scores_to_list(latest.indicator_scores) if latest else None
         entries.append({
             "ecosystem_id": str(eco_id),
             "ecosystem": names[eco_id],
-            "latest_audit": _audit_to_detail(latest, caller) if latest else None,
+            "latest_audit": _audit_to_detail(latest, caller, names[eco_id]) if latest else None,
             "published_on": latest.audit_date.isoformat() if latest and latest.audit_date else None,
             "audit_due": due.isoformat() if due else None,
             "audit_overdue": dates.date_passed(due),
             "critical_count": sum(row.get("status") == "critical" for row in scores or []),
             "caller_can_record_audit": can_record,
+            "caller_record_audit_refusal": refusal.message if refusal is not None else None,  # why there is no button
             "caller_records_self_assessment": can_record and policy.is_self_assessment(caller),
         })
     return entries
@@ -413,7 +425,7 @@ async def request_audit(request: Request):
         session.add(audit)
         await session.commit()
         await session.refresh(audit)
-        return json(_audit_to_detail(audit, auditor), status=201)
+        return json(_audit_to_detail(audit, auditor, await _ecosystem_name(session, audit.ecosystem_id)), status=201)
 
 
 @safeguards_api_bp.put("/audits/<audit_id:uuid>")
@@ -430,7 +442,7 @@ async def update_audit(request: Request, audit_id: uuid.UUID):
         _apply_audit_fields(audit, update_req.model_dump(exclude_none=True))
         await session.commit()
         await session.refresh(audit)
-        return json(_audit_to_detail(audit, caller))
+        return json(_audit_to_detail(audit, caller, await _ecosystem_name(session, audit.ecosystem_id)))
 
 
 async def auditor_refusal(session, member: Member | None, ecosystem_id) -> ApiError | None:
@@ -488,7 +500,7 @@ async def publish_audit(request: Request, audit_id: uuid.UUID):
         audit.next_audit_due = audit.audit_date + _dt.timedelta(days=NEXT_AUDIT_AFTER_DAYS)
         await session.commit()
         await session.refresh(audit)
-        return json(_audit_to_detail(audit, caller))
+        return json(_audit_to_detail(audit, caller, await _ecosystem_name(session, audit.ecosystem_id)))
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +531,7 @@ def _steward_record(record) -> dict | None:
 
 async def audit_detail_payload(session, audit: GovernanceHealthAudit, caller: Member | None) -> dict:
     """Detail plus what stewards recorded on it, and whether the caller may abandon it or respond to it."""
-    payload = _audit_to_detail(audit, caller)
+    payload = _audit_to_detail(audit, caller, await _ecosystem_name(session, audit.ecosystem_id))
     response = (await health.audit_record(session, audit.id, health.AUDIT_RESPONSE_SKILL)
                 if audit.status == AUDIT_PUBLISHED else None)
     abandoned = (await health.audit_record(session, audit.id, health.AUDIT_ABANDON_SKILL)

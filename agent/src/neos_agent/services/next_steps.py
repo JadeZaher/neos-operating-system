@@ -82,6 +82,11 @@ _KIND_ORDER = {"emergency": 0, "conflict": 1, "proposal": 2, "agreement": 3, "ex
 # Acts only this caller's role can take, which hold a record up until taken: after overdue items, these come first.
 OWNER_ACTIONS = frozenset({"close_advice", "revise", "answer_objection", "confirm_ratification", "register_agreement",
                            "finish_review"})
+# Acts another person is waiting on (an answer to read, a side to approve, an audit to answer): ranked with OWNER_ACTIONS.
+UNBLOCKING_ACTIONS = frozenset({"read_response", "approve_collaboration", "respond_to_audit"})
+FIRST_TIER = OWNER_ACTIONS | UNBLOCKING_ACTIONS
+# Steps that build on each other, within one kind and date: the entry quiz checks the orientation journey.
+_STEP_ORDER = {"start_orientation": 0, "take_entry_quiz": 1}
 
 # The proposer's prompt, word for word as the proposal page (client lib/proposal-vocab.ts adviceClosePrompt).
 ADVICE_DEADLINE_PROMPT = "Advice deadline passed: move to consent?"
@@ -835,10 +840,10 @@ def item_source(*kinds: tuple[str, int]):
 
 
 def _queue_order(item: dict) -> tuple:
-    """Overdue first, then the acts only this caller's role can take (OWNER_ACTIONS), then the nearest due date
-    (undated last), then the more urgent kind."""
-    return (not item["overdue"], item["action"] not in OWNER_ACTIONS, item["due"] is None, item["due"] or "",
-            _KIND_ORDER.get(item["kind"], 9), item["title"])
+    """Overdue first, then FIRST_TIER (acts only this caller's role can take, and acts someone else waits on), then
+    the nearest due date (undated last), the more urgent kind, the earlier step (_STEP_ORDER) and the title."""
+    return (not item["overdue"], item["action"] not in FIRST_TIER, item["due"] is None, item["due"] or "",
+            _KIND_ORDER.get(item["kind"], 9), _STEP_ORDER.get(item["action"], 0), item["title"])
 
 
 async def waiting_for(session, user_id: uuid.UUID | None, ecosystem_ids=None, *, now: _dt.datetime | None = None) -> list[dict]:
@@ -1356,7 +1361,8 @@ async def stuck_newcomer_items(session, scope: QueueScope) -> list[dict]:
             row, action="confirm_membership", title=f"Confirm {row.display_name}'s membership",
             what=f"{row.display_name} is waiting to join {ecosystem} with nothing left to consent to.",
             why=("Consent makes newcomers active by itself, but their gate emptied after they asked to join "
-                 "(an agreement ended or stopped being required), so a steward confirms them."),
+                 f"(an agreement ended or stopped being required). Ask {row.display_name} to press Check my "
+                 "membership on their consent page, which makes them active, or confirm them on their member page."),
             ecosystem=ecosystem, clock=scope.clock, link_to=f"/members/{row.id}"))
     return items
 
@@ -1380,9 +1386,10 @@ async def first_month_items(session, scope: QueueScope) -> list[dict]:
     passed = set((await session.execute(select(QuizResult.member_id, QuizResult.quiz_id).where(
         QuizResult.member_id.in_(row_ids), QuizResult.is_passed.is_(True)))).all())
     items: list[dict] = []
-    for row in rows:
+    for row in rows:  # the journey before the quiz that checks it: _STEP_ORDER keeps that order in the queue
         ecosystem = scope.names.get(row.ecosystem_id)
-        if row.ecosystem_id in with_journeys and row.id not in oriented:
+        orienting = row.ecosystem_id in with_journeys and row.id not in oriented
+        if orienting:
             items.append(_newcomer_item(
                 row, action="start_orientation", title=f"Walk through {ecosystem}'s orientation",
                 what=f"Take the orientation journey to learn how {ecosystem} works.",
@@ -1393,7 +1400,8 @@ async def first_month_items(session, scope: QueueScope) -> list[dict]:
             items.append(_newcomer_item(
                 row, action="take_entry_quiz", part=str(quiz.id), title=f"Take {quiz.title}",
                 what=f"{ecosystem}'s entry quiz checks what the orientation covered.",
-                why="Its stewards chose this quiz for newcomers.",
+                why=("Take it after you finish the orientation journey: it asks about what the journey covers. "
+                     if orienting else "") + "Its stewards chose this quiz for newcomers.",
                 ecosystem=ecosystem, clock=scope.clock, link_to=f"/quiz/take/{quiz.id}"))
     return items
 

@@ -231,12 +231,21 @@ Rules of the queue:
   item names its ecosystem.
 - Items only for an active caller row in the record's own ecosystem (a shared
   record never gives a foreign member a task: every act needs a row there).
-- Order: overdue first, then `OWNER_ACTIONS` (close_advice, revise,
-  answer_objection, confirm_ratification, register_agreement: acts only this
-  caller's role can take, which hold the record up until taken), then the
-  nearest `due` (undated last), then kind (emergency, conflict, proposal,
-  agreement, exit, audit). Before, a close_advice without a deadline sank
-  below every dated item and was sorted by title (item 18 of 22 in the bell). `due` is `YYYY-MM-DD` for date columns and
+- Order (`_queue_order`): overdue first, then `FIRST_TIER`, then the
+  nearest `due` (undated last), then kind (`_KIND_ORDER`: emergency, conflict,
+  proposal/newcomer, agreement, exit, audit, collaboration, share_need), then
+  `_STEP_ORDER`, then the title. `FIRST_TIER` = `OWNER_ACTIONS` (close_advice,
+  revise, answer_objection, confirm_ratification, register_agreement,
+  finish_review: acts only this caller's role can take, which hold the record
+  up until taken) + `UNBLOCKING_ACTIONS` (read_response, approve_collaboration,
+  respond_to_audit: acts another person is waiting on; uxqa pass 03). Before,
+  a close_advice without a deadline sank below every dated item and was sorted
+  by title (item 18 of 22 in the bell); pass 03 found the same for an answer
+  to your post (item 25 of 26): every undated act sank under dated advice and
+  consent items, so the person who answered waited on a list nobody reached.
+  `_STEP_ORDER` puts a step before the one that builds on it when kind and
+  date tie (`start_orientation` before `take_entry_quiz`; the title used to
+  put "Take ..." first). `due` is `YYYY-MM-DD` for date columns and
   ISO with `Z` for the naive-UTC timestamps (emergencies), so browsers never
   shift it. `overdue` uses one `Clock` per request: a date passes the next day,
   a timestamp at once.
@@ -376,7 +385,7 @@ indicators that have data but no rating.
 | `finish_review` (in `OWNER_ACTIONS`) | same | `under_review` |
 | `archive_agreement` | same | `sunset` and `sunset_date` has passed; `overdue` is false (it became possible, nothing is late) |
 | `audit_due` | stewards (mod+) | from 14 days before `audit_due_date`, unless a draft audit exists there; it links to `/safeguards` and says who records it (a non-steward, or a self-assessment when nobody else is active) |
-| `respond_to_audit` | stewards | the latest published audit rates an indicator `critical` (`RESPOND_TO_RATINGS`, owner default: warnings show on the page only); a newer audit clears it |
+| `respond_to_audit` (in `UNBLOCKING_ACTIONS`) | stewards | the latest published audit rates an indicator `critical` (`RESPOND_TO_RATINGS`, owner default: warnings show on the page only); a newer audit clears it |
 
 The agreement banner names the review date ("Its next review is due ..." / "was due ...; an admin
 or owner starts it"), and overdue never takes an agreement out of force (framework agreement-review
@@ -446,9 +455,9 @@ Kind `newcomer` (queue order 2), record = the member row; each item carries its 
 |---|---|---|
 | `consent_to_join` (one per missing membership agreement) | the pending member themselves | they consent |
 | `finish_joining` | a pending member with nothing left to consent to | they press "Check my membership" (join heals) |
-| `confirm_membership` | active stewards of that ecosystem (`can_manage_onboarding`, founders included; FX-Onboard) | a steward confirms (`MEMBER_MOVES`) or the newcomer heals |
+| `confirm_membership` | active stewards of that ecosystem (`can_manage_onboarding`, founders included; FX-Onboard) | a steward confirms (`MEMBER_MOVES`) or the newcomer heals; its words offer both: ask them to press Check my membership on their consent page, or confirm them on their member page (pass 03: it used to say "a steward confirms them" while the page said nobody needs approval) |
 | `start_orientation` | an active member in their first 30 days, the ecosystem has an active journey | a `complete` progress row |
-| `take_entry_quiz` | the same, the ecosystem has a published entry quiz | a passing result on that row |
+| `take_entry_quiz` | the same, the ecosystem has a published entry quiz | a passing result on that row; listed after `start_orientation` (`_STEP_ORDER`), and while the journey is unfinished its `why` says to take it after the journey |
 
 Waiting newcomers whose consent is still missing are NOT steward items (owner decision: consent
 activates them; G-Maint's health snapshot counts them). The 30-day window compares the row's
@@ -580,6 +589,17 @@ Proposed collaborations are read by members of either side only (and their propo
 in a private ecosystem the caller is outside of (404), the same domain on both sides (`SAME_DOMAIN`) and a linked
 post that is closed or invisible (`linked_share_need_id` -> `linked_shares_needs`).
 
+### Archived domains (uxqa pass 03)
+
+`require_active_domain(domain, field, doing)`: a domain whose `status` is not `active` (`archived` in practice)
+refuses 409 `DOMAIN_NOT_ACTIVE` (`field`, `status`) for a new post (`publishing_gate`, `doing="post"`), reopening
+a post (`"reopen"`) and either side of a new collaboration (`propose_collaboration`, `"collaborate"`), in words
+fitted to the act. Editing an open post that is already there (`"edit"`) still passes: the post exists, and its
+author may still correct it, withdraw it or mark it fulfilled. Before, the server never looked at the status, and
+the post and collaboration forms listed the 12 archived OmniOne domains of neos_uxqa; the client now asks for
+`status=active` too, but the rule lives here so the assistant and MCP refuse the same way. The propose check runs
+after the target's visibility check, so an invisible target is still a 404, never a status leak.
+
 ### Queue items (`next_steps.py` "# G-Exchange", registered with `@item_source`)
 
 | Kind / action | Who | Link |
@@ -588,6 +608,9 @@ post that is closed or invisible (`linked_share_need_id` -> `linked_shares_needs
 | `share_need` / `still_open` | the author, open post 90+ days since `open_since` | `/discover?tab=shares-needs&post=<id>` |
 | `collaboration` / `approve_collaboration` | each steward who may approve a side not yet approved (one item per side) | `/discover/collaborations/<id>` |
 | `collaboration` / `review_collaboration` | stewards of either side once `review_date` has passed (one item each): "Review or end"; clears when a review moves `review_date` on or the collaboration ends | same |
+
+`read_response` and `approve_collaboration` are `UNBLOCKING_ACTIONS` (someone waits on them), so they rank right
+after overdue items, with `OWNER_ACTIONS` ("Next steps" > "Rules of the queue").
 
 Cost: one unread count per answer conversation of the caller's posts; fine at study volume, batch it when a
 member has hundreds of answered posts.

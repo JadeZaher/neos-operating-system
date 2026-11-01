@@ -86,6 +86,8 @@ CANNOT_MOVE = "CANNOT_MOVE"
 ALREADY_HIDDEN, NOT_HIDDEN = "ALREADY_HIDDEN", "NOT_HIDDEN"
 PARTICIPATION_REQUIRED = "PARTICIPATION_REQUIRED"
 SAME_DOMAIN = "SAME_DOMAIN"
+DOMAIN_NOT_ACTIVE = "DOMAIN_NOT_ACTIVE"
+ACTIVE_DOMAIN = "active"  # Domain.status that takes new posts and collaborations (others: archived)
 NOT_PROPOSED, APPROVE_DENIED, SIDE_REQUIRED, ALREADY_APPROVED = (
     "NOT_PROPOSED", "APPROVE_DENIED", "SIDE_REQUIRED", "ALREADY_APPROVED")
 END_DENIED, END_NOT_ALLOWED = "END_DENIED", "END_NOT_ALLOWED"
@@ -423,11 +425,29 @@ async def require_active_member(session, member: Member | None, ecosystem_id, do
     raise ApiError(403, f"Only an active member of {where} can {doing} there.", {"code": MEMBERSHIP_REQUIRED})
 
 
-async def publishing_gate(session, author: Member, ecosystem_id, domain_id) -> None:
-    """Domain participation and agreement consent, when the domain gates publishing (create, edit open, reopen)."""
+# What an archived domain refuses, in the words of the act ("edit" is not here: an existing post can still be corrected).
+_INACTIVE_DOMAIN_WORDS = {
+    "post": "so nothing new can be posted there. Choose an active domain.",
+    "reopen": "so a post there cannot be reopened. Post it again in an active domain.",
+    "collaborate": "so it cannot join a new collaboration. Choose an active domain.",
+}
+
+
+def require_active_domain(domain: Domain, field: str, doing: str) -> None:
+    """409 DOMAIN_NOT_ACTIVE when `domain` is archived (any status but active) and `doing` is in _INACTIVE_DOMAIN_WORDS."""
+    if domain.status != ACTIVE_DOMAIN and doing in _INACTIVE_DOMAIN_WORDS:
+        raise ApiError(409, f"{domain.name or 'This domain'} is {domain.status or 'not active'}, "
+                            f"{_INACTIVE_DOMAIN_WORDS[doing]}",
+                       {"code": DOMAIN_NOT_ACTIVE, "field": field, "status": domain.status})
+
+
+async def publishing_gate(session, author: Member, ecosystem_id, domain_id, *, doing: str = "post") -> None:
+    """A domain of this ecosystem, active unless `doing` is "edit", then domain participation and agreement consent
+    when the domain gates publishing (create "post", "edit" an open post, "reopen")."""
     domain = await session.get(Domain, domain_id)
     if domain is None or domain.ecosystem_id != ecosystem_id:
         raise _bad("domain_id", "Choose a domain of this ecosystem.")
+    require_active_domain(domain, "domain_id", doing)
     if not await required_agreements_for_scope(session, ecosystem_id, "domain", domain_id):
         return
     participation = await session.scalar(select(CircleMembership.id).where(
@@ -502,7 +522,8 @@ async def update_publication(session, viewer: Viewer, record: SharesNeeds, body)
         setattr(record, key, value)
     if record.status == OPEN:
         await publishing_gate(session, await require_active_member(
-            session, writer, record.ecosystem_id, "change an open post"), record.ecosystem_id, record.domain_id)
+            session, writer, record.ecosystem_id, "change an open post"), record.ecosystem_id, record.domain_id,
+            doing="edit")
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
     return record
@@ -531,7 +552,7 @@ async def move_publication(session, viewer: Viewer, record: SharesNeeds, to: str
         if not is_active_member_in(writer, record.ecosystem_id):
             raise ApiError(409, "You need an active membership in this ecosystem to reopen the post.",
                            {"code": AUTHOR_INACTIVE})
-        await publishing_gate(session, writer, record.ecosystem_id, record.domain_id)
+        await publishing_gate(session, writer, record.ecosystem_id, record.domain_id, doing="reopen")
     record.status = to
     record.status_reason = note
     record.status_changed_by_member_id = writer.id
@@ -797,6 +818,8 @@ async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.dat
     if target is None or target_ecosystem is None or (
             target_ecosystem.visibility != "public" and viewer.row_in(target.ecosystem_id) is None):
         raise ApiError(404, "target_domain_id not found")
+    require_active_domain(source, "source_domain_id", "collaborate")
+    require_active_domain(target, "target_domain_id", "collaborate")
     missing = await missing_agreement_consents(session, proposer.id, source.ecosystem_id, "collaboration", source.id)
     if missing:
         raise ApiError(409, "Agreement consent is required before proposing a collaboration", _required_agreements(missing))

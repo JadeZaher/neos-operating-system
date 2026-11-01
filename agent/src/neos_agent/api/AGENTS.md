@@ -864,6 +864,12 @@ New agreements come due: REST create and `register_ratified_proposal` default `r
 agreement); history reviews add `findings`, `conducted_by`, `agreement_version`, `on_time`, and the
 history response `caller_can_rollback`.
 
+`GET /agreements?review=overdue` (uxqa pass 03) lists exactly the agreements whose `review_overdue` is true:
+`review_overdue_clause` is the same rule in SQL (in force, a review date, `review_date < dates.aoe_today()`, which
+is `date_passed` on a date). Any other `review` value is 400. The health snapshot's "Agreement reviews overdue"
+count links to `/agreements?review=overdue` (`services/health._attention`); before, it opened the unfiltered
+registry and the steward had to hunt for the flagged cards.
+
 Rollback (`POST /agreements/:id/rollback/:version_id`) is allowed only where editing is (draft or
 advice, an active member there), restores the terms only (never `status`, `review_date` or
 `sunset_date`), and moves the version only when title or text changes. Anything else is 409
@@ -918,6 +924,17 @@ or restore old text in force and void every member's consent.
   items reach the same stewards.
 - **One period rule (F11).** The snapshot endpoint and publish both call `health.period_bounds`: one
   bound given, the other is 90 days from it.
+- **Say why, name the ecosystem, one publish date (uxqa pass 03).** Each `GET /safeguards` ecosystem
+  entry adds `caller_record_audit_refusal`: the `auditor_refusal` message (the same words a start or
+  publish would answer with: `AUDITOR_NOT_INDEPENDENT` or "Only active members ...") or null when the
+  caller may record; before, the page only had `caller_can_record_audit` and hid the button silently.
+  The audit detail (every route that returns one, and each entry's `latest_audit`) adds
+  `ecosystem_name`, so the dialog and the published page can say which ecosystem was audited.
+  `completed_at` (list and detail) is the publish date, `audit_date` of a published audit (publish
+  sets it), as a `YYYY-MM-DD` date; it used to be `updated_at`, which any later write to the row
+  moved, so "Completed" could contradict "Published on". A draft or abandoned audit has none.
+  `overall_health` is the band of the overall score (healthy, mixed, degrading, critical by
+  `_health_score_to_label`), not a trend: the indicator rows carry the trends.
 
 ### Compliance summaries
 
@@ -1102,7 +1119,7 @@ collaboration detail. Errors are `ApiError` with a `code` the client and the ass
 | `GET /discover/shares-needs` | visible, never hidden; `status` default `active`, `all` = every status; `q`, `type`, `category`, `ecosystem_id`, `domain_id`; not selection-scoped |
 | `GET /discover/shares-needs/:id` | the visibility rule; invisible = 404 (same body as missing) |
 | `GET /discover/shares-needs/admin` | the caller's moderation list: ecosystems where they are an exchange steward; `hidden=true\|false`; `stats` adds `hidden`; `moderated_ecosystems`. No `require_admin` (G-Authority redefined it as platform admin) |
-| `POST /discover/shares-needs` | active row in that ecosystem (`CONSENT_PENDING` / `MEMBERSHIP_REQUIRED`), publishing gate, 400 with `field` (vocabulary: types, `public\|ecosystem\|domain`, categories = client `SHARESNEEDS_CATEGORIES`), 409 `DUPLICATE_POST` + `existing_id` (same author, type, title case-insensitively, domain, while open; the author's row is locked first) |
+| `POST /discover/shares-needs` | active row in that ecosystem (`CONSENT_PENDING` / `MEMBERSHIP_REQUIRED`), publishing gate (an archived domain is 409 `DOMAIN_NOT_ACTIVE`, also on reopen; editing an open post is not refused), 400 with `field` (vocabulary: types, `public\|ecosystem\|domain`, categories = client `SHARESNEEDS_CATEGORIES`), 409 `DUPLICATE_POST` + `existing_id` (same author, type, title case-insensitively, domain, while open; the author's row is locked first) |
 | `PUT /discover/shares-needs/:id` | author only (`AUTHOR_ONLY`); `CANNOT_MOVE` |
 | `POST .../:id/status` | author; `PUBLICATION_MOVES` (409 `MOVE_NOT_ALLOWED` + `allowed`); `note`; `fulfilled_by_member_id` must be a responder |
 | `POST .../:id/hide`, `.../restore` | a steward of the post's ecosystem (`MODERATOR_ONLY`); hide needs `reason` (`REASON_REQUIRED`) |
@@ -1110,7 +1127,7 @@ collaboration detail. Errors are `ApiError` with a `code` the client and the ass
 | `POST .../:id/respond` | `{message}`; 201 new conversation / 200 reused; `OWN_POST`, `POST_CLOSED` (+`status`), `AUTHOR_INACTIVE`, `CONSENT_PENDING`, `MEMBERSHIP_REQUIRED` |
 | `GET /discover/collaborations` | `status` default `active`, `all`; proposed ones only for either side |
 | `GET /discover/collaborations/:id` | adds `proposed_by_name`, `approvals`, `awaiting`, `caller_can_approve_for`, `caller_can_end`, `end_outcomes`, `review_due`, end fields, `linked_publications` (visible ones) |
-| `POST /discover/collaborations` | any active member of the source ecosystem; `SAME_DOMAIN`; 400 with `field` for bad ids, title (1-255), tier, terms (object), `review_date` (ISO, not past); `linked_share_need_id` must be visible and open |
+| `POST /discover/collaborations` | any active member of the source ecosystem; `SAME_DOMAIN`; 409 `DOMAIN_NOT_ACTIVE` (`field` names the side) when either domain is archived; 400 with `field` for bad ids, title (1-255), tier, terms (object), `review_date` (ISO, not past); `linked_share_need_id` must be visible and open |
 | `POST .../:id/approve` (`/activate` kept as an alias) | `{ecosystem_id?}`; row locked; `NOT_PROPOSED`, `APPROVE_DENIED`, `SIDE_REQUIRED` + `options`, `ALREADY_APPROVED`, consent 409 |
 | `POST .../:id/end` | `{outcome, reason}`; `END_DENIED`, `REASON_REQUIRED`, 409 `END_NOT_ALLOWED` + `allowed` |
 | `POST .../:id/review` (FX-Exchange) | `{note, next_review_date?}`; a steward of either side (`REVIEW_DENIED`), active only (409 `NOT_ACTIVE`), note required (`REASON_REQUIRED`, `field: note`), next date later than today (AoE) else 400 `field: next_review_date`; default a year out; row locked |

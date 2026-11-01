@@ -38,7 +38,7 @@ class AuditListItem(BaseModel):
     overall_health_score: int | None = None
     status: str
     created_at: _dt.datetime
-    completed_at: _dt.datetime | None = None
+    completed_at: _dt.date | None = None  # the publish date (frozen; was updated_at, which later writes moved)
     # New fields (optional for backward compat)
     overall_health: str | None = None
     audit_scope: str | None = None
@@ -47,6 +47,7 @@ class AuditListItem(BaseModel):
 
 
 class AuditDetail(AuditListItem):
+    ecosystem_name: str | None = None  # the audited ecosystem, for the page title and the dialog
     capture_risk_indicators: list | dict | None = None
     findings: str | None = None
     recommendations: list | dict | None = None

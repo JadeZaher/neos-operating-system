@@ -121,6 +121,12 @@ def _apply_filters(stmt, request: Request, eco_ids: list[uuid.UUID]):
     if domain:
         stmt = stmt.where(Agreement.domain.ilike(f"%{_escape_like(domain)}%"))
 
+    review = request.args.get("review")
+    if review:
+        if review != "overdue":
+            raise ValueError("'review' must be 'overdue'")
+        stmt = stmt.where(*review_overdue_clause())
+
     search = request.args.get("q")
     if search:
         stmt = stmt.where(build_search_filter(
@@ -163,6 +169,12 @@ def _agreement_to_list_item(a: Agreement) -> dict:
 def review_overdue(a: Agreement, now: _dt.datetime | None = None) -> bool:
     """The registry's visible flag: in force and its review date has passed (services/dates); it never invalidates it."""
     return a.status in IN_FORCE_STATUSES and dates.date_passed(a.review_date, now)
+
+
+def review_overdue_clause(now: _dt.datetime | None = None) -> tuple:
+    """`review_overdue` as SQL conditions (the list's ?review=overdue): date_passed on a date is `due < aoe_today`."""
+    return (Agreement.status.in_(IN_FORCE_STATUSES), Agreement.review_date.is_not(None),
+            Agreement.review_date < dates.aoe_today(now))
 
 
 def _agreement_to_detail(a: Agreement) -> dict:
@@ -553,7 +565,7 @@ async def agreement_vocabulary(request: Request):
 async def list_agreements(request: Request):
     """GET /api/v1/agreements -- paginated list with filters.
 
-    Query params: type, status, domain, q, page (default 1), per_page (default 25, max 100).
+    Query params: type, status, domain, review (overdue), q, page (default 1), per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
     page = parse_pagination(request)
