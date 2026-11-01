@@ -88,6 +88,13 @@ _TOOL_DISPLAY_NAMES = {
     "submit_test_report": "Filing a test report",
     "record_agreement_evidence": "Recording agreement evidence",
     "withdraw_consent_position": "Withdrawing your position",
+    "what_needs_me": "Checking what is waiting for you",
+    "explain_status": "Checking where it stands",
+    "get_conflict_case": "Reading a conflict case",
+    "get_exit_status": "Reading an exit",
+    "cosign_emergency": "Co-signing an emergency",
+    "end_emergency_authority": "Ending emergency authority",
+    "record_emergency_review": "Recording the emergency review",
 }
 
 # Tool results the model reads are shrunk to this many characters of JSON; see agent/AGENTS.md "Tool results".
@@ -225,9 +232,9 @@ _PAGE_RECORDS = {
     "proposals": ("proposal", "get_proposal"),
     "agreements": ("agreement", "get_agreement"),
     "domains": ("domain", "get_domain"),
-    "conflicts": ("conflict case", None),
-    "emergency": ("emergency", "get_emergency_state"),
-    "exit": ("exit record", None),
+    "conflicts": ("conflict case", "get_conflict_case"),
+    "emergency": ("emergency", "explain_status"),
+    "exit": ("exit record", "get_exit_status"),
     "decisions": ("decision record", None),
 }
 

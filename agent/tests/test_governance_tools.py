@@ -491,7 +491,7 @@ class TestToolRegistry:
     def test_tool_definitions_format(self):
         """get_tool_definitions returns Claude API format."""
         defs = get_tool_definitions()
-        assert len(defs) == 33
+        assert len(defs) == 40
         for d in defs:
             assert "name" in d
             assert "description" in d

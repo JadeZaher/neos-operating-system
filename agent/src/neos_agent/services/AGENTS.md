@@ -134,3 +134,52 @@ be in force (`active` or `under_review`); the old `advice` and `autocratic`
 decision types decided nothing and are refused.
 
 The engine never commits; callers own the transaction.
+
+## Next steps (G-Next)
+
+`next_steps.py` answers two questions from state on every call (no table, no
+notification service): what is waiting for this member (`waiting_for`), and
+where a record stands (`explain_record`, `explain`). REST (`api/next_steps.py`:
+the dashboard queue, the header bell, the status banner) and the assistant
+(`what_needs_me`, `explain_status`, and the `next_step` of `get_proposal` /
+`get_agreement`) read the same functions, so the page and the assistant say
+the same words. `proposal_next_step`, `agreement_next_step` and the standing
+helpers moved here from `agent/governance_tools.py` for that reason.
+
+Nothing is re-derived. Each item or explanation asks the engine that owns the
+rule:
+
+| Record | Items (who) | explain(): next step, who decides, moves |
+|---|---|---|
+| proposal | advice to give (members who did not write it and have not advised this round); a position to record (no live position in the latest consent record); `close_advice` (the author, once `advice_deadline` passed and the advice move is `ready`: `ADVICE_DEADLINE_PROMPT`, the page's words); `revise` (the author, while the send-back round has no advice); `confirm_ratification` (`proposal_next_moves` ready and not blocked: a steward who did not write it) | `proposal_next_step`; who decides from the table row out of the stage (`_decider`); moves = `proposal_next_moves` (the detail's `allowed_next`) |
+| agreement | consent to record in the consent stage, or to renew after the version changed (`reattest_agreement`); only when the agreement asks for consent | `agreement_next_step`; table row; ceremony moves for `can_conduct_agreement_ceremony`, plus `attest` |
+| emergency | co-sign (`caller_flags`); the post-emergency review and closing Recovery go to stewards only (owner default: the review alarm is a steward's) | `emergency.describe()`; dates from the same module |
+| conflict | triage (`can_triage_conflict`, a hidden case yields nothing); repair check-ins whose date has come (`conflicts.next_checkin`) | `conflicts.conflict_stage`; moves = `allowed_moves` for triage, `closed` for the reporter |
+| exit | the steward's next `EXIT_MOVES` move on someone else's exit (withdrawing is the leaver's choice, never a task) | `exit.NEXT_STEP`; moves = `exit.allowed_next` |
+| audit | the caller's own draft (`can_finish_audit`) | (no banner) |
+
+Rules of the queue:
+
+- Scope: every ecosystem where the user has an ACTIVE row (REST passes the
+  authorized ids, which are the same set; the assistant passes None). It is
+  the member's own list, so it is not narrowed to the header selection; each
+  item names its ecosystem.
+- Items only for an active caller row in the record's own ecosystem (a shared
+  record never gives a foreign member a task: every act needs a row there).
+- Order: overdue first, then the nearest `due`, then kind (emergency, conflict,
+  proposal, agreement, exit, audit). `due` is `YYYY-MM-DD` for date columns and
+  ISO with `Z` for the naive-UTC timestamps (emergencies), so browsers never
+  shift it. `overdue` uses one `Clock` per request: a date passes the next day,
+  a timestamp at once.
+- `uid` is unique per item (a case with two repairs due yields two items).
+- Cost: a few queries per open record (gates, standing). Fine at study volume;
+  the trigger to batch is a member with hundreds of open proposals. Batching
+  the standing lookups was skipped on purpose: the caller's position goes
+  through the engine's private `current_position` helpers (latest consent
+  record, legacy duplicates), and re-implementing that in bulk would fork the
+  rule. The client polls once (the bell, every 5 minutes) to keep the load down.
+- `close_advice` (the proposer's prompt) appears once the advice->consent move
+  is `ready` and the deadline is past OR missing: advice never advances by
+  itself, so a proposal without a deadline must not stall silently. Without a
+  deadline the words are `ADVICE_READY_PROMPT` ("Enough advice to move on",
+  the page's `adviceClosePrompt` title for a met gate).

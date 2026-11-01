@@ -365,9 +365,24 @@ LEGACY_CONFIRMATION_REFUSAL = (
 )
 
 
+LEGACY_NO_USER_REFUSAL = "Not done. Sign in to use the assistant's tools."
+
+
+def legacy_caller_user_id(request) -> uuid.UUID | None:
+    """The signed-in user's id: ctx.user, else the default member's user; None when nobody is signed in."""
+    user = getattr(request.ctx, "user", None)
+    return getattr(user, "id", None) or getattr(getattr(request.ctx, "member", None), "user_id", None)
+
+
 async def run_legacy_tool(name: str, args, db, *, ecosystem_ids, caller_user_id) -> dict:
-    """execute_tool with no confirmations held, so the model's `confirmed: true` is never trusted here."""
+    """execute_tool with no confirmations held, so the model's `confirmed: true` is never trusted here.
+
+    No user means no tools: execute_tool treats a missing caller as unscoped (see api/AGENTS.md).
+    """
     from neos_agent.agent.governance_tools import execute_tool
+
+    if caller_user_id is None:
+        return {"success": False, "error": LEGACY_NO_USER_REFUSAL}
 
     result = await execute_tool(
         name, args, db, ecosystem_ids=ecosystem_ids, caller_user_id=caller_user_id, confirmed_keys=frozenset(),
@@ -577,7 +592,7 @@ async def send_message(request: Request):
                         result = await run_legacy_tool(
                             block.name, block.input, db,
                             ecosystem_ids=selected_eco_ids or None,
-                            caller_user_id=getattr(member, "user_id", None),
+                            caller_user_id=legacy_caller_user_id(request),
                         )
 
                         # Emit rich indicator with link

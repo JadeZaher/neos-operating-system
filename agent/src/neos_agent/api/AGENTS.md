@@ -120,18 +120,30 @@ for identity: `participant`, `declared_by`, `recorder`, `auditor`,
 | `record_consent_position` | `can_participate`, then `act_gates.record_consent_position` (one position per member, as REST) | participant |
 | `update_proposal_status` | `transition_proposal` (manage rule, table, steward-only, `note` for send-backs, gate); withdraw and ratify need confirmation | actor |
 | `create_agreement_draft` | `is_active_member_in` (REST: authorized ids) | proposer text defaults to the caller |
-| `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate); active, sunset and archived need confirmation | conductor; the version never changes |
+| `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate); needs confirmation for active, sunset and archived, and when the automatic cascade after the ceremony would put it in force | conductor; the version never changes |
 | `create_decision_record` | `can_record_decision` (steward; no REST route, decisions are minted by ACT) | recorder |
 | `declare_emergency` | `emergency.declare` (`can_declare_emergency`; pending until a co-signer); needs confirmation | declarer |
+| `cosign_emergency` | `emergency.cosign` on a row loaded FOR UPDATE (`cosign_refusal` first); needs confirmation | co-signer |
+| `end_emergency_authority` | `emergency.end_authority` on a row loaded FOR UPDATE (`end_authority_refusal` first); needs confirmation | whoever ends it |
+| `record_emergency_review` | `emergency.record_review` on a row loaded FOR UPDATE (`review_refusal` first); needs confirmation when the outcome is `complete` (final) | reviewer |
 | `create_exit_record` | `is_active_member_in`; only one's own exit (`EXIT_SELF_ONLY`); one open exit; needs confirmation | the leaving member |
-| `create_conflict_case`, `create_safeguard_audit` | `is_active_member_in` (as REST); parties resolved to member ids; the audit is a human-owned draft | reporter / auditor (`auditor_ids`) |
+| `create_conflict_case` | `is_active_member_in` (as REST); parties resolved to member ids; needs confirmation when it names parties (they can then read the report) | reporter |
+| `create_safeguard_audit` | `is_active_member_in` (as REST); the audit is a human-owned draft | auditor (`auditor_ids`) |
 | `triage_conflict`, `create_repair_agreement` | `can_triage_conflict` (a hidden case is not found); `CONFLICT_MOVES` | triager |
 | `join_domain` | active member; `missing_agreement_consents` (as `POST /domains/:id/participation`) | participant |
 | `submit_test_report` | `can_participate`, test stage; declared case names only | reporter (`reporter_member_id`) |
 | `withdraw_consent_position` | `act_gates.withdraw_consent_position` | the position's owner |
-| `record_agreement_evidence` | `is_active_member_in`, matching stage (as `POST /agreements/:id/ceremonies`) | `completed_by_member_id` |
+| `record_agreement_evidence` | `is_active_member_in`, matching stage (as `POST /agreements/:id/ceremonies`); needs confirmation when it would put the agreement in force | `completed_by_member_id` |
 | `create_domain_draft` | `is_steward_in` (REST `require_ecosystem_role` mod) | `created_by` |
 | `create_ecosystem` | signed in (as REST) | founder joins as an active `co_creator` and stewards a core domain |
+
+Caller-aware reads (they need no write rule, only the caller's identity):
+`what_needs_me` (`next_steps.waiting_for`, every ecosystem the caller is active
+in, equal to `GET /me/next-steps`), `explain_status` (`next_steps.explain_record`
+after the tool's own lookup, equal to `GET /explain/<kind>/<id>`),
+`get_conflict_case` (`can_view_conflict`: a hidden case is "not found"; the REST
+detail payload plus the banner's words) and `get_exit_status` (an exit in
+scope or the caller's own; without an id, the caller's own exits).
 
 Every lookup takes the page's UUID, the business key or the exact title, and
 results carry names, links, the engine's gates and a next step. Irreversible
@@ -447,9 +459,12 @@ emergency, but it opens only when a second active member co-signs. The
 transition functions in `emergency.py` (`declare`, `cosign`, `withdraw`,
 `end_authority`, `record_review`, `complete_recovery_for`, `begin_recovery`,
 `expire_if_stale`) are the one implementation: REST calls them, the cron
-calls `begin_recovery`/`expire_if_stale`, and the assistant should call
-`declare`/`cosign` too (it still opens directly; hand-off to G-Agent). Each
-raises `ApiError`; none commits. Rules live in `policy.py` under `# G-Safety`.
+calls `begin_recovery`/`expire_if_stale`, and the assistant calls `declare`,
+`cosign`, `end_authority` and `record_review` (G-Next). Each raises `ApiError`;
+none commits. `cosign_refusal`, `end_authority_refusal` and `review_refusal`
+return the same refusal without acting, so the assistant refuses before it asks
+for a confirmation; `caller_flags` is the page's button set. Rules live in
+`policy.py` under `# G-Safety`.
 
 | State | Move | Who (policy) |
 |---|---|---|
@@ -660,3 +675,34 @@ where governance changes now:
   never trusted and the irreversible acts (`CONFIRMATION_TOOLS`) cannot happen
   there; the tool result tells the model to send the member to the app's
   assistant.
+
+## Next steps (G-Next)
+
+One source for "what is waiting for me" and "what happens next here":
+`services/next_steps.py` (rules and rationale: `services/AGENTS.md` "Next
+steps"). Blueprint `api/next_steps.py`, no prefix:
+
+| Route | Shape |
+|---|---|
+| `GET /api/v1/me/next-steps` | `{items: [{uid, kind, id, key, title, ecosystem_id, ecosystem, action, what, why, due, overdue, link}], count}`; every ecosystem the caller is active in; overdue first, then by `due` |
+| `GET /api/v1/explain/<kind>/<id>` | `{kind, id, key, title, ecosystem, status, state, next_step, decided_by, due, due_label, overdue, your_moves: [{move, label, ready, blocked}], waiting_on_you: [items], link}` for `kind` in proposal, agreement, conflict, emergency, exit (anything else 400 with `allowed`) |
+
+`/explain` loads the record with its detail page's own rule, so it 404s exactly
+where the page does: proposals and emergencies `get_scoped_or_404`; agreements
+the consent-gate scope (rule 5 exemption); conflicts
+`conflicts.load_visible_case` (`can_view_conflict`, same body as a missing
+case); exits `exit.load_visible_exit` (in scope, or the leaver's own after
+they left). `your_moves` is the engine's list for the caller
+(`proposal_next_moves`, ceremony targets, `CONFLICT_MOVES`, the emergency
+`caller_flags`, `exit.allowed_next`); `tests/test_g_next.py` checks that each
+listed move is accepted by the REST route and an unlisted one is refused.
+
+MCP parity: `record_agreement_ceremony`, `attest_agreement_consent` and
+`transition_agreement` take `confirm`; an act that would put an agreement in
+force (directly, or through the automatic cascade:
+`governance_tools.agreement_act_puts_in_force`, a dry run of the lifecycle with
+the gates as they would be after the write), or a sunset or archive ceremony,
+returns `needs_confirmation` and writes nothing until `confirm=true`. Refusals
+come first. `record_agreement_ceremony` now refuses evidence for a stage the
+agreement is not in, as REST and the chat tool do (out-of-stage test evidence
+could carry a later consent straight into force).

@@ -30,8 +30,14 @@ from sqlalchemy.orm import selectinload
 from mcp.server.fastmcp import Context, FastMCP
 
 from neos_agent.config import get_settings
-from neos_agent.agent.governance_tools import PROPOSAL_CONFIRM, proposal_move_refusal
-from neos_agent.api.agreements import record_member_consent
+from neos_agent.agent.governance_tools import (
+    _AGREEMENT_CONFIRM,
+    PROPOSAL_CONFIRM,
+    _agreement_move_refusal,
+    agreement_act_puts_in_force,
+    proposal_move_refusal,
+)
+from neos_agent.api.agreements import CONSENT_NOT_OPEN, CONSENT_OPEN_STATUSES, record_member_consent
 from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
 from neos_agent.api.policy import is_proposal_author
 from neos_agent.api.proposals import SELF_ADVICE_DENIED
@@ -78,8 +84,10 @@ mcp = FastMCP(
         "status advances automatically when conditions are met. Completing "
         "the process mints a browsable decision artifact. You may only act "
         "in ecosystems where the owner is a participating member. Ratifying "
-        "or withdrawing a proposal cannot be undone: ask the owner first and "
-        "pass confirm=true only after they agree."
+        "or withdrawing a proposal, and putting an agreement in force, "
+        "sunsetting or archiving it, cannot be undone: such a call returns "
+        "`needs_confirmation` and changes nothing; ask the owner first and "
+        "call again with confirm=true only after they agree."
     ),
 )
 
@@ -215,6 +223,22 @@ def _outcome(outcome: ActOutcome, **fields) -> dict:
         "status": outcome.status,
         "auto_transitions": outcome.auto_transitions,
         "decision_record_id": outcome.decision_record_id,
+    }
+
+
+async def _agreement_question(s: AsyncSession, agreement: Agreement, target: str, call: str) -> dict:
+    """The no-write answer for an agreement act that needs the owner's yes (the chat's _AGREEMENT_CONFIRM words)."""
+    ecosystem = await s.get(Ecosystem, agreement.ecosystem_id)
+    what = _AGREEMENT_CONFIRM[target].format(title=agreement.title, ecosystem=ecosystem.name if ecosystem else "the ecosystem")
+    if target == "active" and call != "transition_agreement":
+        what = "This completes its last ACT gate, so it goes into force straight away. " + what
+    return {
+        "agreement_id": agreement.agreement_id,
+        "status": agreement.status,
+        "auto_transitions": [],
+        "needs_confirmation": what,
+        "next": f"Nothing changed. Ask the token owner; only if they agree, call {call} again with the same "
+                "arguments and confirm=true.",
     }
 
 
@@ -427,10 +451,11 @@ async def create_agreement(
 
 
 @mcp.tool()
-async def record_agreement_ceremony(agreement_id: str, stage: str, note: str, ctx: Context) -> dict:
+async def record_agreement_ceremony(agreement_id: str, stage: str, note: str, ctx: Context, confirm: bool = False) -> dict:
     """Record an advice round (stage='advice') or test-case evidence
-    (stage='test') against an agreement. Status auto-advances when the
-    declared gate conditions are met."""
+    (stage='test') against an agreement in that stage. Status auto-advances
+    when the declared gate conditions are met. When this record would put the
+    agreement in force, nothing changes without confirm=true: ask the owner."""
     caller = await _caller(ctx)
     stage = stage.strip().lower()
     if stage not in {"advice", "test"}:
@@ -442,6 +467,11 @@ async def record_agreement_ceremony(agreement_id: str, stage: str, note: str, ct
         if agreement is None:
             raise ValueError("Agreement not found")
         member = await _member(s, caller.user.id, agreement.ecosystem_id)
+        if agreement.status != stage:  # as REST POST /agreements/:id/ceremonies and the chat tool
+            raise ValueError(f"Evidence for the {stage} stage can only be recorded while the agreement is in {stage} "
+                             f"(it is in {agreement.status}).")
+        if confirm is not True and await agreement_act_puts_in_force(s, agreement, stage=stage):
+            return await _agreement_question(s, agreement, "active", "record_agreement_ceremony")
         s.add(AgreementCeremony(
             id=uuid.uuid4(),
             agreement_id=agreement.id,
@@ -457,10 +487,11 @@ async def record_agreement_ceremony(agreement_id: str, stage: str, note: str, ct
 
 
 @mcp.tool()
-async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Context) -> dict:
+async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Context, confirm: bool = False) -> dict:
     """Attest the token owner's consent to an agreement at its current
     version. Consent completeness covers ALL participating members; status
-    auto-advances when the consent gate is met."""
+    auto-advances when the consent gate is met. When this consent would put
+    the agreement in force, nothing changes without confirm=true: ask the owner."""
     caller = await _caller(ctx)
     if len(attestation.strip()) < 8:
         raise ValueError("attestation must be a meaningful statement (min 8 chars)")
@@ -469,6 +500,10 @@ async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Con
         if agreement is None:
             raise ValueError("Agreement not found")
         member = await _member(s, caller.user.id, agreement.ecosystem_id)
+        if agreement.status not in CONSENT_OPEN_STATUSES:  # record_member_consent's refusal, before any question
+            raise ValueError(CONSENT_NOT_OPEN)
+        if confirm is not True and await agreement_act_puts_in_force(s, agreement, attester=member):
+            return await _agreement_question(s, agreement, "active", "attest_agreement_consent")
         # Same write as REST POST /agreements/:id/consent: the consent row, the alignment ledger, activation.
         try:
             await record_member_consent(s, agreement, member, attestation.strip())
@@ -480,14 +515,16 @@ async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Con
 
 
 @mcp.tool()
-async def transition_agreement(agreement_id: str, status: str, evidence: str, ctx: Context) -> dict:
+async def transition_agreement(agreement_id: str, status: str, evidence: str, ctx: Context, confirm: bool = False) -> dict:
     """Conduct the ceremony moving an agreement through the ACT sequence.
 
     Mirrors the UI rules: only an active ecosystem steward (admin/owner) may
     conduct; forward ceremonies need documented evidence (min 8 chars);
     forward moves past draft require the declared gate for that stage to be
     met — the error reports exactly what is missing. Activation mints the
-    commitment decision artifact.
+    commitment decision artifact. Putting it in force (directly or through
+    the automatic cascade), sunsetting or archiving it changes nothing without
+    confirm=true: ask the owner.
     """
     caller = await _caller(ctx)
     target = status.strip().lower()
@@ -497,6 +534,14 @@ async def transition_agreement(agreement_id: str, status: str, evidence: str, ct
             raise ValueError("Agreement not found")
         # Same engine as REST POST /agreements/:id/status: ceremony steward, table, evidence, gate.
         actor = await _row(s, caller.user.id, agreement.ecosystem_id)
+        if confirm is not True:
+            ask_as = target if target in _AGREEMENT_CONFIRM else (
+                "active" if await agreement_act_puts_in_force(s, agreement, to=target) else None)
+            if ask_as is not None:
+                refusal = await _agreement_move_refusal(s, agreement, target, actor, evidence)
+                if refusal:
+                    raise ValueError(refusal)
+                return await _agreement_question(s, agreement, ask_as, "transition_agreement")
         try:
             outcome = await conduct_agreement_transition(s, agreement, to=target, caller=actor, evidence=evidence)
         except TransitionRefused as refusal:

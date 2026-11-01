@@ -161,7 +161,8 @@ def describe(emergency: EmergencyState, now: _dt.datetime) -> dict:
     }
 
 
-def _caller_flags(emergency: EmergencyState, caller: Member | None, now: _dt.datetime) -> dict:
+def caller_flags(emergency: EmergencyState, caller: Member | None, now: _dt.datetime) -> dict:
+    """What `caller` may do with this emergency now (the page's buttons, the queue's items)."""
     live_pending = emergency.state == STATE_PENDING and not cosign_expired(emergency, now)
     in_recovery = emergency.state == STATE_HALF_OPEN
     return {
@@ -212,7 +213,7 @@ def to_detail(
         "pre_authorized_roles": emergency.pre_authorized_roles,
         "actions_log": emergency.actions_log if isinstance(emergency.actions_log, list) else [],
         "updated_at": _iso(emergency.updated_at),
-        **_caller_flags(emergency, caller, now),
+        **caller_flags(emergency, caller, now),
     }
 
 
@@ -317,17 +318,24 @@ async def declare(
     return emergency
 
 
+def cosign_refusal(cosigner: Member | None, emergency: EmergencyState, now: _dt.datetime) -> ApiError | None:
+    """Why `cosigner` cannot co-sign now (checked before a confirmation is asked), or None."""
+    if cosigner is not None and cosigner.id == emergency.declared_by_member_id:
+        return ApiError(403, "You declared this emergency, so a second member has to co-sign it.")
+    if not can_cosign_emergency(cosigner, emergency):
+        return ApiError(403, "Only an active member of this ecosystem can co-sign an emergency.")
+    if cosign_expired(emergency, now):
+        return ApiError(409, "This declaration expired before anyone co-signed. Declare again if the emergency continues.")
+    if emergency.state != STATE_PENDING:
+        return ApiError(409, "This declaration is no longer waiting for a co-signer.")
+    return None
+
+
 async def cosign(session, cosigner: Member | None, emergency: EmergencyState, *, now: _dt.datetime | None = None) -> None:
     """pending -> open: a second active member co-signs and the timer starts now."""
     now = now or _now_naive_utc()
-    if cosigner is not None and cosigner.id == emergency.declared_by_member_id:
-        raise ApiError(403, "You declared this emergency, so a second member has to co-sign it.")
-    if not can_cosign_emergency(cosigner, emergency):
-        raise ApiError(403, "Only an active member of this ecosystem can co-sign an emergency.")
-    if cosign_expired(emergency, now):
-        raise ApiError(409, "This declaration expired before anyone co-signed. Declare again if the emergency continues.")
-    if emergency.state != STATE_PENDING:
-        raise ApiError(409, "This declaration is no longer waiting for a co-signer.")
+    if (refusal := cosign_refusal(cosigner, emergency, now)) is not None:
+        raise refusal
     other = await session.scalar(select(EmergencyState.id).where(
         EmergencyState.ecosystem_id == emergency.ecosystem_id,
         EmergencyState.id != emergency.id,
@@ -357,17 +365,43 @@ def withdraw(caller: Member | None, emergency: EmergencyState, *, now: _dt.datet
     _log(emergency, "withdrawn", now, caller, "Withdrawn before anyone co-signed. Nothing changed.")
 
 
-def end_authority(caller: Member | None, emergency: EmergencyState, *, now: _dt.datetime | None = None) -> None:
-    """open -> half_open by hand: the declarer, the co-signer or a steward ends authority early."""
-    now = now or _now_naive_utc()
+def end_authority_refusal(caller: Member | None, emergency: EmergencyState) -> ApiError | None:
+    """Why `caller` cannot end emergency authority now, or None."""
     if not can_end_emergency(caller, emergency):
-        raise ApiError(403, (
+        return ApiError(403, (
             "Only the declarer, the co-signer or a steward can end emergency authority early. "
             "Otherwise it ends automatically when the timer runs out."
         ))
     if emergency.state != STATE_OPEN:
-        raise ApiError(409, "Only an emergency in effect can be ended.")
+        return ApiError(409, "Only an emergency in effect can be ended.")
+    return None
+
+
+def end_authority(caller: Member | None, emergency: EmergencyState, *, now: _dt.datetime | None = None) -> None:
+    """open -> half_open by hand: the declarer, the co-signer or a steward ends authority early."""
+    now = now or _now_naive_utc()
+    if (refusal := end_authority_refusal(caller, emergency)) is not None:
+        raise refusal
     begin_recovery(emergency, now, trigger="manual_resolve", actor=caller)
+
+
+def review_refusal(reviewer: Member | None, emergency: EmergencyState, *, outcome: str, summary: str) -> ApiError | None:
+    """Why `reviewer` cannot record this review now, or None."""
+    if outcome not in REVIEW_OUTCOMES:
+        return ApiError(400, "Choose whether the review is scheduled or complete.")
+    if not (summary or "").strip():
+        return ApiError(400, (
+            "Add a short note: when the review takes place, or what it found."
+        ))
+    if reviewer is not None and str(reviewer.id) in emergency_actor_ids(emergency):
+        return ApiError(403, "You declared, co-signed or ended this emergency, so someone else records its review.")
+    if not can_review_emergency(reviewer, emergency):
+        return ApiError(403, "Only an active member of this ecosystem can record the review.")
+    if emergency.state != STATE_HALF_OPEN:
+        return ApiError(409, "The post-emergency review is recorded during Recovery.")
+    if emergency.post_review_status == REVIEW_COMPLETE:
+        return ApiError(409, "The review is already recorded as complete.")
+    return None
 
 
 def record_review(
@@ -376,20 +410,8 @@ def record_review(
     """Write post_review_status (scheduled | complete) during Recovery; emergency actors are excluded."""
     now = now or _now_naive_utc()
     summary = (summary or "").strip()
-    if outcome not in REVIEW_OUTCOMES:
-        raise ApiError(400, "Choose whether the review is scheduled or complete.")
-    if not summary:
-        raise ApiError(400, (
-            "Add a short note: when the review takes place, or what it found."
-        ))
-    if reviewer is not None and str(reviewer.id) in emergency_actor_ids(emergency):
-        raise ApiError(403, "You declared, co-signed or ended this emergency, so someone else records its review.")
-    if not can_review_emergency(reviewer, emergency):
-        raise ApiError(403, "Only an active member of this ecosystem can record the review.")
-    if emergency.state != STATE_HALF_OPEN:
-        raise ApiError(409, "The post-emergency review is recorded during Recovery.")
-    if emergency.post_review_status == REVIEW_COMPLETE:
-        raise ApiError(409, "The review is already recorded as complete.")
+    if (refusal := review_refusal(reviewer, emergency, outcome=outcome, summary=summary)) is not None:
+        raise refusal
     emergency.post_review_status = outcome
     note = "Post-emergency review scheduled." if outcome == REVIEW_SCHEDULED else "Post-emergency review complete."
     _log(emergency, "review_recorded", now, reviewer, note, outcome=outcome, summary=summary)

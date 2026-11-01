@@ -109,7 +109,7 @@ async def _member_name(session, member_id) -> str | None:
     return await session.scalar(select(Member.display_name).where(Member.id == member_id))
 
 
-async def _load_visible(session, request: Request, exit_id: uuid.UUID) -> ExitRecord:
+async def load_visible_exit(session, request: Request, exit_id: uuid.UUID) -> ExitRecord:
     """In the caller's authorized ecosystems, or the caller's own exit (readable after they have left)."""
     try:
         return await get_scoped_or_404(session, request, ExitRecord, exit_id, label="Exit record")
@@ -169,7 +169,7 @@ async def list_exits(request: Request):
 async def get_exit(request: Request, exit_id: uuid.UUID):
     """GET /api/v1/exit/:id -- detail with the next step and the caller's allowed moves."""
     async with request.app.ctx.db() as session:
-        record = await _load_visible(session, request, exit_id)
+        record = await load_visible_exit(session, request, exit_id)
         return json(await _detail_response(session, request, record))
 
 

@@ -42,6 +42,11 @@ def _caller_user_id(request: Request) -> uuid.UUID | None:
     return member.user_id if member is not None else None
 
 
+def caller_user_id(request: Request) -> uuid.UUID | None:
+    """The signed-in user's id, for request-free services that resolve rows themselves."""
+    return _caller_user_id(request)
+
+
 # Per-ecosystem identity lookup: the only correct input to policy.py predicates.
 async def caller_in(session, request: Request, ecosystem_id: uuid.UUID | None) -> Member | None:
     """The signed-in user's Member row in `ecosystem_id`, or None when they hold none there."""

@@ -243,7 +243,7 @@ async def _conflict_to_detail(session, c: ConflictCase, caller: Member | None) -
     ).model_dump(mode="json")
 
 
-async def _load_case(session, request: Request, conflict_id: uuid.UUID) -> tuple[ConflictCase, Member]:
+async def load_visible_case(session, request: Request, conflict_id: uuid.UUID) -> tuple[ConflictCase, Member]:
     """The case and the caller's row in its ecosystem; a case the caller may not read is "not found"."""
     case = await get_scoped_or_404(
         session, request, ConflictCase, conflict_id,
@@ -321,7 +321,7 @@ async def list_conflicts(request: Request):
 async def get_conflict(request: Request, conflict_id: uuid.UUID):
     """GET /api/v1/conflicts/:id -- case detail with repair agreements, stage and next step."""
     async with request.app.ctx.db() as session:
-        case, caller = await _load_case(session, request, conflict_id)
+        case, caller = await load_visible_case(session, request, conflict_id)
         return json(await _conflict_to_detail(session, case, caller))
 
 
@@ -375,7 +375,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
     changes = update_req.model_dump(exclude_none=True)
 
     async with request.app.ctx.db() as session:
-        case, caller = await _load_case(session, request, conflict_id)
+        case, caller = await load_visible_case(session, request, conflict_id)
 
         if not policy.can_triage_conflict(caller, case):
             is_reporter = caller.id == case.reporter_id
@@ -425,7 +425,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
         raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
-        case, caller = await _load_case(session, request, conflict_id)
+        case, caller = await load_visible_case(session, request, conflict_id)
         if not policy.can_triage_conflict(caller, case):
             raise ApiError(403, TRIAGE_DENIED)
 
@@ -478,7 +478,7 @@ async def update_repair_agreement(request: Request, conflict_id: uuid.UUID, repa
         raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
-        case, caller = await _load_case(session, request, conflict_id)
+        case, caller = await load_visible_case(session, request, conflict_id)
         if not policy.can_triage_conflict(caller, case):
             raise ApiError(403, TRIAGE_DENIED)
 

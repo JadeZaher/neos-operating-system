@@ -55,7 +55,7 @@ def _row(name: str) -> uuid.UUID:
 async def _seed(factory) -> None:
     async with factory() as session:
         session.add(Ecosystem(id=ECO, name="Oasis", status="active"))
-        session.add_all([User(id=_user(name), display_name=name.title()) for name in PEOPLE])
+        session.add_all([User(id=_user(name), display_name=name.title()) for name in [*PEOPLE, "eve"]])  # eve: no memberships
         await session.flush()
         session.add_all([
             Member(id=_row(name), ecosystem_id=ECO, user_id=_user(name), member_id=f"MEM-{name}",
@@ -100,10 +100,10 @@ def _app(factory) -> Sanic:
         async with factory() as session:
             rows = (await session.execute(select(Member).where(Member.user_id == _user(who)))).scalars().all()
         request.ctx.user = User(id=_user(who), display_name=who.title())
-        request.ctx.member = rows[0]
-        request.ctx.authorized_ecosystem_ids = [ECO]
-        request.ctx.selected_ecosystem_ids = [ECO]
-        request.ctx.ecosystems = [Ecosystem(id=ECO, name="Oasis", status="active")]
+        request.ctx.member = rows[0] if rows else None
+        request.ctx.authorized_ecosystem_ids = [ECO] if rows else []
+        request.ctx.selected_ecosystem_ids = [ECO] if rows else []
+        request.ctx.ecosystems = [Ecosystem(id=ECO, name="Oasis", status="active")] if rows else []
 
     register_views(app)
     app.blueprint(ecosystems_bp)
@@ -282,3 +282,32 @@ async def test_the_legacy_chat_never_trusts_the_models_confirmation(env):
     result = json.loads(tool_result["content"])
     assert result["success"] is False and result["needs_confirmation"]
     assert "assistant in the NEOS app" in result["error"]
+
+
+async def test_a_signed_in_user_without_memberships_reads_nothing_through_the_legacy_chat(env):
+    reads = [
+        SimpleNamespace(type="tool_use", id="call-1", name="get_proposal", input={"proposal": str(PROPOSAL)}),
+        SimpleNamespace(type="tool_use", id="call-2", name="get_emergency_state", input={}),
+    ]
+    turns = [
+        SimpleNamespace(stop_reason="tool_use", content=reads),
+        SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="Nothing found.")]),
+    ]
+    sent: list[list] = []
+
+    def stream(**kwargs):
+        sent.append(copy.deepcopy(kwargs["messages"]))
+        return _FakeStream(turns[len(sent) - 1])
+
+    anthropic = MagicMock()
+    anthropic.AsyncAnthropic.return_value.messages.stream.side_effect = stream
+    with patch.dict("sys.modules", {"anthropic": anthropic}):
+        _, response = await env.app.asgi_client.post(
+            "/chat/message", headers={"x-test-as": "eve"}, json={"message": "What is going on in Oasis?"},
+        )
+    assert response.status == 200
+    blocks = sent[1][-1]["content"]
+    assert len(blocks) == 2
+    for block in blocks:
+        assert "Share the tools" not in block["content"] and "flood" not in block["content"].lower()
+        assert json.loads(block["content"])["success"] is False

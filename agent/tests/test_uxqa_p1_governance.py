@@ -417,6 +417,9 @@ _TOOL_ARGS = {
     "submit_test_report": {"proposal_id": "PROP-LEGACY", "outcome": "passed", "observations": "It worked."},
     "record_agreement_evidence": {"agreement_id": "AGR-GARDEN", "stage": "advice", "note": "Advice round held"},
     "withdraw_consent_position": {"proposal_id": "PROP-LEGACY"},
+    "cosign_emergency": {"confirmed": True},
+    "end_emergency_authority": {"confirmed": True},
+    "record_emergency_review": {"outcome": "complete", "summary": "Held on Monday", "confirmed": True},
 }
 
 

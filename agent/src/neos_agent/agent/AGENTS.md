@@ -17,9 +17,10 @@ tools (caller-scoped)".
   Identity is always the caller's own `Member` row in the record's ecosystem
   (`_caller_row`); a model-chosen name (`participant`, `declared_by`,
   `member_name`, `auditor`, `reporter_id`) is ignored or refused.
-- `CALLER_AWARE_TOOLS` (`get_proposal`, `get_agreement`, `get_domain`) are
-  reads that also describe the caller's standing (author? advised? consented?
-  joined?). Standing is matched by member id only (`AdviceEntry.member_id`,
+- `CALLER_AWARE_TOOLS` (`get_proposal`, `get_agreement`, `get_domain`,
+  `what_needs_me`, `explain_status`, `get_conflict_case`, `get_exit_status`)
+  are reads that also describe the caller's standing (author? advised?
+  consented? joined? what is waiting for them?). Standing is matched by member id only (`AdviceEntry.member_id`,
   `act_gates.current_position`), never by display name: names are
   self-editable, so a member renamed "Ben" must not inherit Ben's advice or
   position. Legacy rows with a NULL member are nobody's.
@@ -54,17 +55,27 @@ tools (caller-scoped)".
   (`_move_note`: automatic, by hand, steward-confirmed; send-back moves with
   `note_required` are skipped), so an owner's table edit changes the wording
   without touching this file. `get_proposal` also returns `your_moves`
-  (`act_gates.proposal_next_moves`, the UI's buttons). Wave B
-  (`services/next_steps.py`) is meant to replace these sentences with the
-  shared UI wording.
+  (`act_gates.proposal_next_moves`, the UI's buttons). These sentences and the
+  standing helpers live in `services/next_steps.py` (G-Next), which the status
+  banner reads too, so the page and the assistant use the same words.
+- "What needs me?": `what_needs_me` returns `next_steps.waiting_for` for every
+  ecosystem the member is active in, item for item the bell's list
+  (`GET /me/next-steps`), not narrowed to the selection: it is the member's
+  own list and each item names its ecosystem. "Where does this stand?":
+  `explain_status(kind, record)` finds the record with the tool's lookups
+  (scope, UUID / key / title; a hidden conflict is not found) and returns
+  `next_steps.explain_record`, equal to `GET /explain/<kind>/<id>`.
 - `check_quorum` reports the engine's consent gate, never a share of members.
 
 ## Confirmation of irreversible acts
 
 `CONFIRMATION_TOOLS`: withdrawing or ratifying a proposal; putting an
-agreement in force, sunsetting or archiving it; declaring an emergency; filing
-an exit; recording agreement evidence that would put the agreement in force;
-reporting a conflict that names parties. The tool first runs every refusal the
+agreement in force (also when the cascade after a ceremony would), sunsetting
+or archiving it; declaring, co-signing or ending an emergency; recording its
+review as complete; filing an exit; recording agreement evidence that would put
+the agreement in force; reporting a conflict that names parties. The emergency
+tools load the row FOR UPDATE and run `emergency.cosign_refusal` /
+`end_authority_refusal` / `review_refusal` before asking. The tool first runs every refusal the
 engine would give (so the member is never asked to confirm something they
 cannot do), then `_needs_confirmation`:
 
@@ -87,10 +98,12 @@ The two conditional ones:
 
 - `record_agreement_evidence` asks only when this record would carry the
   automatic cascade (`advice -> consent -> test -> active`) into force.
-  `_evidence_puts_in_force` is a dry run of `act_gates._advance` over
+  `agreement_act_puts_in_force` is a dry run of `act_gates._advance` over
   `AGREEMENT_LIFECYCLE` with the gates as they would be after the write
-  (advice rounds or test evidence + 1), so an owner's table edit changes when
-  it asks. Any active member may record evidence, so without this an ordinary
+  (advice rounds or test evidence + 1, or one more member's consent; or after
+  a requested ceremony), so an owner's table edit changes when it asks. MCP
+  `record_agreement_ceremony`, `attest_agreement_consent` and
+  `transition_agreement` use the same dry run with `confirm`. Any active member may record evidence, so without this an ordinary
   member's note could make an agreement binding unasked. Key:
   `record_agreement_evidence:<agreement>:active`.
 - `create_conflict_case` asks whenever `parties` resolve to anyone: naming a
@@ -127,6 +140,8 @@ proposal from the model (review §2).
 | `update_proposal_status`, `record_advice`, `submit_test_report` | `act_gates.transition_proposal` (manage rule, table, steward-only, `note` for send-backs, gates) |
 | `update_agreement_status`, `record_agreement_evidence` | `api/agreements.transition_agreement` |
 | `declare_emergency`, `get_emergency_state` | `api/emergency.declare` (pending until a co-signer), `describe`, `live_condition` |
+| `cosign_emergency`, `end_emergency_authority`, `record_emergency_review` | `api/emergency.cosign` / `end_authority` / `record_review` and their `*_refusal` checks |
+| `what_needs_me`, `explain_status`, `get_conflict_case`, `get_exit_status` | `services/next_steps.waiting_for` / `explain_record`; `api/conflicts._conflict_to_detail` |
 | `create_exit_record` | `api/exit` `HANDOFF_DAYS`, `OPEN_STATUSES`, `NEXT_STEP` (same rules as `POST /exit`) |
 | `triage_conflict`, `create_repair_agreement` | `policy.can_triage_conflict`, `can_view_conflict` (hidden == not found), `api/conflicts.CONFLICT_MOVES` |
 | `create_conflict_case` | parties resolved to member ids (`_resolve_party_ids`: the exact full display name, case and spacing ignored, unique in the ecosystem; no first-name or partial shortcut, which let a member renamed "Alex" take "Alex Smith"'s place), then `api/conflicts._party_record`, then the member confirms who (a short name others start with says "(not Alex Smith)") |

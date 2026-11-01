@@ -155,6 +155,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.profiles import profiles_api_bp
     from neos_agent.api.agent_tokens import agent_tokens_api_bp
     from neos_agent.api.my_decisions import my_decisions_api_bp
+    from neos_agent.api.next_steps import next_steps_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -191,6 +192,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(profiles_api_bp)
     app.blueprint(agent_tokens_api_bp)
     app.blueprint(my_decisions_api_bp)
+    app.blueprint(next_steps_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views
