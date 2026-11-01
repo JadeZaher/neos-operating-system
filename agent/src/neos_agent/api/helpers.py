@@ -11,6 +11,7 @@ from sanic.request import Request
 from sqlalchemy import or_, cast, String, Text, select, text, literal
 
 from neos_agent.api.errors import ApiError
+from neos_agent.api.policy import PROFILE_ADMINS, is_platform_admin
 from neos_agent.api.policy import ROLE_RANK  # re-exported; policy.py is the single definition
 
 logger = logging.getLogger(__name__)
@@ -24,14 +25,59 @@ def require_auth(request: Request):
     return member, None
 
 
+# Platform-admin gate: only for platform-wide resources; see api/AGENTS.md "Platform admin (G-Authority)".
 def require_admin(request: Request):
-    """Return (member, None) if member has admin profile, or (None, 403_response)."""
+    """(the caller's home-ecosystem admin row, None) when request.ctx.platform_admin, else (None, 401/403 response)."""
     member = getattr(request.ctx, "member", None)
     if member is None:
         return None, json({"error": "Authentication required"}, status=401)
-    if member.profile not in ("co_creator", "builder"):
+    if not getattr(request.ctx, "platform_admin", False):
         return None, json({"error": "Admin access required"}, status=403)
-    return member, None
+    return getattr(request.ctx, "platform_admin_member", None) or member, None
+
+
+# G-Authority
+
+# The app_settings key that pins the platform home by id (written by migration v1b4e7c9d2f5; never via the API).
+PLATFORM_HOME_SETTING_KEY = "platform_home_ecosystem_id"
+
+
+def _as_uuid(value) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value).strip()) if value not in (None, "") else None
+    except ValueError:
+        return None
+
+
+async def home_ecosystem_id(session, settings) -> uuid.UUID | None:
+    """The pinned platform home: PLATFORM_HOME_ECOSYSTEM_ID, else the app_settings pin; an existing ecosystem's id or None. Never a name."""
+    from neos_agent.db.models import AppSetting, Ecosystem
+
+    configured = getattr(settings, "PLATFORM_HOME_ECOSYSTEM_ID", "")
+    home_id = _as_uuid(configured) if isinstance(configured, str) else None
+    if isinstance(configured, str) and configured.strip() and home_id is None:
+        logger.warning("PLATFORM_HOME_ECOSYSTEM_ID=%r is not a UUID; using the pinned home", configured)
+    if home_id is None:
+        pinned = await session.scalar(select(AppSetting.value).where(AppSetting.key == PLATFORM_HOME_SETTING_KEY))
+        home_id = _as_uuid(pinned.get("ecosystem_id")) if isinstance(pinned, dict) else None
+    if home_id is None or await session.scalar(select(Ecosystem.id).where(Ecosystem.id == home_id)) is None:
+        return None  # fail closed: nobody is a platform admin
+    return home_id
+
+
+async def platform_admin_row(session, settings, user_id: uuid.UUID):
+    """The user's row that makes them a platform admin (policy.is_platform_admin), else None."""
+    from neos_agent.db.models import Member
+
+    candidates = (await session.scalars(select(Member).where(
+        Member.user_id == user_id,
+        Member.profile.in_(PROFILE_ADMINS),
+        Member.current_status == "active",
+    ))).all()
+    if not candidates:
+        return None  # most users hold no admin profile anywhere, so the home is never looked up
+    home_id = await home_ecosystem_id(session, settings)
+    return next((row for row in candidates if is_platform_admin(row, home_id)), None)
 
 
 async def require_ecosystem_role(request: Request, ecosystem_id: uuid.UUID, min_role: str):

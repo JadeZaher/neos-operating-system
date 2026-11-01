@@ -112,9 +112,9 @@ Caller flags are computed on the server so the UI survives reloads:
 Stewardship and participation are separate records. A steward who has not
 joined is still offered Join, because domain-scoped publishing checks active
 participation. Creating a domain requires `require_ecosystem_role(..., "mod")`.
-Updating requires the domain's steward or mod+ (403 `EDIT_DENIED`). Moving
-`require_admin` to per-ecosystem checks is deferred to the role-tiers phase of
-`governance_matching_ux_enforcement_20260727`.
+Updating requires the domain's steward or mod+ (403 `EDIT_DENIED`).
+`require_admin` now means platform admin only; anything about one ecosystem
+reads `caller_in` (see "Platform admin (G-Authority)").
 
 ## Chat assistant tools (caller-scoped)
 
@@ -424,13 +424,10 @@ Drift found while unifying, deliberately not changed in wave 0:
 - The chat tool `check_domain_authority` (`governance_tools.py` ~556) accepts
   a display-name match on `current_steward`; `can_edit_domain` uses
   `steward_id` only.
-- `helpers.require_admin` reads `profile` from `request.ctx.member`, the
-  default row; `profile` is stored per member row. The default is now the
-  oldest active row (or the oldest in the selection), so a creator whose
-  `co_creator` row is in a newer ecosystem is refused unless that ecosystem
-  is the only one selected. An admin check about a resource must read the
-  profile of `caller_in(session, request, resource.ecosystem_id)`
-  (`is_profile_admin`).
+- Fixed in wave C (G-Authority): `helpers.require_admin` used to read
+  `profile` from `request.ctx.member`, the default row, so founding an
+  ecosystem and selecting it made anyone a platform-wide admin. It now reads
+  `request.ctx.platform_admin`; see "Platform admin (G-Authority)".
 - Per-member rows keyed on `ctx.member.id` follow the default row, so they
   change with the selection. Fixed in wave 1 for orientation progress, ethos
   access and chat sessions (they key on `caller_in` for the route's
@@ -687,7 +684,8 @@ bootstrap, and members chose their own profile, so anyone could make
 themselves owner of an ownerless ecosystem.
 
 Profiles that confer administration (`policy.PROFILE_ADMINS`: co_creator,
-builder; also honoured by `helpers.require_admin`) are therefore never
+builder; on a home-ecosystem row they also make a platform admin, see
+"Platform admin (G-Authority)") are therefore never
 self-chosen: `PUT /members/:id` and `POST /members` refuse them unless the row
 already holds that profile. `PUT /members/:id/profile-grant` sets any
 `MEMBER_PROFILES` value on another member for whoever could make them an admin
@@ -760,3 +758,409 @@ returns `needs_confirmation` and writes nothing until `confirm=true`. Refusals
 come first. `record_agreement_ceremony` now refuses evidence for a stage the
 agreement is not in, as REST and the chat tool do (out-of-stage test evidence
 could carry a later consent straight into force).
+
+## Platform admin (G-Authority)
+
+Owner decision 2026-11-01: a co_creator/builder profile counts platform-wide
+only on the caller's ACTIVE member row in the home ecosystem. Founding an
+ecosystem (`POST /ecosystems` gives the founder `profile="co_creator"` there)
+makes you that ecosystem's administrator, nothing more. Before this, the
+founder selected their new ecosystem, `ctx.member` became that row, and
+`helpers.require_admin` (profile on `ctx.member`) opened app settings, teams,
+badges, the CTC hand-off, ethos access, quiz assignments and shares/needs
+moderation everywhere.
+
+- Rule: `policy.is_platform_admin(row, home_ecosystem_id)`: active, in the
+  home ecosystem, profile in `PROFILE_ADMINS`. A row from any other ecosystem
+  fails closed, like `is_steward_in`.
+- Home: `helpers.home_ecosystem_id(session, settings)`, an id and never a
+  name (a security principal must not come from an editable display name:
+  matching "omnione" by name let a rename, or the first founder of an
+  "omnione" in an empty environment, take platform admin). In order:
+  `PLATFORM_HOME_ECOSYSTEM_ID` (settings/env; not a UUID: warning, treated as
+  unset), else the `app_settings` row `platform_home_ecosystem_id` =
+  `{"ecosystem_id": "<uuid>"}`, else None. The id must name an existing
+  ecosystem, else None (an explicit env id that names nothing does not fall
+  back to the row). None means nobody is a platform admin. The row is written
+  once by migration `v1b4e7c9d2f5` (alembic/AGENTS.md: it resolves the
+  sign-up slug at migration time, oldest match) and by `main.init_db` when
+  the server founds OmniOne on an empty database. Nothing is cached: an
+  admin-profile holder costs the pin read and one primary-key check.
+- `PUT /settings` refuses the key `platform_home_ecosystem_id` (400 "...set
+  PLATFORM_HOME_ECOSYSTEM_ID on the server instead"), so a platform admin
+  cannot move the home through the API; moving it is a server change.
+- Computed once per request in the `main.py` auth middleware (protected and
+  public routes, so `/auth/me` can report it): `request.ctx.platform_admin`
+  (bool) and `request.ctx.platform_admin_member` (that home row, or None).
+  `helpers.platform_admin_row(session, settings, user_id)` does the work and
+  is the call for code with no middleware (bare test apps, the MCP server).
+  Most users hold no admin profile anywhere, so it costs one indexed query;
+  only profile holders also resolve the home. Anonymous, OPTIONS and failed
+  lookups are False. Agent tokens act as their user through `mcp_server.py`,
+  which has no platform-admin gate.
+- `helpers.require_admin(request)` keeps its `(member, error)` shape and now
+  means "platform admin": 401 without a member row, 403 unless
+  `ctx.platform_admin`, else the home row (so `updated_by`/`created_by` record
+  the row that holds the authority).
+
+Choosing the check:
+
+| The resource | Check |
+|---|---|
+| Has no ecosystem (app settings, global badges with `ecosystem_id` null, the CTC hand-off list and flags) | `require_admin` |
+| Belongs to one ecosystem (teams, team members, ecosystem badges, profile grants, anything with `ecosystem_id`) | `get_scoped_or_404` (404 outside the caller's active ecosystems), then `caller_in(session, request, resource.ecosystem_id)` + a `policy` predicate (403) |
+
+A platform admin is not a steward of other ecosystems: they reach another
+ecosystem's resources only through their own row there.
+`policy.can_administer_ecosystem(row, ecosystem_id)` (active there, and a
+steward or a co_creator/builder there) gates teams and ecosystem badges, so
+a founder (role `user`, profile co_creator) runs their own catalog and an
+owner by role without the profile does too. Profile grants keep
+`can_grant_profile` on the target's ecosystem: granting co_creator/builder on
+a home row mints a platform admin, which only the home's owners (or its
+founder before it has one) can do. `tests/test_platform_admin.py` is the
+actor x route table through `create_app`.
+
+
+## Maintenance and health (G-Maint)
+
+Owner decision and defaults of 2026-11-01 (`uxqa/governance/wave-c.md`), each one constant; the
+date rule and the health service are in `services/AGENTS.md` "Maintenance and health (G-Maint)".
+`tests/test_g_health.py` has a row per decision that goes red if it is flipped.
+
+### Agreement review (framework agreement-review E.3-5, G, I-J)
+
+| Move | Rule |
+|---|---|
+| `active -> under_review` | ceremony steward (admin/owner); no evidence |
+| `under_review -> active` (keep in force) | `evidence` = the review's written findings, 8+ characters (400 `FINDINGS_REQUIRED`); optional `next_review_date` later than today (400 `REVIEW_DATE_INVALID`), else `default_review_date(type, today)` (`agreement_vocabulary.REVIEW_INTERVAL_MONTHS`) |
+| `under_review -> sunset` | findings as above (no single act ends an agreement without them); `sunset_date` = the later of the stored one and today + `SUNSET_NOTICE_DAYS` (60) |
+| `sunset -> archived` | ceremony steward, once the sunset date has passed (FX-Maint: the table's `sunset_ended` gate; 409 `SUNSET_NOT_ENDED` with `sunset_date` before); an `archive_agreement` item appears then |
+
+`transition_agreement` (REST, MCP `transition_agreement` with `next_review_date`, chat
+`update_agreement_status` with `findings`/`next_review_date`) writes the `ReviewRecord` for both
+outcomes: `review_type` scheduled (the date had passed) or requested, `trigger`, `date` (UTC day),
+`agreement_version`, `review_body.conducted_by`, `evaluation = {findings, due_date, on_time}`,
+`outcome` renewed/sunset, `next_review_date`. Ending a review asks no `test` gate: the findings are
+the evidence, and an agreement registered from a proposal has no test ceremonies of its own, so
+"Keep it in force" would otherwise be refused for ever (the D1 dead end in another form). FX-Maint
+dropped the gate from the `act_gates` table itself, so the `ends_review` special case in
+`transition_agreement` is gone. Before this, the page sent no evidence (400 with no field to type it
+in), nothing wrote a review record, and the review date stayed in the past.
+
+**One move at a time (FX-Maint A4).** `transition_agreement` takes the agreement row `FOR UPDATE`
+(`lock_for_move`) before it reads the table, for REST, MCP `transition_agreement` and chat
+`update_agreement_status` alike (they share the engine), and compares the committed status with the
+one the caller loaded: a move made on a stale page is 409 `AGREEMENT_CHANGED` ("it is now <status>"),
+never a second ceremony. Two admins ending one review at once (renew and sunset) used to write two
+contradictory `ReviewRecord`s; `tests/test_g_health.py` runs that race on PostgreSQL. The lock is a
+no-op on SQLite. Refusals for a gate come from one function, `gate_refusal`, so REST and the
+assistant's pre-confirmation check say the same words.
+
+New agreements come due: REST create and `register_ratified_proposal` default `review_date` by type
+(registration never set one). Detail adds `review_overdue`, `default_next_review_date` and
+`sunset_ends_on` (while under review, for the dialog) and `caller_can_rollback`; the list item adds
+`review_overdue` for everyone (the framework's visible registry flag; it never invalidates the
+agreement); history reviews add `findings`, `conducted_by`, `agreement_version`, `on_time`, and the
+history response `caller_can_rollback`.
+
+Rollback (`POST /agreements/:id/rollback/:version_id`) is allowed only where editing is (draft or
+advice, an active member there), restores the terms only (never `status`, `review_date` or
+`sunset_date`), and moves the version only when title or text changes. Anything else is 409
+`ROLLBACK_LOCKED` ("An agreement in force changes through a proposal (Propose a change)"). Before,
+any active member could put an agreement under review back in force, with its old past review date,
+or restore old text in force and void every member's consent.
+
+### Governance health (framework layer VII)
+
+- **Values computed, statuses human.** `GET /api/v1/safeguards/snapshot?ecosystem_id=&from=&to=`
+  (active members of that ecosystem, else 404) returns `services/health.health_snapshot`.
+- **Auditor independence** (owner decision): `policy.can_record_audit(member, ecosystem_id,
+  has_independent_member=)`: an active member who is not a steward (mod+) of the audited ecosystem;
+  a steward only when no active non-steward member exists there, and then the audit is labelled
+  `self_assessment`. `AUDIT_EXCLUDES_STEWARDS` reverts it. REST start and publish
+  (`safeguards.auditor_refusal`, 403 `AUDITOR_NOT_INDEPENDENT` or "Only active members ...") and
+  the chat tool `create_safeguard_audit` ask it; this supersedes "is_active_member_in (as REST)" in
+  the chat-tools table above. Reading "no other active member" as "no non-steward" keeps an
+  ecosystem of stewards able to audit at all.
+- **Publish freezes.** `POST /audits/:id/publish` computes the snapshot for the audit's period
+  (default the 90 days ending today), refuses 400 `RATINGS_MISSING` (`missing`, and the message names
+  them) until every computable indicator with data in the period is rated, then stores all eight
+  rows: value, unit, basis, band, prior value (the previous published audit) and trend (improving,
+  stable, degrading, baseline) beside the auditor's status and notes. Later data never changes a
+  published report. The score stays the mean of the auditor's ratings; this supersedes "needs at least
+  one rated indicator" in the G-Care section. A draft never shows a score or label (an assistant draft
+  once stored the model's number: D14).
+- **Members see results** (framework E.9: no restriction to leadership). `GET /safeguards` adds
+  `ecosystems`: one labelled entry per selected ecosystem (`latest_audit` published only,
+  `published_on`, `audit_due`, `audit_overdue`, `critical_count`, `caller_can_record_audit`,
+  `caller_records_self_assessment`); the single `latest_audit`/`health_score` fields are filled only
+  for one selected ecosystem (they mixed ecosystems: D12). The client shows Safeguards to members.
+  `GET /explain/audit/<id>` is the audit banner, scoped like the audit detail.
+- `views/safeguards.py` fails closed on an empty selection and never shows a draft as the latest audit.
+- **Closing the loop (FX-Maint F6, F7).** `POST /audits/:id/abandon {reason}`: a draft's auditor or a
+  steward of its ecosystem (`policy.can_abandon_audit`), a reason of 8+ characters (400
+  `REASON_REQUIRED`, `field`), drafts only (409 `NOT_A_DRAFT`); the audit keeps its row with status
+  `abandoned`. `POST /audits/:id/respond {note, proposal_id?}`: a steward there
+  (`policy.can_respond_to_audit`), a note of 8+ characters (400 `RESPONSE_REQUIRED`), an optional
+  proposal of that ecosystem (400 `PROPOSAL_INVALID`), published audits only (409 `NOT_PUBLISHED`),
+  once (409 `ALREADY_RESPONDED`); it clears `respond_to_audit`. Each writes the smallest existing
+  record, a `DecisionRecord` (`artifact_type` "audit", `artifact_reference` = the audit's id,
+  `source_skill` `audit-abandonment` or `audit-response`, `ratio_decidendi` = the reason or note,
+  `recorder`), as domain authority changes do, so no column was added and `u7d2f4b8a3c6` is unchanged.
+  The named proposal lives in `related_records.proposal`, never `source_proposal_id` (that id marks a
+  proposal's own decision artifact, `act_gates.record_proposal_decision`). Both take the audit row
+  `FOR UPDATE` first. The detail adds `response`, `abandonment`, `caller_can_abandon`,
+  `caller_can_respond`. Chat parity: `respond_to_health_audit` (confirmation first) calls the same
+  `safeguards.record_audit_response`.
+- **Auditor independence counts founders (FX-Maint A5/F8).** `health.has_independent_member` excludes
+  co_creator/builder rows, matching `can_record_audit`'s `can_administer_ecosystem`; the audit queue
+  items reach the same stewards.
+- **One period rule (F11).** The snapshot endpoint and publish both call `health.period_bounds`: one
+  bound given, the other is 90 days from it.
+
+### Compliance summaries
+
+`POST /compliance/generate` takes `ecosystem_id` (else the one selected; 400 with several), for an
+ecosystem where the caller is active (`caller_in`, else 404), and counts that ecosystem only (it
+used to mix every selected one into the first). Only measured numbers are scores:
+`agreement_coverage` (share in force); `domain_health`, `process_adherence` and
+`conflict_resolution` are null, "not measured" (they were 100 when any domain or proposal existed,
+and the model was asked to invent all four). The model, when enabled, writes the narrative only.
+`flagged_issues` lists the snapshot's needs-attention counts and open case ids. `/latest` and
+`/history` scope with `restrict_to_ecosystems` (fail closed): a pending-only user read another
+ecosystem's latest summary before. The two log-only cron scans (`_check_deadlines`,
+`_check_compliance_regen`) are deleted: "due" is derived per request.
+
+### Domain steward and status (framework role-sunset E.4)
+
+`PUT /domains/:id` changing `steward_id` or `status` needs `policy.can_change_domain_authority`: an
+active steward (mod+) of the ecosystem who is not that domain's steward (403
+`DOMAIN_AUTHORITY_DENIED`; the domain's own steward handed it on or ended it alone before), a
+`reason` of 8+ characters (400 `REASON_REQUIRED`) and, for a new steward, an active member of the
+ecosystem. Each change writes the smallest existing record, a `DecisionRecord` (`artifact_type`
+"domain", `source_skill` "role-transfer" or "role-sunset", `ratio_decidendi` = the reason,
+`recorder` = the steward); `current_steward` follows the new steward's name. Other edits keep the
+old rule (`can_edit_domain`).
+
+FX-Maint closed the form hand-off and the bypass beside it: the page showed the free-text
+`current_steward`, which `PUT` let any domain editor rename (the domain's own steward could "hand it
+on" with no reason or record while the rule guarded `steward_id`). Now list and detail show the
+`steward_id` member's name (stored text only when no member is linked), `PUT` refuses a changed
+`current_steward` (400 `STEWARD_NAME_FOLLOWS`), create derives it from `steward_id` (an active member
+of that ecosystem, else 400 `STEWARD_INVALID` with `field`), and the detail's
+`caller_can_change_authority` tells DomainForm whether to offer the steward picker and status with the
+reason field.
+
+### Assistant
+
+`update_agreement_status` (chat) and `transition_agreement` (MCP) end reviews with findings and a
+next review date through the same engine, and their pre-confirmation refusal asks the same review
+rule. `create_safeguard_audit` drops the model's score and applies `can_record_audit`.
+`get_governance_health` (read, caller-aware) returns the snapshot for an ecosystem the caller is
+active in.
+
+## Onboarding (G-Onboard)
+
+Owner decisions (2026-11-01): no steward approves a newcomer: consenting to the membership
+agreement(s) makes a member active, and the six-section UAF ceremony is read-only history (no
+new requirement). Stewards see who is waiting and step in only when someone is stuck (pending
+with nothing left to consent to). Defaults: private ecosystems are not self-service; a leaver
+returns when the latest `ExitRecord.re_entry_eligible` allows; there is no "declined" state (a
+documented UAF incompatibility goes through a conflict case); withdrawing consent to a membership
+agreement still demotes to `pending_consent`. This section supersedes the old wording of "Sign-up
+placement and the consent gate" (placement now goes through `place_member`) and the 409 dead end
+in "Join-first self-service writes".
+
+**One placement path.** `services/member_lifecycle.place_member` serves sign-up (`auth.py`
+`create_signup_member`, trigger `signup`), `POST /ecosystems/:id/join` (`joined`), `POST /members`
+and the assistant's `join_ecosystem`. See services/AGENTS.md "Member lifecycle (G-Onboard)" for the
+outcome table. The join route answers 201 for a new row, 200 for a healed or returning row, with
+`{status, outcome, membership_status, message, ecosystem_name, required_agreements}`; refusals carry
+a `code`: 409 `ALREADY_MEMBER`, 409 `CONSENT_REQUIRED` (+ `required_agreements`), 409
+`MEMBERSHIP_PAUSED`, 403 `RE_ENTRY_CLOSED`, and 404 "Ecosystem not found" for an unknown OR private
+ecosystem (the same body, so a private ecosystem's existence is not confirmed). Sign-up naming a
+private `ecosystem_id` is the same 404 (`signup_ecosystem`); the configured default may be private
+(the operator chose it). A concurrent join's insert runs in a savepoint: the loser is a 409, not a
+500. `POST /members` (create your own row) is a placement too: an existing row is a 409 (it was a
+unique-violation 500), and a pending or returning row must use join.
+
+**Every move is recorded.** Each status change writes exactly one `MemberStatusTransition` through
+`record_transition`: sign-up, join, `gate_cleared`, `re_entry`, activation by consent (`consent`,
+`agreements.record_member_consent`), demotion on withdrawal (`consent_withdrawn`), and steward moves
+(`steward_move`, with `actor_member_id`). Before, 32 of 45 study rows had no transition at all.
+
+**Steward moves are a closed table** (`policy.MEMBER_MOVES`, `can_move_member`): active <->
+suspended, inactive -> active, pending_consent -> active (only when nothing is left to consent to:
+the stuck case; otherwise 409 `CONSENT_REQUIRED` naming the agreements, because consent, not a
+steward, activates). Only an active steward who outranks the member (never themselves); `exited`
+is a 400 `USE_EXIT_FLOW` (leaving is the member's own exit); anything off the table is a 400 with
+`allowed`; a status over 50 characters is a 400, not a PostgreSQL 500. `GET /members/:id/profile`
+adds `caller_member_moves: [{status, label, confirm}]` from the same refusal function, so the page
+offers exactly what the route accepts. `POST /members/:id/resend-invite` was removed: it said
+"Invite re-sent" and delivered nothing (no invite system exists; deferred in wave-c.md).
+
+**Onboarding content is the ecosystem's stewards'** (`policy.can_manage_onboarding`, which is
+`can_administer_ecosystem`: an ACTIVE row there that is mod+ or holds co_creator/builder on that row, so
+founders count; read through `caller_in`, never `ctx.member` and never `helpers.require_admin`,
+which now means platform admin):
+
+| Route | Rule |
+|---|---|
+| journey maps: create, `PUT`, deactivate, `DELETE` | steward of the map's ecosystem; a global map (no ecosystem) is 403; `DELETE` of a map anyone has progress on is 409 `JOURNEY_IN_USE` (deactivate instead; it used to delete everyone's progress) |
+| `POST /ecosystems/:id/quizzes/assign\|unassign`, `GET .../quiz-results` | steward there; a quiz of another ecosystem is 403 (only `quiz.ecosystem_id` NULL or this one) |
+| `/ethos/:id/access` list, grant, revoke | steward there; the target must be a member of that ethos (404); `granted_by` is the steward's row |
+| `/quiz-assignments` create, delete | steward of the member's (assignment's) ecosystem; `assigned_by` is the steward's row; the list is the selection (`restrict_to_ecosystems`), everything where the caller stewards, else only their own |
+| `GET /onboarding/newcomers` | stewards of the selection: pending rows and rows joined in the last 30 days, with the agreements still to consent to, orientation status and `stuck`; stuck first; 403 otherwise |
+| `GET /onboarding` (ceremony rows) | stewards of the selection only (members used to read everyone's progress) |
+
+Progress saves (`POST /orientation/ethos/:id/progress`) take only an ACTIVE journey of that
+ecosystem (400 `field: journey_map_id`), statuses `in_progress | complete | opted_out`, a whole
+`current_step`; a first save names its journey (it was a NOT NULL 500). An exited row is 409
+`JOIN_REQUIRED` (rejoin first; it used to write on the exited row), a paused one 403; pending
+newcomers may orient (walkthrough before consent). Ethos participation consent applies the same
+rule. Ceremony section writes lock the row, and a stand-aside or objection is recorded but not
+counted as consent (the server said 100% while the page said 5 of 6).
+
+`submit_quiz` keys the result on the caller's row in the quiz's ecosystem (it used the default
+row, so an OmniOne entry quiz showed on the Oasis member page) and a pass marks that member's
+assignment of the quiz `completed`.
+
+`GET /auth/me` adds `is_platform_admin` (`request.ctx.platform_admin`, G-Authority's middleware)
+and, per `ecosystems[]` entry, the caller's `membership_status` and `role` there, closing the
+"Wave 2" drift note in "Handler contracts": the client applies the active-only rule per ecosystem.
+`member` is now `guards.default_member` without a selection (oldest active row, else the oldest).
+
+**Assistant parity** (`agent/governance_tools.py` and `mcp_server.py`, sections "G-Onboard";
+`tests/test_onboarding_parity.py`):
+
+| Act | REST | MCP | Chat |
+|---|---|---|---|
+| join or return | `POST /ecosystems/:id/join` | `join_ecosystem` (`confirm`) | `join_ecosystem` (needs confirmation for a new or returning membership) |
+| consent to an agreement | `POST /agreements/:id/consent` | `attest_agreement_consent` | `attest_agreement_consent` (scope includes the caller's pending ecosystems, rule 5; confirmation only when it puts the agreement in force) |
+| steward move | `POST /members/:id/status` | (none) | `move_member` (refusal first, then confirmation with the page's sentence) |
+
+Hand-offs: chat tool labels for the three tools belong in `api/chat.py` `_TOOL_DISPLAY_NAMES`, and
+the system prompt's "onboarding" page hint (`agent/system_prompt.py`) should name them.
+
+### FX-Onboard (wave-c fix wave, 2026-11-01)
+
+Closes review findings A1-A3, A6, A8, A9, A11, A12, F4, F12, F15, F16 (`uxqa/governance/wave-c-review-*.md`).
+Flow tests: `tests/test_onboarding_boundaries.py` (create_app: leaving and returning, the quiz actor x route
+table, sign-in placement, profiles) plus rows in `test_onboarding_flows.py`, `_authority.py`, `_parity.py`.
+
+- **Leaving ends standing; returning starts as a member** (A1, F4). A confirmed exit
+  (`exit._mark_exited` -> `member_lifecycle.end_membership`) moves the row to `exited` and clears it: role back
+  to `user`, a co_creator/builder profile removed, every live agreement consent withdrawn. Each change is
+  recorded: role and profile as `role_grant` / `profile_grant` rows with the confirming steward as actor (so the
+  member page's role history shows them and `services/health.py` tenure restarts), consents with `withdrawn_at`
+  and a `withdrawal_reason` ("Membership ended: ..."), alignment credit reversed as a member's own withdrawal
+  would. The return path (`place_member`, `re_entry`) runs the same clear on rows that left before this fix, so
+  a returning home owner is a pending member who consents again, never a platform admin or owner by default.
+  Becoming an admin again is a fresh grant by an owner.
+- **Quizzes and results belong to the quiz's ecosystem's stewards** (A2). `api/quizzes.py`
+  `quiz_steward_or_error`: create (for the body's `ecosystem_id`; a `domain_id` must be that ecosystem's, 400
+  `field: domain_id`), update, delete, `GET .../results` and `.../results/all` need `can_manage_onboarding` there;
+  a shared quiz (no ecosystem) needs `ctx.platform_admin`. `created_by` is the steward's row, never a client id.
+  `GET /members/:id/quiz-history` is the member's own rows or a steward of that member's ecosystem, else 404.
+  The domain quiz assign/unassign routes check a steward of the domain's ecosystem, and refuse another
+  ecosystem's quiz (403). A platform admin is not a steward of other ecosystems here either.
+- **A shared quiz stays shared** (A9). Assigning a quiz with no ecosystem to an ecosystem or a domain copies it
+  (`quizzes.copy_quiz`, never the entry flag of the original); the response's `quiz_id` is the copy. Known gap
+  (pre-wave behaviour kept): unassigning an ecosystem's quiz still returns it to the shared list.
+- **One placement path for every sign-in** (A3). The legacy `/auth/verify` (`auth/routes.py`) uses
+  `api/auth.py` `existing_membership` / `signup_ecosystem` / `create_signup_member`, like `/api/v1/auth/verify`,
+  register and OAuth: pending until consent, one `signup` transition. `signup_ecosystem` order: the requested
+  (public) id, then the pinned home (`helpers.home_ecosystem_id`), then `SIGNUP_DEFAULT_ECOSYSTEM_SLUG`, then the
+  oldest PUBLIC ecosystem (a private one is used only when the operator pinned or configured it).
+- **Profiles for signed-out visitors** (A6). `GET /api/v1/profiles/:id` lists no posts without a session, and
+  a private ecosystem's membership (with the domains and results that hang off it) shows only to the profile's
+  owner and viewers with an active row there.
+- **Ceremony records** (A8). `GET /onboarding/:id/ceremony` and `GET /members/:id/onboarding` (section
+  positions and objections) are the member's own or a steward's there (`policy.can_read_onboarding_record`),
+  else 404.
+- **Newcomers reach every stewarded ecosystem** (F12). `GET /onboarding/newcomers` lists every active
+  ecosystem the caller stewards, not only the selection, matching the queue. Founders are stewards here
+  (`can_manage_onboarding`): they see stuck newcomers in the queue and confirm them; `policy.can_move_member`
+  lets any such steward confirm a pending newcomer (it confers nothing), while suspend/restore still need an
+  active mod+ who outranks the member.
+- `/auth/me` `ecosystems[]` adds `is_steward` (`can_administer_ecosystem` on the caller's row there), so the
+  client never re-derives the steward rule. Progress saves keep the journey when `journey_map_id` is null
+  (A11, was a 500). The chat `join_ecosystem` refuses a name more than one joinable ecosystem shares (409
+  `AMBIGUOUS_ECOSYSTEM`, listing the ids) instead of joining the first row (A12). Creation stamps use
+  `dates.utc_today()` (F15).
+
+
+## Exchange (G-Exchange)
+
+Rules and rationale: `services/AGENTS.md` "Exchange (G-Exchange)". `api/discover.py` handlers are thin: load the
+`Viewer`, apply `services/exchange`, commit, return the one post payload (`publication_payloads`) or the
+collaboration detail. Errors are `ApiError` with a `code` the client and the assistant branch on.
+
+| Route | Rule |
+|---|---|
+| `GET /discover/shares-needs` | visible, never hidden; `status` default `active`, `all` = every status; `q`, `type`, `category`, `ecosystem_id`, `domain_id`; not selection-scoped |
+| `GET /discover/shares-needs/:id` | the visibility rule; invisible = 404 (same body as missing) |
+| `GET /discover/shares-needs/admin` | the caller's moderation list: ecosystems where they are an exchange steward; `hidden=true\|false`; `stats` adds `hidden`; `moderated_ecosystems`. No `require_admin` (G-Authority redefined it as platform admin) |
+| `POST /discover/shares-needs` | active row in that ecosystem (`CONSENT_PENDING` / `MEMBERSHIP_REQUIRED`), publishing gate, 400 with `field` (vocabulary: types, `public\|ecosystem\|domain`, categories = client `SHARESNEEDS_CATEGORIES`), 409 `DUPLICATE_POST` + `existing_id` (same author, type, title case-insensitively, domain, while open; the author's row is locked first) |
+| `PUT /discover/shares-needs/:id` | author only (`AUTHOR_ONLY`); `CANNOT_MOVE` |
+| `POST .../:id/status` | author; `PUBLICATION_MOVES` (409 `MOVE_NOT_ALLOWED` + `allowed`); `note`; `fulfilled_by_member_id` must be a responder |
+| `POST .../:id/hide`, `.../restore` | a steward of the post's ecosystem (`MODERATOR_ONLY`); hide needs `reason` (`REASON_REQUIRED`) |
+| `DELETE .../:id` | author, unanswered (`HAS_RESPONSES`) |
+| `POST .../:id/respond` | `{message}`; 201 new conversation / 200 reused; `OWN_POST`, `POST_CLOSED` (+`status`), `AUTHOR_INACTIVE`, `CONSENT_PENDING`, `MEMBERSHIP_REQUIRED` |
+| `GET /discover/collaborations` | `status` default `active`, `all`; proposed ones only for either side |
+| `GET /discover/collaborations/:id` | adds `proposed_by_name`, `approvals`, `awaiting`, `caller_can_approve_for`, `caller_can_end`, `end_outcomes`, `review_due`, end fields, `linked_publications` (visible ones) |
+| `POST /discover/collaborations` | any active member of the source ecosystem; `SAME_DOMAIN`; 400 with `field` for bad ids, title (1-255), tier, terms (object), `review_date` (ISO, not past); `linked_share_need_id` must be visible and open |
+| `POST .../:id/approve` (`/activate` kept as an alias) | `{ecosystem_id?}`; row locked; `NOT_PROPOSED`, `APPROVE_DENIED`, `SIDE_REQUIRED` + `options`, `ALREADY_APPROVED`, consent 409 |
+| `POST .../:id/end` | `{outcome, reason}`; `END_DENIED`, `REASON_REQUIRED`, 409 `END_NOT_ALLOWED` + `allowed` |
+| `POST .../:id/review` (FX-Exchange) | `{note, next_review_date?}`; a steward of either side (`REVIEW_DENIED`), active only (409 `NOT_ACTIVE`), note required (`REASON_REQUIRED`, `field: note`), next date later than today (AoE) else 400 `field: next_review_date`; default a year out; row locked |
+| `GET /domains/:id/shares-needs` | every status, the visibility rule (hidden flagged for author/stewards); the profile-admin bypass is gone |
+| `GET /ecosystems/:id/shares-needs` | ACTIVE members there only (a pending or exited row used to read every post) |
+| `GET /profiles/me` | adds `own_publications` (every status, visibility and hidden state); `publications` stays public, open and not hidden |
+
+The publication payload carries the caller's flags (`caller_is_author`, `caller_can_edit`, `caller_can_moderate`,
+`caller_can_manage`, `caller_can_delete`, `caller_can_respond` + `respond_blocked`, `caller_has_responded` +
+`caller_conversation_id`, `allowed_next`), so pages draw buttons from the server, never from a client role table.
+`responders` (names) go to the author only; `response_count` to the author and stewards.
+
+Chat tools (appended to `governance_tools.py`; MCP runs the same handlers through `mcp_server._exchange_tool`,
+`confirm` = the chat `confirmed`; parity script `tests/test_exchange_parity.py`):
+
+| Tool | Rule (policy / exchange) | Identity from the caller |
+|---|---|---|
+| `find_shares_needs` (caller-aware read) | `visible_clause`, open unless `status` | viewer |
+| `publish_share_need` | `exchange.publish` (as REST) | author (`author_member_id`) |
+| `respond_to_share_need` | `exchange.respond` after `respond_blocked`; needs confirmation (the exact message) | responder |
+| `update_share_need_status` | author moves (`move_publication`) or steward `hidden` (reason; needs confirmation) / `restored` | actor |
+| `approve_collaboration` | `exchange.approve_collaboration` (`can_approve_collaboration`) | approver |
+| `end_collaboration` | `exchange.end_collaboration` (`can_end_collaboration`); needs confirmation | `ended_by_member_id` |
+| `review_collaboration` (FX-Exchange) | `exchange.review_collaboration` (`can_review_collaboration`); no confirmation (a review is recorded, not final) | `reviewed_by_member_id` |
+
+MCP: `find_shares_needs`, `post_share_need`, `respond_to_share_need`, `update_share_need_status`,
+`approve_collaboration`, `end_collaboration`, `review_collaboration`. The Discover page hint in
+`agent/system_prompt.py` names these tools.
+
+Tests: `tests/test_exchange_authority.py` (actor x action tables, refused calls leave rows unchanged),
+`tests/test_exchange_flows.py` (flows, 90-day item, exit, validation, PostgreSQL races),
+`tests/test_exchange_parity.py`, `tests/test_exchange_migration.py`; `tests/test_profiles.py` asserts the D1 flip.
+
+### Messaging scope (FX-Exchange, wave-c F1)
+
+`api/messaging.py` used to resolve the caller's rows only in the header selection for every route, while the queue
+announces answers to posts across every active membership: a poster in two ecosystems was told "Olu answered your
+need" and then got an empty list and a 404 on the conversation. Two scopes now:
+
+| Route | Rows that count |
+|---|---|
+| `GET /messaging/conversations`, `GET /messaging/search` | the rows in the header selection, PLUS answer conversations (a `share_need` ConversationLink) through any ACTIVE row (`_listed_participation`) |
+| `GET /messaging/conversations/:id`, `.../messages` (GET, POST) | any ACTIVE row of the user (`get_authorized_ecosystem_ids`): opening, reading and sending check participation, not the selection |
+
+Why not every active row in the list: ordinary DMs and groups belong to one ecosystem, and the header selection is
+how a member narrows Messages; an answer to the member's own post (or their answer to someone's) is a request the
+bell already raises across memberships, so it must be listed wherever the bell points. Nobody sees a conversation
+they do not take part in (participation is still the check); unread counting excludes all of the user's rows. The
+client opens `/messaging?conversation=<id>` (`MessagingLayout`, `lib/exchange.conversationIdFromQuery`).
+Tests: `tests/test_exchange_flows.py::test_a_poster_in_two_ecosystems_reads_an_answer_whatever_the_selection`.
+
+The chat UI's `_TOOL_DISPLAY_NAMES` (`api/chat.py`) labels every wave-C tool; `tests/test_exchange_parity.py` fails
+when a tool has no label or a page hint names a tool that does not exist.

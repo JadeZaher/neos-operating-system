@@ -11,8 +11,7 @@ import uuid
 from sanic import Blueprint, json
 from sanic.request import Request
 
-from neos_agent.api.guards import authenticated, caller_user_id
-from neos_agent.api.helpers import get_authorized_ecosystem_ids
+from neos_agent.api.guards import authenticated, caller_user_id, reachable_ecosystem_ids
 from neos_agent.services.next_steps import explain, waiting_for
 
 next_steps_api_bp = Blueprint("next_steps_api")
@@ -21,9 +20,10 @@ next_steps_api_bp = Blueprint("next_steps_api")
 @next_steps_api_bp.get("/api/v1/me/next-steps")
 @authenticated
 async def my_next_steps(request: Request):
-    """GET /api/v1/me/next-steps -- the caller's items in every ecosystem they are active in (the queue and the bell)."""
+    """GET /api/v1/me/next-steps -- the caller's items where they are active, plus joining steps where they await consent."""
     async with request.app.ctx.db() as session:
-        items = await waiting_for(session, caller_user_id(request), get_authorized_ecosystem_ids(request))
+        scope = await reachable_ecosystem_ids(session, request, include_pending=True)
+        items = await waiting_for(session, caller_user_id(request), scope)
     return json({"items": items, "count": len(items)})
 
 

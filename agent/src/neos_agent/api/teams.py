@@ -2,7 +2,10 @@
 
 Blueprint: teams_api_bp, url_prefix="/api/v1/teams"
 
-Manages ecosystem-scoped teams and their memberships.
+Manages ecosystem-scoped teams and their memberships. A team belongs to one
+ecosystem, so every change is authorized by the caller's row there
+(policy.can_administer_ecosystem), never by a platform-wide profile; see
+api/AGENTS.md "Platform admin (G-Authority)".
 Returns JSON responses only.
 """
 
@@ -16,7 +19,11 @@ from sanic.request import Request
 from sqlalchemy import func, select
 
 from neos_agent.db.models import Member, Team, TeamMembership
-from neos_agent.api.helpers import require_auth, require_admin, get_ecosystem_ids
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import get_ecosystem_ids
+from neos_agent.api.policy import can_administer_ecosystem
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.teams import (
     TeamCreateRequest,
     TeamMemberAddRequest,
@@ -26,6 +33,8 @@ from neos_agent.api.schemas.teams import (
 )
 
 logger = logging.getLogger(__name__)
+
+TEAM_MANAGE_DENIED = "Only a steward or administrator of this ecosystem can change its teams"
 
 
 # ---------------------------------------------------------------------------
@@ -54,24 +63,33 @@ def _team_to_schema(t: Team, member_count: int = 0) -> dict:
     ).model_dump(mode="json")
 
 
+async def _team_administrator(session, request: Request, ecosystem_id: uuid.UUID) -> Member:
+    """The caller's row in `ecosystem_id` when it may change that ecosystem's teams, else ApiError 403."""
+    caller = await caller_in(session, request, ecosystem_id)
+    if not can_administer_ecosystem(caller, ecosystem_id):
+        raise ApiError(403, TEAM_MANAGE_DENIED)
+    return caller
+
+
+async def _managed_team(session, request: Request, team_id: uuid.UUID) -> tuple[Team, Member]:
+    """A team in the caller's ecosystems (404 otherwise) and the caller's administering row there (403 otherwise)."""
+    team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+    return team, await _team_administrator(session, request, team.ecosystem_id)
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 
 @teams_api_bp.get("/")
+@authenticated
 async def list_teams(request: Request):
     """GET /api/v1/teams -- List teams in scope with member counts."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        stmt = select(Team).order_by(Team.name)
-        if eco_ids:
-            stmt = stmt.where(Team.ecosystem_id.in_(eco_ids))
+        stmt = restrict_to_ecosystems(select(Team).order_by(Team.name), Team, eco_ids)
 
         result = await session.execute(stmt)
         teams = result.scalars().all()
@@ -93,16 +111,13 @@ async def list_teams(request: Request):
 
 
 @teams_api_bp.post("/")
+@authenticated
 async def create_team(request: Request):
-    """POST /api/v1/teams -- Create a new team.
+    """POST /api/v1/teams -- Create a team in `ecosystem_id` (default: the first selected ecosystem).
 
     Accepts JSON: TeamCreateRequest
     Returns JSON: TeamSchema with 201 status.
     """
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = TeamCreateRequest(**body)
@@ -117,12 +132,13 @@ async def create_team(request: Request):
         ecosystem_id = eco_ids[0]
 
     async with request.app.ctx.db() as session:
+        caller = await _team_administrator(session, request, ecosystem_id)
         team = Team(
             id=uuid.uuid4(),
             ecosystem_id=ecosystem_id,
             name=create_req.name,
             description=create_req.description,
-            created_by=admin.id,
+            created_by=caller.id,
         )
         session.add(team)
         await session.commit()
@@ -132,12 +148,9 @@ async def create_team(request: Request):
 
 
 @teams_api_bp.put("/<team_id:uuid>")
+@authenticated
 async def update_team(request: Request, team_id: uuid.UUID):
     """PUT /api/v1/teams/:id -- Update non-None fields of a team."""
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = TeamUpdateRequest(**body)
@@ -145,9 +158,7 @@ async def update_team(request: Request, team_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     async with request.app.ctx.db() as session:
-        team = await session.get(Team, team_id)
-        if team is None:
-            return json({"error": "Team not found"}, status=404)
+        team, _ = await _managed_team(session, request, team_id)
 
         for field, value in update_req.model_dump(exclude_none=True).items():
             setattr(team, field, value)
@@ -164,16 +175,11 @@ async def update_team(request: Request, team_id: uuid.UUID):
 
 
 @teams_api_bp.delete("/<team_id:uuid>")
+@authenticated
 async def delete_team(request: Request, team_id: uuid.UUID):
     """DELETE /api/v1/teams/:id -- Delete a team and its memberships."""
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        team = await session.get(Team, team_id)
-        if team is None:
-            return json({"error": "Team not found"}, status=404)
+        team, _ = await _managed_team(session, request, team_id)
 
         memberships = (
             await session.execute(
@@ -190,13 +196,11 @@ async def delete_team(request: Request, team_id: uuid.UUID):
 
 
 @teams_api_bp.get("/<team_id:uuid>/members")
+@authenticated
 async def list_team_members(request: Request, team_id: uuid.UUID):
-    """GET /api/v1/teams/:id/members -- List a team's memberships."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
+    """GET /api/v1/teams/:id/members -- List a team's memberships (a team outside your ecosystems is 404)."""
     async with request.app.ctx.db() as session:
+        await get_scoped_or_404(session, request, Team, team_id, label="Team")
         stmt = (
             select(TeamMembership, Member.display_name)
             .join(Member, Member.id == TeamMembership.member_id)
@@ -221,16 +225,13 @@ async def list_team_members(request: Request, team_id: uuid.UUID):
 
 
 @teams_api_bp.post("/<team_id:uuid>/members")
+@authenticated
 async def add_team_member(request: Request, team_id: uuid.UUID):
-    """POST /api/v1/teams/:id/members -- Add a member to a team.
+    """POST /api/v1/teams/:id/members -- Add a member of the team's ecosystem to the team.
 
     Accepts JSON: TeamMemberAddRequest
     Returns JSON: TeamMemberSchema with 201 status. Idempotent if already a member.
     """
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         add_req = TeamMemberAddRequest(**body)
@@ -238,12 +239,10 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     async with request.app.ctx.db() as session:
-        team = await session.get(Team, team_id)
-        if team is None:
-            return json({"error": "Team not found"}, status=404)
+        team, _ = await _managed_team(session, request, team_id)
 
         member = await session.get(Member, add_req.member_id)
-        if member is None:
+        if member is None or member.ecosystem_id != team.ecosystem_id:
             return json({"error": "Member not found"}, status=404)
 
         existing = (
@@ -292,13 +291,11 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
 
 
 @teams_api_bp.delete("/<team_id:uuid>/members/<member_id:uuid>")
+@authenticated
 async def remove_team_member(request: Request, team_id: uuid.UUID, member_id: uuid.UUID):
     """DELETE /api/v1/teams/:id/members/:member_id -- Remove a member from a team."""
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
+        await _managed_team(session, request, team_id)
         tm = (
             await session.execute(
                 select(TeamMembership).where(

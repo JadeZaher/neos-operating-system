@@ -18,9 +18,12 @@ from sanic.request import Request
 from sanic.response import redirect
 from sqlalchemy import select
 
+from neos_agent.api.auth import (  # FX-Onboard: one placement path for every sign-in
+    consent_gate_payload, create_signup_member, existing_membership, signup_ecosystem,
+)
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie
-from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
+from neos_agent.db.models import AuthChallenge, AuthSession, User
 
 logger = logging.getLogger(__name__)
 
@@ -128,31 +131,17 @@ async def verify_challenge(request: Request):
             session.add(user)
             await session.flush()
 
-        # Find default ecosystem
-        eco_result = await session.execute(select(Ecosystem).limit(1))
-        ecosystem = eco_result.scalar_one_or_none()
-        if ecosystem is None:
-            return json({"error": "No ecosystem configured"}, status=500)
-
-        # Find or create Member for this user + ecosystem
-        member_result = await session.execute(
-            select(Member).where(
-                Member.user_id == user.id,
-                Member.ecosystem_id == ecosystem.id,
-            )
-        )
-        member = member_result.scalar_one_or_none()
-
+        # FX-Onboard (A3): the same placement as /api/v1/auth/verify, never an ACTIVE row in an arbitrary ecosystem.
+        consent_gate = {}
+        member = await existing_membership(session, user.id)
         if member is None:
-            member = Member(
-                user_id=user.id,
-                ecosystem_id=ecosystem.id,
-                member_id=f"did-{did[-12:]}",
-                display_name=display_name,
-                current_status="active",
+            ecosystem = await signup_ecosystem(session, settings)
+            if ecosystem is None:
+                return json({"error": "No ecosystem configured"}, status=500)
+            member, missing = await create_signup_member(
+                session, user=user, ecosystem=ecosystem, member_id=f"did-{did[-12:]}", display_name=display_name,
             )
-            session.add(member)
-            await session.flush()
+            consent_gate = consent_gate_payload(missing)
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -169,7 +158,7 @@ async def verify_challenge(request: Request):
 
     # Set signed session cookie
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
-    response = json({"success": True, "display_name": member.display_name})
+    response = json({"success": True, "display_name": member.display_name, **consent_gate})
     response.add_cookie(
         "neos_session",
         cookie_value,

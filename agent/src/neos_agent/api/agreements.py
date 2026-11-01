@@ -35,9 +35,12 @@ from neos_agent.db.models import (
 from .agreement_vocabulary import (
     AGREEMENT_STATUSES,
     AGREEMENT_TYPES,
+    SUNSET_NOTICE_DAYS,
     canonical_agreement_status,
     canonical_agreement_type,
+    default_review_date,
 )
+from neos_agent.services import dates
 from .errors import ApiError, get_scoped_or_404
 from .guards import authenticated, caller_in, reachable_ecosystem_ids
 from .helpers import get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_name_filter, build_search_filter, parse_pagination, serialize_shared_ecosystem_ids
@@ -153,7 +156,13 @@ def _agreement_to_list_item(a: Agreement) -> dict:
         review_date=a.review_date,
         sunset_date=a.sunset_date,
         created_at=a.created_at,
+        review_overdue=review_overdue(a),
     ).model_dump(mode="json")
+
+
+def review_overdue(a: Agreement, now: _dt.datetime | None = None) -> bool:
+    """The registry's visible flag: in force and its review date has passed (services/dates); it never invalidates it."""
+    return a.status in IN_FORCE_STATUSES and dates.date_passed(a.review_date, now)
 
 
 def _agreement_to_detail(a: Agreement) -> dict:
@@ -248,6 +257,7 @@ async def _agreement_detail_payload(db, agreement: Agreement, caller: Member | N
     payload["registered_from_proposal"] = await _registered_from_proposal(db, agreement)
     payload["caller_role"] = caller.role if caller else None
     payload["caller_can_conduct"] = can_conduct_agreement_ceremony(caller, agreement)
+    payload.update(_review_fields(agreement, caller))
     # "Propose a change": an in-force agreement changes only through a ratified amending proposal.
     payload["caller_can_propose_change"] = caller is not None and agreement.status in IN_FORCE_STATUSES
     if caller is None:
@@ -346,18 +356,136 @@ _AGREEMENT_TYPE_FOR_PROPOSAL = {"policy": "policy", "operational": "operational"
                                 "structural": "organizational"}
 
 
+# G-Maint: how an agreement review ends (framework agreement-review E.3-5); services/AGENTS.md "Maintenance and health".
+EDITABLE_STATUSES = ("draft", "advice")
+REVIEW_OUTCOMES = {"active": "renewed", "sunset": "sunset"}
+FINDINGS_REQUIRED = ("Write the review's findings (at least 8 characters): what the review found and why it "
+                     "ends this way.")
+REVIEW_DATE_INVALID = "The next review date must be a date (YYYY-MM-DD) later than today."
+ROLLBACK_IN_FORCE = "An agreement in force changes through a proposal (Propose a change), not a rollback."
+ROLLBACK_LOCKED = "Only a draft, or an agreement in its advice stage, can be rolled back."
+# The terms a rollback restores; never status, review_date or sunset_date (those move only through ceremonies).
+ROLLBACK_FIELDS = ("title", "text", "type", "proposer", "domain", "hierarchy_level", "affected_parties",
+                   "requires_explicit_consent", "prerequisite_scopes", "prerequisite_domain_ids", "alignment_points")
+
+
+def ends_review(agreement: Agreement, to: str | None) -> bool:
+    """`to` concludes a review in progress: renew (back in force) or sunset; its findings are the evidence (the
+    lifecycle table asks no gate of either move: api/AGENTS.md "Maintenance and health (G-Maint)")."""
+    return agreement.status == "under_review" and to in REVIEW_OUTCOMES
+
+
+# FX-Maint: one row lock for every surface (REST, MCP, chat) and the archive gate's own words; api/AGENTS.md
+# "Maintenance and health (G-Maint)" > "One move at a time".
+AGREEMENT_CHANGED = ("This agreement changed while you were acting: it is now {status}. Reload it to see what "
+                     "happened, then decide again.")
+
+
+def sunset_not_ended(agreement: Agreement) -> TransitionRefused:
+    """409 for archiving before the sunset's notice period has run."""
+    ends = agreement.sunset_date.isoformat() if agreement.sunset_date else None
+    return TransitionRefused(409, f"Its sunset runs until {ends}: it can be archived once that day has ended "
+                             "everywhere.", {"code": "SUNSET_NOT_ENDED", "sunset_date": ends})
+
+
+def gate_refusal(agreement: Agreement, move, gates: dict) -> TransitionRefused | None:
+    """Why `move`'s gate refuses it now (the sunset's end, or a declared ACT gate), else None."""
+    if move.gate is None or gates[move.gate]["met"]:
+        return None
+    if move.gate == "sunset_ended":
+        return sunset_not_ended(agreement)
+    return TransitionRefused(
+        409,
+        f"The {move.gate} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first",
+        {"gates": gates},
+    )
+
+
+async def lock_for_move(db, agreement: Agreement) -> None:
+    """Take the agreement row FOR UPDATE before a ceremony; 409 AGREEMENT_CHANGED when another move landed first."""
+    locked = await db.scalar(select(Agreement.status).where(Agreement.id == agreement.id).with_for_update())
+    if locked != agreement.status:
+        raise TransitionRefused(409, AGREEMENT_CHANGED.format(status=locked),
+                                {"code": "AGREEMENT_CHANGED", "status": locked})
+
+
+def review_outcome_refusal(agreement: Agreement, to: str | None, findings: str | None,
+                           next_review_date: _dt.date | None, now: _dt.datetime | None = None) -> TransitionRefused | None:
+    """Why ending this review would be refused (no findings, a next review date not after today), else None."""
+    if not ends_review(agreement, to):
+        return None
+    if len((findings or "").strip()) < 8:
+        return TransitionRefused(400, FINDINGS_REQUIRED, {"code": "FINDINGS_REQUIRED"})
+    if to == "active" and next_review_date is not None and next_review_date <= dates.aoe_today(now):
+        return TransitionRefused(400, REVIEW_DATE_INVALID, {"code": "REVIEW_DATE_INVALID"})
+    return None
+
+
+def sunset_ends_on(agreement: Agreement, now: _dt.datetime | None = None) -> _dt.date:
+    """When a sunset started now would end: the notice period from today, or a later date already set."""
+    notice_end = dates.aoe_today(now) + _dt.timedelta(days=SUNSET_NOTICE_DAYS)
+    return max(notice_end, agreement.sunset_date) if agreement.sunset_date else notice_end
+
+
+def parse_review_date(value) -> _dt.date | None:
+    """A next review date from a request (YYYY-MM-DD or empty); anything else is 400 REVIEW_DATE_INVALID."""
+    if value in (None, ""):
+        return None
+    try:
+        return _dt.date.fromisoformat(str(value).strip())
+    except ValueError:
+        raise ApiError(400, REVIEW_DATE_INVALID, {"code": "REVIEW_DATE_INVALID"}) from None
+
+
+def _review_fields(agreement: Agreement, caller: Member | None) -> dict:
+    """Detail fields for the review dialog and the registry flag (C1-C3)."""
+    reviewing = agreement.status == "under_review"
+    return {
+        "review_overdue": review_overdue(agreement),
+        "default_next_review_date": (default_review_date(agreement.type, dates.aoe_today()).isoformat()
+                                     if reviewing else None),
+        "sunset_ends_on": sunset_ends_on(agreement).isoformat() if reviewing else None,
+        "caller_can_rollback": agreement.status in EDITABLE_STATUSES and is_active_member_in(caller, agreement.ecosystem_id),
+    }
+
+
+def _record_review(db, agreement: Agreement, to: str, *, caller: Member, findings: str,
+                   next_review_date: _dt.date | None) -> None:
+    """Write the ReviewRecord for a finished review and move the dates: renew sets the next review, sunset its end."""
+    now = dates.utc_now()
+    due = agreement.review_date
+    if to == "active":
+        agreement.review_date = next_review_date or default_review_date(agreement.type, dates.aoe_today(now))
+    else:
+        agreement.sunset_date = sunset_ends_on(agreement, now)
+    db.add(ReviewRecord(
+        id=uuid.uuid4(), ecosystem_id=agreement.ecosystem_id, review_id=f"REV-{uuid.uuid4().hex[:8].upper()}",
+        agreement_id=agreement.id, agreement_version=agreement.version,
+        review_type="scheduled" if dates.date_passed(due, now) else "requested",
+        trigger=(f"Review date {due.isoformat()}" if due else "No review date was set"),
+        review_body={"conducted_by": caller.display_name, "member_id": str(caller.id)},
+        date=dates.utc_today(now),
+        evaluation={"findings": findings, "due_date": due.isoformat() if due else None,
+                    "on_time": None if due is None else not dates.date_passed(due, now)},
+        outcome=REVIEW_OUTCOMES[to],
+        next_review_date=agreement.review_date if to == "active" else None,
+    ))
+
+
 async def transition_agreement(db, agreement: Agreement, *, to: str | None = None, caller: Member | None,
-                               evidence: str | None = None) -> ActOutcome:
+                               evidence: str | None = None, next_review_date: _dt.date | None = None) -> ActOutcome:
     """Conduct the ceremony to `to` (steward rule, table, evidence, gate), then the automatic cascade.
 
     Shared by REST, MCP and the chat tool. Snapshots the version before each change and
     regenerates the fingerprint; the caller commits. Moves and gates:
-    services/act_gates.py AGREEMENT_LIFECYCLE.
+    services/act_gates.py AGREEMENT_LIFECYCLE. Ending a review (renew or sunset) needs findings
+    (`evidence`) and writes a ReviewRecord.
     """
     moved, minted = None, None
     if to is not None:
         if not can_conduct_agreement_ceremony(caller, agreement):
             raise TransitionRefused(403, CEREMONY_DENIED)
+        await lock_for_move(db, agreement)
         move = AGREEMENT_LIFECYCLE.manual_move(agreement.status, to)
         if move is None:
             raise TransitionRefused(
@@ -366,16 +494,16 @@ async def transition_agreement(db, agreement: Agreement, *, to: str | None = Non
                 {"allowed": AGREEMENT_LIFECYCLE.manual_targets(agreement.status)},
             )
         evidence = (evidence or "").strip()
+        refusal = review_outcome_refusal(agreement, to, evidence, next_review_date)
+        if refusal is not None:
+            raise refusal
+        concludes_review = ends_review(agreement, to)
         if to in EVIDENCED_CEREMONIES and len(evidence) < 8:
             raise TransitionRefused(400, f"Documented evidence is required for the {to} ceremony")
         if move.gate is not None:
-            gates = await agreement_gate_status(db, agreement)
-            if not gates[move.gate]["met"]:
-                raise TransitionRefused(
-                    409,
-                    f"The {move.gate} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first",
-                    {"gates": gates},
-                )
+            refused = gate_refusal(agreement, move, await agreement_gate_status(db, agreement))
+            if refused is not None:
+                raise refused
         db.add(_snapshot_agreement(
             agreement,
             change_reason=f"Status transition: {agreement.status} -> {to}",
@@ -383,6 +511,8 @@ async def transition_agreement(db, agreement: Agreement, *, to: str | None = Non
         ))
         moved = f"{agreement.status}->{to}"
         minted = await apply_agreement_move(db, agreement, move, caller=caller, evidence=evidence)
+        if concludes_review:
+            _record_review(db, agreement, to, caller=caller, findings=evidence, next_review_date=next_review_date)
         _regenerate_fingerprint(agreement)
 
     outcome = await advance_agreement(db, agreement, caller=caller)
@@ -503,9 +633,9 @@ async def create_agreement(request: Request):
             text=create_req.text,
             hierarchy_level=create_req.hierarchy_level,
             affected_parties=create_req.affected_parties,
-            review_date=create_req.review_date,
+            review_date=create_req.review_date or default_review_date(create_req.type, dates.aoe_today()),
             sunset_date=create_req.sunset_date,
-            created_date=_dt.date.today(),
+            created_date=dates.utc_today(),
             requires_explicit_consent=create_req.requires_explicit_consent,
             prerequisite_scopes=create_req.prerequisite_scopes,
             prerequisite_domain_ids=[str(domain_id) for domain_id in create_req.prerequisite_domain_ids],
@@ -547,7 +677,7 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
         if not is_active_member_in(actor, agreement.ecosystem_id):
             raise ApiError(403, "Only an active ecosystem member may edit an agreement")
 
-        if agreement.status not in {"draft", "advice"}:
+        if agreement.status not in EDITABLE_STATUSES:
             raise ApiError(409, "Only draft or advice agreements can be edited; reopen governance before changing agreement terms.")
 
         if update_req.prerequisite_domain_ids is not None:
@@ -609,6 +739,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         new_status = canonical_agreement_status(new_status)
     except ValueError as exc:
         raise ApiError(400, str(exc)) from None
+    next_review_date = parse_review_date(body.get("next_review_date"))
 
     async with request.app.ctx.db() as db:
         agreement = await get_scoped_or_404(
@@ -618,6 +749,7 @@ async def status_transition(request: Request, agreement_id: uuid.UUID):
         old_status = agreement.status
         outcome = await transition_agreement(
             db, agreement, to=new_status, caller=actor, evidence=body.get("evidence"),
+            next_review_date=next_review_date,
         )
         await db.commit()
         await db.refresh(agreement)
@@ -729,9 +861,9 @@ async def record_member_consent(db, agreement: Agreement, actor: Member, attesta
         pending = await missing_agreement_consents(
             db, actor.id, agreement.ecosystem_id, "ecosystem"
         )
-        if not pending:
-            actor.current_status = "active"
-            actor.onboarding_status = "complete"
+        if not pending:  # G-Onboard: consent activates (owner decision), recorded as one transition
+            from neos_agent.services.member_lifecycle import CONSENT_ACTIVATED, record_transition
+            record_transition(db, actor, "active", trigger=CONSENT_ACTIVATED, notes=f"Consented to {agreement.title}")
     return consent
 
 
@@ -774,7 +906,7 @@ async def register_ratified_proposal(db, proposal: Proposal, *, caller: Member |
             id=uuid.uuid4(), ecosystem_id=agreement.ecosystem_id,
             amendment_id=f"AMD-{uuid.uuid4().hex[:8].upper()}", parent_agreement_id=agreement.id,
             parent_agreement_version=previous_version, amendment_type="proposal",
-            proposed_by=proposal.proposer, date=_dt.date.today(),
+            proposed_by=proposal.proposer, date=dates.utc_today(),
             changes={"proposal_id": proposal.proposal_id, "text": {"from": previous_text, "to": text}},
             rationale=proposal.rationale, act_level_used="act-process",
             new_agreement_version=agreement.version, status="ratified",
@@ -787,8 +919,9 @@ async def register_ratified_proposal(db, proposal: Proposal, *, caller: Member |
             agreement_id=f"AGR-{uuid.uuid4().hex[:8].upper()}",
             type=_AGREEMENT_TYPE_FOR_PROPOSAL.get(proposal.type, "policy"), title=proposal.title,
             version="1.0", status="active", proposer=proposal.proposer, domain=proposal.affected_domain,
-            text=text, hierarchy_level="domain", created_date=_dt.date.today(),
-            ratification_date=_dt.date.today(), requires_explicit_consent=True, prerequisite_scopes=[],
+            text=text, hierarchy_level="domain", created_date=dates.utc_today(),
+            ratification_date=dates.utc_today(), requires_explicit_consent=True, prerequisite_scopes=[],
+            review_date=default_review_date(_AGREEMENT_TYPE_FOR_PROPOSAL.get(proposal.type, "policy"), dates.aoe_today()),
             prerequisite_domain_ids=[], alignment_points=5, act_policy=policy,
         )
         _regenerate_fingerprint(agreement)
@@ -897,9 +1030,10 @@ async def withdraw_agreement_consent(request: Request, agreement_id: uuid.UUID):
         pending = await missing_agreement_consents(
             db, actor.id, agreement.ecosystem_id, "ecosystem"
         )
-        if pending:
-            actor.current_status = "pending_consent"
-            actor.onboarding_status = "agreement_consent_required"
+        if pending:  # G-Onboard: withdrawing a membership consent demotes (owner default), recorded as one transition
+            from neos_agent.services.member_lifecycle import CONSENT_WITHDRAWN, record_transition
+            record_transition(db, actor, "pending_consent", trigger=CONSENT_WITHDRAWN,
+                              notes=f"Withdrew consent to {agreement.title}")
         await db.commit()
         await db.refresh(agreement)
         return json(await _agreement_detail_payload(db, agreement, actor))
@@ -913,10 +1047,11 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
     Returns JSON: AgreementHistoryResponse
     """
     async with request.app.ctx.db() as db:
-        await get_scoped_or_404(
+        agreement = await get_scoped_or_404(
             db, request, Agreement, agreement_id, label="Agreement",
             ecosystem_ids=await _consent_gate_scope(db, request),
         )
+        can_rollback = _review_fields(agreement, await caller_in(db, request, agreement.ecosystem_id))["caller_can_rollback"]
 
         amend_result = await db.execute(
             select(AmendmentRecord)
@@ -967,6 +1102,10 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
                 outcome=r.outcome,
                 next_review_date=r.next_review_date,
                 created_at=r.created_at,
+                agreement_version=r.agreement_version,
+                findings=(r.evaluation or {}).get("findings") if isinstance(r.evaluation, dict) else None,
+                conducted_by=(r.review_body or {}).get("conducted_by") if isinstance(r.review_body, dict) else None,
+                on_time=(r.evaluation or {}).get("on_time") if isinstance(r.evaluation, dict) else None,
             )
             for r in reviews
         ],
@@ -995,19 +1134,17 @@ async def get_history(request: Request, agreement_id: uuid.UUID):
         ],
     )
 
-    return json(response.model_dump(mode="json"))
+    return json({**response.model_dump(mode="json"), "caller_can_rollback": can_rollback})
 
 
 @agreements_api_bp.post("/<agreement_id:uuid>/rollback/<version_id:uuid>")
 @authenticated
 async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_id: uuid.UUID):
-    """POST /api/v1/agreements/:id/rollback/:version_id -- restore agreement to a previous version.
+    """POST /api/v1/agreements/:id/rollback/:version_id -- restore an earlier draft's terms.
 
-    Requires an active membership in the agreement's ecosystem. Status rollback
-    is restricted: the restored status must be the current one or a manual
-    move from it (AGREEMENT_LIFECYCLE). Content fields are always restored.
-
-    Creates a snapshot of the current state, then restores from the specified version.
+    Only where editing is allowed (draft or advice, by an active member there); an agreement in
+    force changes through a proposal, so anything else is 409 ROLLBACK_LOCKED. Restores the terms,
+    never the status, review date or sunset date; the version moves forward only when title or text changes.
     Returns JSON: AgreementDetail
     """
     async with request.app.ctx.db() as db:
@@ -1016,7 +1153,10 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         )
         actor = await caller_in(db, request, agreement.ecosystem_id)
         if not is_active_member_in(actor, agreement.ecosystem_id):
-            raise ApiError(403, "Insufficient permissions: rollback requires active/steward/co_creator status")
+            raise ApiError(403, "Only an active ecosystem member may roll back an agreement draft")
+        if agreement.status not in EDITABLE_STATUSES:
+            message = ROLLBACK_IN_FORCE if agreement.status in IN_FORCE_STATUSES else ROLLBACK_LOCKED
+            raise ApiError(409, message, {"code": "ROLLBACK_LOCKED"})
 
         target_version = (await db.execute(
             select(AgreementVersion).where(
@@ -1027,47 +1167,23 @@ async def rollback_agreement(request: Request, agreement_id: uuid.UUID, version_
         if target_version is None:
             raise ApiError(404, "Version not found")
 
-        # Validate status rollback: only allow if same status or a manual move from it
-        if target_version.status != agreement.status:
-            if target_version.status not in AGREEMENT_LIFECYCLE.manual_targets(agreement.status):
-                raise ApiError(
-                    400,
-                    f"Cannot rollback to status '{target_version.status}' from current '{agreement.status}'. Invalid transition.",
-                )
-
         db.add(_snapshot_agreement(
             agreement,
             change_reason=f"Rollback to version {target_version.version}",
             changed_by=actor.display_name,
         ))
 
-        # Restore fields from target version
-        agreement.status = target_version.status
-        agreement.title = target_version.title
-        agreement.text = target_version.text
-        agreement.type = target_version.type
-        agreement.proposer = target_version.proposer
-        agreement.domain = target_version.domain
-        agreement.hierarchy_level = target_version.hierarchy_level
-        agreement.affected_parties = target_version.affected_parties
-        agreement.review_date = target_version.review_date
-        agreement.sunset_date = target_version.sunset_date
-        agreement.ratification_date = target_version.ratification_date
-        agreement.requires_explicit_consent = target_version.requires_explicit_consent
-        agreement.prerequisite_scopes = target_version.prerequisite_scopes
-        agreement.prerequisite_domain_ids = target_version.prerequisite_domain_ids
-        agreement.alignment_points = target_version.alignment_points
-
-        # Bump version (don't restore old version number — always move forward)
-        _bump_version(agreement)
+        text_changed = any(getattr(target_version, field) != getattr(agreement, field) for field in VERSIONED_FIELDS)
+        for field in ROLLBACK_FIELDS:
+            setattr(agreement, field, getattr(target_version, field))
+        if text_changed:
+            _bump_version(agreement)
         _regenerate_fingerprint(agreement)
         await synchronize_agreement_requirements(db, agreement)
 
         await db.commit()
-        await db.refresh(agreement)
 
         logger.info("Agreement %s rolled back to version %s by %s", agreement_id, target_version.version, actor.display_name)
 
         agreement = await _reload_for_detail(db, agreement.id)
-
-    return json(_agreement_to_detail(agreement))
+        return json(await _agreement_detail_payload(db, agreement, actor))

@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false as sa_false,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -59,6 +60,8 @@ class GovernanceHealthAudit(TimestampMixin, Base):
     structured_recommendations: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     trigger_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     next_audit_due: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    # G-Maint: recorded by a steward of the audited ecosystem because nobody else could (policy.can_record_audit).
+    self_assessment: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa_false())
 
 
 # ========================

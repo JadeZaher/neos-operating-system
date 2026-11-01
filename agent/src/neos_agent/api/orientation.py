@@ -25,11 +25,62 @@ from neos_agent.db.models import (
     UserJourneyProgress,
 )
 
-from .guards import authenticated, caller_in, caller_in_or_join_required
+from .errors import ApiError
+from .guards import JOIN_REQUIRED, authenticated, caller_in, caller_in_or_join_required
+from .policy import can_manage_onboarding
 
 logger = logging.getLogger(__name__)
 
 orientation_api_bp = Blueprint("orientation_api", url_prefix="/api/v1/orientation")
+
+ORIENTATION_STEWARDS_ONLY = "Only an active steward of this ecosystem can change its orientation"
+GLOBAL_JOURNEY_LOCKED = "This journey belongs to no ecosystem, so no ecosystem's steward can change it"
+PROGRESS_STATUSES = ("in_progress", "complete", "opted_out")
+
+
+async def _require_onboarding_steward(db, request: Request, ecosystem_id: uuid.UUID) -> Member:
+    """The caller's row when they may change this ecosystem's orientation (policy.can_manage_onboarding), else 403."""
+    caller = await caller_in(db, request, ecosystem_id)
+    if not can_manage_onboarding(caller, ecosystem_id):
+        raise ApiError(403, ORIENTATION_STEWARDS_ONLY)
+    return caller
+
+
+async def _steward_map_or_error(db, request: Request, journey_map_id: uuid.UUID) -> JourneyMap:
+    """A journey map the caller may change: 404 missing, 403 global (no ecosystem) or not a steward of its ecosystem."""
+    jm = await db.get(JourneyMap, journey_map_id)
+    if jm is None:
+        raise ApiError(404, "Journey map not found")
+    if jm.ecosystem_id is None:
+        raise ApiError(403, GLOBAL_JOURNEY_LOCKED)
+    await _require_onboarding_steward(db, request, jm.ecosystem_id)
+    return jm
+
+
+def _require_orienting_member(member: Member) -> None:
+    """Orientation is for active members and newcomers; a leaver joins again first, a paused membership waits."""
+    if member.current_status == "exited":
+        raise ApiError(409, "Join this ecosystem again to begin its orientation", {"code": JOIN_REQUIRED})
+    if member.current_status not in ("active", "pending_consent"):
+        raise ApiError(403, "Your membership here is paused, so your orientation cannot be saved right now")
+
+
+async def _validate_progress_body(db, ecosystem_id: uuid.UUID, body: dict) -> None:
+    """The journey is this ecosystem's and active; status and step are from the known vocabulary (review L3)."""
+    if "status" in body and body["status"] not in PROGRESS_STATUSES:
+        raise ApiError(400, "Unknown orientation status", {"allowed": list(PROGRESS_STATUSES)})
+    if "current_step" in body and (isinstance(body["current_step"], bool) or not isinstance(body["current_step"], int)
+                                   or body["current_step"] < 0):
+        raise ApiError(400, "current_step must be a whole number from 0")
+    if body.get("journey_map_id"):
+        try:
+            map_id = uuid.UUID(str(body["journey_map_id"]))
+        except ValueError:
+            raise ApiError(400, "journey_map_id is not a valid id") from None
+        jm = await db.get(JourneyMap, map_id)
+        if jm is None or jm.ecosystem_id != ecosystem_id or not jm.is_active:
+            raise ApiError(400, "That journey is not part of this ecosystem's orientation", {"field": "journey_map_id"})
+        body["journey_map_id"] = map_id
 
 
 # --- Endpoints ---
@@ -197,6 +248,7 @@ async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
             return json({"error": "Ecosystem not found"}, status=404)
+        await _require_onboarding_steward(db, request, ecosystem_id)
 
         jm = JourneyMap(
             id=uuid.uuid4(),
@@ -231,13 +283,13 @@ async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
 @orientation_api_bp.put("/journey-maps/<journey_map_id:uuid>")
 @authenticated
 async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
-    """PUT -- Update an existing journey map."""
+    """PUT -- Update an existing journey map (an active steward of its ecosystem)."""
     body = request.json or {}
+    if "content_sequence" in body and not isinstance(body["content_sequence"], list):
+        return json({"error": "content_sequence must be a list"}, status=400)
 
     async with request.app.ctx.db() as db:
-        jm = await db.get(JourneyMap, journey_map_id)
-        if jm is None:
-            return json({"error": "Journey map not found"}, status=404)
+        jm = await _steward_map_or_error(db, request, journey_map_id)
 
         if "title" in body:
             jm.title = body["title"]
@@ -275,18 +327,15 @@ async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
 @orientation_api_bp.delete("/journey-maps/<journey_map_id:uuid>")
 @authenticated
 async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
-    """DELETE -- Delete a journey map."""
+    """DELETE -- Delete a journey map nobody has walked; one with members' progress is deactivated instead (409)."""
     async with request.app.ctx.db() as db:
-        jm = await db.get(JourneyMap, journey_map_id)
-        if jm is None:
-            return json({"error": "Journey map not found"}, status=404)
-
-        # Delete associated progress records first
-        await db.execute(
-            sa_delete(UserJourneyProgress).where(
-                UserJourneyProgress.journey_map_id == journey_map_id
-            )
+        jm = await _steward_map_or_error(db, request, journey_map_id)
+        walked = await db.scalar(
+            select(func.count(UserJourneyProgress.id)).where(UserJourneyProgress.journey_map_id == journey_map_id)
         )
+        if walked:  # deleting would erase members' progress
+            raise ApiError(409, "Members have progress on this journey. Deactivate it instead.",
+                           {"code": "JOURNEY_IN_USE", "progress_count": walked})
         await db.delete(jm)
         await db.commit()
 
@@ -296,11 +345,9 @@ async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
 @orientation_api_bp.post("/journey-maps/<journey_map_id:uuid>/deactivate")
 @authenticated
 async def deactivate_journey_map(request: Request, journey_map_id: uuid.UUID):
-    """POST -- Soft-delete a journey map by setting is_active=False."""
+    """POST -- Soft-delete a journey map by setting is_active=False (an active steward of its ecosystem)."""
     async with request.app.ctx.db() as db:
-        jm = await db.get(JourneyMap, journey_map_id)
-        if jm is None:
-            return json({"error": "Journey map not found"}, status=404)
+        jm = await _steward_map_or_error(db, request, journey_map_id)
 
         jm.is_active = False
         await db.commit()
@@ -374,22 +421,26 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
             db, request, ecosystem_id,
             not_found="Ecosystem not found", join_message="Join this ecosystem to begin its orientation",
         )
+        _require_orienting_member(member)
+        await _validate_progress_body(db, ecosystem_id, body)
 
-        # Find existing progress
+        # Find existing progress (locked: a step save is a read-modify-write of completed_steps)
         stmt = select(UserJourneyProgress).where(
             and_(
                 UserJourneyProgress.member_id == member.id,
                 UserJourneyProgress.ecosystem_id == ecosystem_id,
             )
-        )
+        ).order_by(UserJourneyProgress.created_at.desc()).with_for_update()
         result = await db.execute(stmt)
         progress = result.scalars().first()
+        if progress is None and not body.get("journey_map_id"):
+            raise ApiError(400, "Choose a journey to begin", {"field": "journey_map_id"})
 
         now = datetime.utcnow()
 
         if progress:
             # Update existing
-            if "journey_map_id" in body:
+            if body.get("journey_map_id"):  # FX-Onboard A11: a null keeps the journey (NOT NULL column, was a 500)
                 progress.journey_map_id = body["journey_map_id"]
             if "current_step" in body:
                 progress.current_step = body["current_step"]

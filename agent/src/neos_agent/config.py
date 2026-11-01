@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     # (created_at, then founded_date). Set it in every deployment; see api/AGENTS.md "Sign-up placement".
     SIGNUP_DEFAULT_ECOSYSTEM_SLUG: str = ""
 
+    # The platform home ecosystem's id (a UUID); overrides the pinned app_settings row
+    # "platform_home_ecosystem_id". See api/AGENTS.md "Platform admin (G-Authority)".
+    PLATFORM_HOME_ECOSYSTEM_ID: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

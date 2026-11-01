@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 # Cron interval in seconds. Kept as a constant so tests / staging can
-# override it. The auto-revert sweep relies on the parent loop ordering
-# below: deadlines first, then maintenance, then emergencies, so a slow
-# deadline scan cannot indefinitely starve the emergency revert sweep.
+# override it. "Due" (reviews, audits, deadlines) is derived per request by
+# services/next_steps, never by a job: the log-only deadline and compliance
+# scans were deleted (G-Maint); only maintenance and the emergency sweep run.
 CRON_INTERVAL_SECONDS = 3600
 
 
@@ -19,40 +19,13 @@ async def run_cron_loop(app):
     while True:
         try:
             await asyncio.sleep(CRON_INTERVAL_SECONDS)
-            await _check_deadlines(app)
             await _cleanup_expired_sessions(app)
-            await _check_compliance_regen(app)
             await _auto_revert_emergencies(app)
         except asyncio.CancelledError:
             logger.info("Cron service stopping")
             break
         except Exception:
             logger.exception("Cron job error")
-
-
-async def _check_deadlines(app):
-    """Check for upcoming governance deadlines and send notifications."""
-    from sqlalchemy import select
-    from neos_agent.db.models import Agreement
-    now = datetime.now(timezone.utc).date()
-    week_ahead = now + timedelta(days=7)
-    try:
-        async with app.ctx.db() as session:
-            result = await session.execute(
-                select(Agreement).where(
-                    Agreement.review_date.between(now, week_ahead),
-                    Agreement.status.in_(["active", "under_review"]),
-                )
-            )
-            due_agreements = result.scalars().all()
-            for agr in due_agreements:
-                days_until = (agr.review_date - now).days
-                if days_until <= 1:
-                    logger.info("Agreement review due tomorrow: %s", agr.title)
-                elif days_until <= 7:
-                    logger.info("Agreement review due in %d days: %s", days_until, agr.title)
-    except Exception:
-        logger.exception("Deadline check failed")
 
 
 async def _cleanup_expired_sessions(app):
@@ -79,32 +52,6 @@ async def _cleanup_expired_sessions(app):
             await session.commit()
     except Exception:
         logger.exception("Session cleanup failed")
-
-
-async def _check_compliance_regen(app):
-    """Regenerate compliance summaries older than 30 days."""
-    from sqlalchemy import select
-    from neos_agent.db.models import ComplianceSummary, Ecosystem
-    threshold = datetime.now(timezone.utc) - timedelta(days=30)
-    try:
-        async with app.ctx.db() as session:
-            result = await session.execute(select(Ecosystem.id))
-            ecosystem_ids = [r[0] for r in result.all()]
-            for eco_id in ecosystem_ids:
-                latest = await session.execute(
-                    select(ComplianceSummary)
-                    .where(ComplianceSummary.ecosystem_id == eco_id)
-                    .order_by(ComplianceSummary.generated_at.desc())
-                    .limit(1)
-                )
-                summary = latest.scalar_one_or_none()
-                generated_at = summary.generated_at if summary else None
-                if generated_at is not None and generated_at.tzinfo is None:
-                    generated_at = generated_at.replace(tzinfo=timezone.utc)
-                if generated_at is None or generated_at < threshold:
-                    logger.info("Compliance summary stale for ecosystem %s -- regeneration needed", eco_id)
-    except Exception:
-        logger.exception("Compliance regen check failed")
 
 
 async def _auto_revert_emergencies(app):

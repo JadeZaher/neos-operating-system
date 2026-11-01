@@ -15,7 +15,7 @@ import datetime as _dt
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import aliased
 
 from neos_agent.api.schemas.messaging import (
@@ -24,14 +24,16 @@ from neos_agent.api.schemas.messaging import (
 )
 from neos_agent.db.models import (
     Conversation,
+    ConversationLink,
     ConversationParticipant,
     Member,
     Message,
 )
 from neos_agent.api.errors import ApiError
 from neos_agent.api.guards import authenticated, caller_in
-from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
+from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_ids, parse_pagination
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.services.exchange import SHARE_NEED_LINK
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,22 @@ async def _get_current_member_ids(
         stmt = stmt.where(Member.ecosystem_id.in_(eco_ids))
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def _active_member_ids(session, request: Request) -> list[uuid.UUID]:
+    """The caller's rows in every ecosystem where they are ACTIVE: what opening, reading and sending one
+    conversation checks (participation, whatever the header selection; api/AGENTS.md "Messaging scope (FX-Exchange)")."""
+    return await _get_current_member_ids(session, request.ctx.member, get_authorized_ecosystem_ids(request))
+
+
+def _listed_participation(selected_ids: list[uuid.UUID], active_ids: list[uuid.UUID]):
+    """The list's rule: conversations of the rows in the header selection, plus every answer to a post (a
+    `share_need` ConversationLink) through any active row, so the queue item, the badge and the list agree."""
+    answers = select(ConversationLink.conversation_id).where(ConversationLink.entity_type == SHARE_NEED_LINK)
+    return or_(
+        ConversationParticipant.member_id.in_(selected_ids),
+        and_(ConversationParticipant.member_id.in_(active_ids), ConversationParticipant.conversation_id.in_(answers)),
+    )
 
 
 async def _load_participants(session, conversation_id: uuid.UUID) -> list[ParticipantSummary]:
@@ -142,14 +160,17 @@ async def list_conversations(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        selected_ids = await _get_current_member_ids(session, member, eco_ids)
+        active_ids = await _active_member_ids(session, request)
+        # The user's own rows: their messages are never unread to them, whichever row sent them.
+        member_ids = list(dict.fromkeys([*selected_ids, *active_ids]))
         if not member_ids:
             return json({"conversations": []})
 
-        # Get conversation ids for ALL of the user's member rows (one per ecosystem)
+        # The selection's conversations plus every answer to the user's posts (or their answers to others').
         cp_stmt = (
             select(ConversationParticipant.conversation_id, ConversationParticipant.last_read_at)
-            .where(ConversationParticipant.member_id.in_(member_ids))
+            .where(_listed_participation(selected_ids, active_ids))
         )
         cp_result = await session.execute(cp_stmt)
         participant_rows = cp_result.all()
@@ -233,15 +254,12 @@ async def get_conversation(request: Request, conversation_id: uuid.UUID):
 
     Returns JSON: ConversationDetailSchema
     """
-    member = request.ctx.member
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        member_ids = await _active_member_ids(session, request)
         if not member_ids:
             raise ApiError(404, "Member not found")
 
-        # Verify participation via any of the user's member rows
+        # Verify participation via any of the user's active rows (not only the selected ecosystems')
         participant_check = await session.execute(
             select(ConversationParticipant.id)
             .where(ConversationParticipant.conversation_id == conversation_id)
@@ -403,14 +421,12 @@ async def send_message(request: Request, conversation_id: uuid.UUID):
     if len(content) > 10_000:
         raise ApiError(400, "Message too long (max 10000 chars)")
 
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        member_ids = await _active_member_ids(session, request)
         if not member_ids:
             raise ApiError(404, "Member not found")
 
-        # Verify participation and resolve WHICH of the user's member rows is in this conversation
+        # Verify participation and resolve WHICH of the user's active rows is in this conversation
         participant_row = (await session.execute(
             select(ConversationParticipant.member_id)
             .where(ConversationParticipant.conversation_id == conversation_id)
@@ -485,13 +501,10 @@ async def list_messages(request: Request, conversation_id: uuid.UUID):
     Query params: page (default 1), per_page (default 50)
     Returns JSON: {"messages": [MessageSchema], "total": N}
     """
-    member = request.ctx.member
     page = parse_pagination(request, default=50)
 
-    eco_ids = get_ecosystem_ids(request)
-
     async with request.app.ctx.db() as session:
-        member_ids = await _get_current_member_ids(session, member, eco_ids)
+        member_ids = await _active_member_ids(session, request)
         if not member_ids:
             raise ApiError(404, "Member not found")
 
@@ -560,14 +573,15 @@ async def search_messages(request: Request):
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
-        member_ids = await _get_current_member_ids(session, member, eco_ids)
-        if not member_ids:
+        selected_ids = await _get_current_member_ids(session, member, eco_ids)
+        active_ids = await _active_member_ids(session, request)
+        if not selected_ids and not active_ids:
             return json({"messages": []})
 
-        # Get conversation ids the member participates in
+        # The conversations the list shows
         conv_ids_stmt = (
             select(ConversationParticipant.conversation_id)
-            .where(ConversationParticipant.member_id.in_(member_ids))
+            .where(_listed_participation(selected_ids, active_ids))
         )
         conv_ids_result = await session.execute(conv_ids_stmt)
         conv_ids = [row[0] for row in conv_ids_result.all()]

@@ -63,6 +63,7 @@ from neos_agent.db.models import (
     TestReport,
     TestSuccessCriterion,
 )
+from neos_agent.services import dates
 from neos_agent.services.agreement_consent import agreement_consent_summary
 
 logger = logging.getLogger(__name__)
@@ -168,8 +169,8 @@ AGREEMENT_LIFECYCLE = Lifecycle(
         Move("test", "active", gate="test", automatic=True),
         Move("active", "under_review"),
         Move("under_review", "sunset"),
-        Move("under_review", "active", gate="test"),
-        Move("sunset", "archived"),
+        Move("under_review", "active"),  # FX-Maint: a review ends on its findings, never a re-test
+        Move("sunset", "archived", gate="sunset_ended"),  # FX-Maint: only once the 60-day notice has run
     ),
 )
 
@@ -457,7 +458,7 @@ async def transition_proposal(session, proposal: Proposal, *, to: str | None = N
                 f"Invalid transition from '{proposal.status}' to '{to}'",
                 {"allowed": PROPOSAL_LIFECYCLE.manual_targets(proposal.status)},
             )
-        refusal = move_authority_refusal(proposal, move, caller, today=_dt.date.today())
+        refusal = move_authority_refusal(proposal, move, caller, today=dates.aoe_today())
         if refusal is not None:
             raise refusal
         note = (note or "").strip() or None
@@ -614,7 +615,7 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
             "required_rounds": min_rounds,
             # Backstop, never a move: the proposer is prompted to close advice once it passes.
             "deadline": deadline.isoformat() if deadline else None,
-            "deadline_passed": bool(deadline and deadline < _dt.date.today()),
+            "deadline_passed": dates.date_passed(deadline),
         },
         "consent": {
             "met": consent_met,
@@ -774,7 +775,7 @@ def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None, 
     """
     if not can_manage_proposal(caller, proposal):
         return []
-    today = today or _dt.date.today()
+    today = today or dates.aoe_today()
     moves = []
     for target in PROPOSAL_LIFECYCLE.manual_targets(proposal.status):
         move = PROPOSAL_LIFECYCLE.manual_move(proposal.status, target)
@@ -967,6 +968,11 @@ async def agreement_gate_status(session, agreement: Agreement) -> dict:
             "declared_cases": declared_cases,
             "evidence": test_evidence,
             "required_evidence": required_evidence,
+        },
+        # FX-Maint: archiving waits for the sunset's end (services/dates); a legacy sunset with no date never blocks.
+        "sunset_ended": {
+            "met": agreement.sunset_date is None or dates.date_passed(agreement.sunset_date),
+            "sunset_date": agreement.sunset_date.isoformat() if agreement.sunset_date else None,
         },
     }
     gates["complete"] = advice_met and consent_met and test_met

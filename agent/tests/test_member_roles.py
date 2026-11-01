@@ -343,10 +343,11 @@ async def test_status_transition_requires_mod():
 
 @pytest.mark.asyncio
 async def test_status_transition_as_mod_ok():
+    # G-Onboard: moves come from policy.MEMBER_MOVES; active -> inactive is not one (active -> suspended is).
     app = _create_app(M_MOD, U_MOD, role="mod")
     engine = await _db(app)
     _, resp = await app.asgi_client.post(
-        f"/api/v1/members/{M_TARGET}/status", json={"status": "inactive"})
+        f"/api/v1/members/{M_TARGET}/status", json={"status": "suspended"})
     assert resp.status == 200, resp.text
-    assert resp.json["current_status"] == "inactive"
+    assert resp.json["current_status"] == "suspended"
     await engine.dispose()

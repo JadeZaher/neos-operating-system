@@ -21,6 +21,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
+    Ecosystem,
     Member,
     MemberOnboarding,
     MemberStatusTransition,
@@ -47,6 +48,9 @@ from neos_agent.api.policy import (
     is_steward,
 )
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.services.member_lifecycle import JOINED, caller_member_moves, move_member, place_member  # G-Onboard
+from neos_agent.services.member_lifecycle import PROFILE_GRANT, ROLE_GRANT, grant_record  # FX-Onboard
+from neos_agent.api.policy import can_read_onboarding_record  # FX-Onboard
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
     MemberRole,
@@ -183,8 +187,8 @@ PROFILE_GRANT_ONLY = ("Co-creator and builder profiles carry administration righ
                       "yourself: an owner of the ecosystem grants them")
 PROFILE_GRANT_DENIED = ("Only someone who could make this member an admin (an owner, or the founder before there "
                         "is one) can change their profile, and never their own")
-ROLE_GRANT_TRIGGER = "role_grant"
-PROFILE_GRANT_TRIGGER = "profile_grant"
+ROLE_GRANT_TRIGGER = ROLE_GRANT  # one spelling with member_lifecycle (an exit's reset is recorded the same way)
+PROFILE_GRANT_TRIGGER = PROFILE_GRANT
 _ROLE_PREFIX = "role:"
 _PROFILE_PREFIX = "profile:"
 # Recorded grants shown as the member's role history: trigger -> (kind, status prefix).
@@ -212,11 +216,7 @@ async def _bootstrap_context(session, ecosystem_id: uuid.UUID) -> dict:
 
 def _grant_record(member: Member, actor: Member, trigger: str, old: str | None, new: str | None) -> MemberStatusTransition:
     """A recorded role or profile grant; the granter is stored by member id and named when read."""
-    prefix = _GRANT_KINDS[trigger][1]
-    return MemberStatusTransition(
-        id=uuid.uuid4(), member_id=member.id, date=_dt.date.today(), trigger=trigger, actor_member_id=actor.id,
-        from_status=f"{prefix}{old or ''}"[:_STATUS_LENGTH], to_status=f"{prefix}{new or ''}"[:_STATUS_LENGTH],
-    )
+    return grant_record(member, trigger, old, new, actor=actor)
 
 
 async def _role_history(session, member_id: uuid.UUID) -> list[dict]:
@@ -250,12 +250,17 @@ async def _role_history(session, member_id: uuid.UUID) -> list[dict]:
 async def list_members(request: Request):
     """GET /api/v1/members -- Paginated member list with filtering.
 
-    Query params: status, profile, q (search display_name/member_id),
+    Query params: status, profile, q (search display_name/member_id), joined_since (YYYY-MM-DD),
     page (default 1), per_page (default 25, max 100).
     """
     eco_ids = get_ecosystem_ids(request)
     page_request = parse_pagination(request)
     page, per_page = page_request.page, page_request.per_page
+    joined_since = request.args.get("joined_since")
+    try:
+        joined_since_date = _dt.date.fromisoformat(joined_since) if joined_since else None
+    except ValueError:
+        raise ApiError(400, "joined_since must be a date (YYYY-MM-DD)") from None
 
     async with request.app.ctx.db() as session:
         stmt = select(Member).order_by(Member.created_at.desc())
@@ -266,6 +271,8 @@ async def list_members(request: Request):
         status = request.args.get("status")
         if status:
             stmt = stmt.where(Member.current_status == status)
+        if joined_since_date is not None:
+            stmt = stmt.where(Member.created_at >= _dt.datetime.combine(joined_since_date, _dt.time.min))
 
         profile = request.args.get("profile")
         if profile:
@@ -360,6 +367,8 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
             if can_grant_profile(caller, m, **bootstrap) else []
         )
         role_history = await _role_history(session, m.id)
+        ecosystem_name = await session.scalar(select(Ecosystem.name).where(Ecosystem.id == m.ecosystem_id))  # G-Onboard
+        member_moves = await caller_member_moves(session, m, caller=caller, ecosystem_name=ecosystem_name or "")
 
     # Build quiz summary
     completed_ids = {r.quiz_id for r in quiz_results}
@@ -453,16 +462,18 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
     payload["caller_grantable_profiles"] = grantable_profiles
     payload["caller_is_self"] = caller is not None and caller.id == m.id
     payload["role_history"] = role_history
+    payload["caller_member_moves"] = member_moves  # G-Onboard: policy.MEMBER_MOVES for this caller, with words
     return json(payload)
 
 
 @members_api_bp.post("/")
 @authenticated
 async def create_member(request: Request):
-    """POST /api/v1/members -- Create a new member.
+    """POST /api/v1/members -- Create the caller's own membership row (a join with profile details).
 
-    Accepts JSON: MemberCreateRequest
-    Returns JSON: MemberDetail with 201 status.
+    Accepts JSON: MemberCreateRequest. Placed through member_lifecycle.place_member like a join: the
+    agreement gate decides active or pending_consent, one transition is recorded, an existing row is a
+    409 (it was a unique-violation 500). Returns JSON: MemberDetail with 201 status.
     """
     auth_member = request.ctx.member
 
@@ -477,27 +488,25 @@ async def create_member(request: Request):
     if not can_choose_own_profile(None, create_req.profile):  # the new row is the caller's own
         raise ApiError(403, PROFILE_GRANT_ONLY)
 
-    short_id = uuid.uuid4().hex[:8].upper()
-    member_id_str = f"MEM-{short_id}"
-
     user = getattr(request.ctx, "user", None)
 
     async with request.app.ctx.db() as session:
-        new_member = Member(
-            id=uuid.uuid4(),
-            ecosystem_id=create_req.ecosystem_id,
-            user_id=user.id if user else auth_member.user_id,
-            shared_ecosystem_ids=serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids),
-            member_id=member_id_str,
-            display_name=create_req.display_name,
-            current_status="active",
-            profile=create_req.profile,
-            skills_offered=create_req.skills_offered,
-            skills_needed=create_req.skills_needed,
-            interests=create_req.interests,
-            notes=create_req.notes,
+        ecosystem = await session.get(Ecosystem, create_req.ecosystem_id)
+        if ecosystem is None:
+            raise ApiError(404, "Ecosystem not found")
+        placement = await place_member(
+            session, user_id=user.id if user else auth_member.user_id, ecosystem=ecosystem,
+            display_name=create_req.display_name, member_key=f"MEM-{uuid.uuid4().hex[:8].upper()}", trigger=JOINED,
         )
-        session.add(new_member)
+        if not placement.created:  # a pending or returning row joins through POST /ecosystems/:id/join (rolled back)
+            raise ApiError(409, f"You already have a membership in {ecosystem.name}.", {"code": "ALREADY_MEMBER"})
+        new_member = placement.member
+        new_member.shared_ecosystem_ids = serialize_shared_ecosystem_ids(create_req.shared_ecosystem_ids)
+        new_member.profile = create_req.profile
+        new_member.skills_offered = create_req.skills_offered
+        new_member.skills_needed = create_req.skills_needed
+        new_member.interests = create_req.interests
+        new_member.notes = create_req.notes
         await session.commit()
         await session.refresh(new_member)
 
@@ -603,9 +612,10 @@ async def update_member_role(request: Request, member_id: uuid.UUID):
 async def grant_member_profile(request: Request, member_id: uuid.UUID):
     """PUT /api/v1/members/:id/profile-grant -- Set another member's profile, including co_creator/builder.
 
-    Those two confer administration, so members never choose them (PUT /members/:id refuses):
-    policy.can_grant_profile (whoever may make the member an admin; never yourself). Recorded
-    like a role grant (trigger "profile_grant"); a no-op writes nothing.
+    Those two confer administration of the member's ecosystem (and, on a home-ecosystem row, platform
+    admin), so members never choose them (PUT /members/:id refuses): policy.can_grant_profile read on
+    caller_in for the member's ecosystem (whoever may make the member an admin there; never yourself).
+    Recorded like a role grant (trigger "profile_grant"); a no-op writes nothing.
     """
     try:
         grant_req = ProfileGrantRequest(**(request.json or {}))
@@ -631,10 +641,11 @@ async def grant_member_profile(request: Request, member_id: uuid.UUID):
 @members_api_bp.post("/<member_id:uuid>/status")
 @authenticated
 async def member_status_transition(request: Request, member_id: uuid.UUID):
-    """POST /api/v1/members/:id/status -- Status transition.
+    """POST /api/v1/members/:id/status -- A steward's move from policy.MEMBER_MOVES (member_lifecycle.move_member).
 
-    Accepts JSON: StatusTransitionRequest
-    Records a MemberStatusTransition and updates current_status.
+    Accepts JSON: {"status", "notes"?}; `trigger` is ignored (it is always "steward_move"). 403 unless an
+    active steward who outranks the member (never yourself); 400 with `allowed` off the table (exiting: the
+    exit flow); 409 CONSENT_REQUIRED confirming a newcomer with agreements left. Recorded with the actor.
     """
     body = request.json or {}
     try:
@@ -648,25 +659,11 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
             options=(selectinload(Member.user),),
             label="Member",
         )
+        await session.refresh(m, with_for_update=True)  # two stewards moving at once run one after the other
 
         caller = await caller_in(session, request, m.ecosystem_id)
-        if not is_steward(caller):
-            raise ApiError(403, "Ecosystem role 'mod' or higher required")
-
         old_status = m.current_status
-
-        transition = MemberStatusTransition(
-            id=uuid.uuid4(),
-            member_id=m.id,
-            from_status=old_status,
-            to_status=req.status,
-            date=_dt.date.today(),
-            trigger=req.trigger,
-            notes=req.notes,
-            actor_member_id=caller.id,
-        )
-        session.add(transition)
-        m.current_status = req.status
+        await move_member(session, m, req.status, caller=caller, notes=req.notes)
         await session.commit()
         await session.refresh(m)
 
@@ -680,8 +677,9 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
 async def get_member_onboarding(request: Request, member_id: uuid.UUID):
     """GET /api/v1/members/:id/onboarding -- Onboarding checklist state."""
     async with request.app.ctx.db() as session:
-        # Verify member exists and is accessible
-        await get_scoped_or_404(session, request, Member, member_id, label="Member")
+        target = await get_scoped_or_404(session, request, Member, member_id, label="Member")
+        if not can_read_onboarding_record(await caller_in(session, request, target.ecosystem_id), target):
+            raise ApiError(404, "Member not found")  # FX-Onboard A8: positions and objections are not public
 
         stmt = select(MemberOnboarding).where(MemberOnboarding.member_id == member_id)
         result = await session.execute(stmt)
@@ -705,24 +703,4 @@ async def get_member_onboarding(request: Request, member_id: uuid.UUID):
     return json(data.model_dump(mode="json"))
 
 
-@members_api_bp.post("/<member_id:uuid>/resend-invite")
-@authenticated
-async def resend_invite(request: Request, member_id: uuid.UUID):
-    """POST /api/v1/members/:id/resend-invite -- Re-send a member's invite.
-
-    No email/delivery infra exists yet; this records the intent and reports
-    success. Actual delivery depends on future notification infra.
-    """
-    async with request.app.ctx.db() as session:
-        m = await get_scoped_or_404(session, request, Member, member_id, label="Member")
-        # profile-admin OR >=admin tier in this ecosystem (transitional OR)
-        _, admin_err = require_admin(request)
-        if admin_err and not has_role_at_least(await caller_in(session, request, m.ecosystem_id), "admin"):
-            raise ApiError(403, "Ecosystem role 'admin' or higher required")
-        display_name = m.display_name
-
-    return json({
-        "success": True,
-        "message": f"Invite re-sent to {display_name}",
-        "resent_at": _dt.datetime.utcnow().isoformat(),
-    })
+# G-Onboard: POST /members/:id/resend-invite was removed: it answered "Invite re-sent" and delivered nothing (review L2).

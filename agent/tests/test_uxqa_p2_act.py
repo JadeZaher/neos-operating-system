@@ -40,6 +40,7 @@ from neos_agent.db.models import (
 )
 from neos_agent.services.act_gates import CONSENT_PENDING, PARTICIPATE_DENIED, consent_pending_message
 from neos_agent.services.next_steps import ADVICE_READY_PROMPT
+from neos_agent.services.dates import aoe_today  # G-Maint: "yesterday" by the one date rule
 
 OASIS = uuid.UUID("0000000f-0000-0000-0000-000000000001")
 ESCHER = uuid.UUID("0000000f-0000-0000-0000-000000000002")
@@ -289,7 +290,7 @@ async def test_mcp_refuses_a_pending_newcomer_in_the_same_words(env, monkeypatch
 
 async def test_the_acts_only_you_can_take_come_right_after_overdue_items(env):
     soon = (dt.date.today() + dt.timedelta(days=2)).isoformat()
-    late = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    late = (aoe_today() - dt.timedelta(days=1)).isoformat()  # passed everywhere (services/dates)
     dated = await _proposal(env, "ben", "Garden rota", advice_deadline=soon)
     overdue = await _proposal(env, "ben", "Tool library", advice_deadline=late)
     own = await _proposal(env, "ada", "Bike shed")  # no deadline
@@ -369,7 +370,7 @@ async def test_the_advice_banner_says_the_author_closes_advice_to_each_viewer(en
     for deadline, steward_words, decided_by in (
         (dt.date.today() + dt.timedelta(days=2), "You can close it after the advice deadline ({date}) if they haven't.",
          "Ada, who wrote it (a steward can close it for them after the advice deadline, {date})"),
-        (dt.date.today() - dt.timedelta(days=1),
+        (aoe_today() - dt.timedelta(days=1),
          "The advice deadline ({date}) has passed, so as a steward you can close it for them if they haven't.",
          "Ada, who wrote it; the advice deadline has passed, so a steward can close it for them"),
     ):

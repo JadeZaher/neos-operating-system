@@ -58,6 +58,10 @@ from neos_agent.db.models import (
     User,
 )
 from neos_agent.api.agreements import CEREMONY_DENIED
+from neos_agent.api.agreements import ends_review, parse_review_date, review_outcome_refusal  # G-Maint: review outcomes
+from neos_agent.api.agreements import gate_refusal as agreement_gate_refusal  # FX-Maint: the archive gate's words
+from neos_agent.api.errors import ApiError  # G-Maint
+from neos_agent.services.dates import aoe_today  # FX-Maint: the one date rule
 from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
 from neos_agent.api.conflicts import TRIAGE_DENIED as CONFLICT_TRIAGE_DENIED, conflict_stage
 from neos_agent.api.conflicts import allowed_moves as conflict_allowed_moves  # unknown legacy statuses fall back like REST
@@ -124,14 +128,8 @@ ECOSYSTEM_CHOICE = "Which ecosystem should this be in:"
 
 # Agreement status moves live in services/act_gates.py AGREEMENT_LIFECYCLE (update_agreement_status uses it).
 
-# Default review periods by agreement type (in months)
-_REVIEW_MONTHS: dict[str, int] = {
-    "space": 12,
-    "access": 6,
-    "organizational": 24,
-    "uaf": 12,
-    "culture_code": 12,
-}
+# Default review periods by agreement type (in months): the registry's own table (G-Maint).
+from neos_agent.api.agreement_vocabulary import REVIEW_INTERVAL_MONTHS as _REVIEW_MONTHS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -683,17 +681,23 @@ _AGREEMENT_CONFIRM = {
 
 
 async def _agreement_move_refusal(db: AsyncSession, agr: Agreement, target: str, conductor: Member | None,
-                                  evidence: str | None) -> str | None:
+                                  evidence: str | None, next_review_date=None) -> str | None:
     """Why the engine would refuse this ceremony, checked before asking the member to confirm it."""
     if not can_conduct_agreement_ceremony(conductor, agr):
         return CEREMONY_DENIED
     move = AGREEMENT_LIFECYCLE.manual_move(agr.status, target)
     if move is None:
         return f"Invalid transition: {agr.status} -> {target}. Allowed: {', '.join(AGREEMENT_LIFECYCLE.manual_targets(agr.status))}."
+    review_refusal = review_outcome_refusal(agr, target, evidence, next_review_date)  # G-Maint: findings, next date
+    if review_refusal is not None:
+        return review_refusal.message
+    if ends_review(agr, target):
+        return None  # a review ends on its findings: no gate (api/agreements.ends_review)
     if target in EVIDENCED_CEREMONIES and len((evidence or "").strip()) < 8:
         return f"Documented evidence is required for the {target} ceremony"
-    if move.gate is not None and not (await agreement_gate_status(db, agr))[move.gate]["met"]:
-        return f"The {move.gate} gate is not satisfied — the conditions declared in the agreement's ACT policy must be met first"
+    if move.gate is not None:  # FX-Maint: the same refusal as REST (the sunset's end, or a declared ACT gate)
+        refused = agreement_gate_refusal(agr, move, await agreement_gate_status(db, agr))
+        return refused.message if refused is not None else None
     return None
 
 
@@ -714,6 +718,11 @@ async def update_agreement_status(
     new_status = str(args.get("new_status") or "").strip().lower()
     if not agreement_id or not new_status:
         return {"success": False, "error": "agreement_id and new_status are required."}
+    evidence = args.get("findings") or args.get("evidence")  # G-Maint: a review ends with its findings
+    try:
+        next_review_date = parse_review_date(args.get("next_review_date"))
+    except ApiError as refusal:
+        return {"success": False, "error": refusal.message}
 
     agr = await _find_agreement(db, agreement_id, ecosystem_ids, *_CEREMONY_LOADS)
     if agr is None:
@@ -724,7 +733,7 @@ async def update_agreement_status(
     if confirm_as is None and await agreement_act_puts_in_force(db, agr, to=new_status):
         confirm_as = "active"  # the automatic cascade after this ceremony would put it in force
     if confirm_as is not None:
-        refusal = await _agreement_move_refusal(db, agr, new_status, conductor, args.get("evidence"))
+        refusal = await _agreement_move_refusal(db, agr, new_status, conductor, evidence, next_review_date)
         if refusal:
             return {"success": False, "error": refusal}
         names = await _ecosystem_names(db, [agr.ecosystem_id])
@@ -735,7 +744,7 @@ async def update_agreement_status(
     current = agr.status
     try:
         outcome = await conduct_agreement_transition(
-            db, agr, to=new_status, caller=conductor, evidence=args.get("evidence"),
+            db, agr, to=new_status, caller=conductor, evidence=evidence, next_review_date=next_review_date,
         )
     except TransitionRefused as refusal:
         return {"success": False, "error": _refusal_text(refusal)}
@@ -749,6 +758,8 @@ async def update_agreement_status(
             "previous_status": current,
             "new_status": outcome.status,
             "version": agr.version,
+            "review_date": str(agr.review_date) if agr.review_date else None,
+            "sunset_date": str(agr.sunset_date) if agr.sunset_date else None,
             "auto_transitions": outcome.auto_transitions,
             "decision_record_id": outcome.decision_record_id,
             "link": _link("agreement", agr.id),
@@ -2020,6 +2031,12 @@ async def create_safeguard_audit(
     requester = await _caller_row(db, caller_user_id, eco_id)
     if not is_active_member_in(requester, eco_id):
         return {"success": False, "error": MEMBER_REQUIRED}
+    from neos_agent.api.policy import is_self_assessment  # G-Maint
+    from neos_agent.api.safeguards import auditor_refusal  # G-Maint: policy.can_record_audit, as REST
+
+    refusal = await auditor_refusal(db, requester, eco_id)
+    if refusal is not None:
+        return {"success": False, "error": refusal.message, **refusal.extra}
     # Same shape as REST POST /safeguards/audits: the caller is the (human) auditor of a draft.
     audit_id = f"AUDIT-{uuid.uuid4().hex[:8].upper()}"
 
@@ -2038,14 +2055,7 @@ async def create_safeguard_audit(
         except ValueError:
             return {"success": False, "error": f"Invalid audit_period_end format: '{args['audit_period_end']}'. Use YYYY-MM-DD."}
 
-    overall_health_score = args.get("overall_health_score")
-    if overall_health_score is not None:
-        try:
-            overall_health_score = int(overall_health_score)
-            if not (0 <= overall_health_score <= 100):
-                return {"success": False, "error": "overall_health_score must be between 0 and 100."}
-        except (TypeError, ValueError):
-            return {"success": False, "error": "overall_health_score must be a number between 0 and 100."}
+    # G-Maint: no score on a draft; the score is the mean of the ratings the auditor publishes (D14).
 
     audit = GovernanceHealthAudit(
         id=uuid.uuid4(),
@@ -2058,7 +2068,7 @@ async def create_safeguard_audit(
         capture_risk_indicators=args.get("capture_risk_indicators") or {},
         findings=findings,
         recommendations=args.get("recommendations"),
-        overall_health_score=overall_health_score,
+        self_assessment=is_self_assessment(requester),
         audit_scope=args.get("audit_scope"),
         audit_period_start=audit_period_start,
         audit_period_end=audit_period_end,
@@ -2076,7 +2086,8 @@ async def create_safeguard_audit(
             "status": "draft",
             "link": f"/safeguards/audits/{audit.id}",
             "message": f"Draft audit '{audit_id}' started with you as its auditor.",
-            "next_step": "It is a draft and does not count yet. You finish and publish it yourself on its page.",
+            "next_step": ("It is a draft and does not count yet. You rate each indicator beside its computed value "
+                          "and publish it yourself on its page."),
         },
     }
 
@@ -2416,7 +2427,7 @@ async def proposal_move_refusal(db: AsyncSession, prop: Proposal, target: str, c
     if move is None:
         allowed = PROPOSAL_LIFECYCLE.manual_targets(prop.status)
         return f"Invalid transition from '{prop.status}' to '{target}'. Allowed: {', '.join(allowed) or 'none'}."
-    refusal = move_authority_refusal(prop, move, caller, today=date.today())
+    refusal = move_authority_refusal(prop, move, caller, today=aoe_today())  # FX-Maint: the one date rule
     if refusal is not None:
         return refusal.message
     if move.gate is not None and not (await proposal_gate_status(db, prop))[move.gate]["met"]:
@@ -3111,6 +3122,8 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "agreement_id": {"type": "string", "description": "The agreement's id, AGR- key or exact title."},
                 "new_status": {"type": "string", "description": "Target status."},
                 "evidence": {"type": "string", "description": "What happened at the ceremony (required for advice, consent, test and active; at least 8 characters)."},
+                "findings": {"type": "string", "description": "Ending a review (under_review -> active to keep it in force, or -> sunset): what the review found, at least 8 characters. It is written to the review record."},
+                "next_review_date": {"type": "string", "description": "Keeping it in force after a review: the next review date (YYYY-MM-DD, later than today). Omit for the default for its type."},
                 "confirmed": _CONFIRMED_PARAM,
             },
             "required": ["agreement_id", "new_status"],
@@ -3467,7 +3480,6 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
                 "audit_scope": {"type": "string", "description": "What was audited (specific safeguard, domain, or ecosystem-wide)."},
                 "audit_period_start": {"type": "string", "description": "Start of the audit period (ISO date, YYYY-MM-DD)."},
                 "audit_period_end": {"type": "string", "description": "End of the audit period (ISO date, YYYY-MM-DD)."},
-                "overall_health_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "Aggregate health score (0-100)."},
                 "capture_risk_indicators": {"type": "object", "description": "Capture risk indicator assessments."},
                 "recommendations": {"type": "object", "description": "General recommendations for governance improvements."},
                 "structured_recommendations": {
@@ -3885,3 +3897,714 @@ async def execute_tool(
     except Exception as e:
         logger.exception("Tool handler crashed: %s", name)
         return {"success": False, "error": f"Tool failed: {type(e).__name__}"}
+
+
+# G-Maint: read governance health (services/health.py), as GET /api/v1/safeguards/snapshot.
+
+async def get_governance_health(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """The computed health indicators and needs-attention counts of one ecosystem the caller is active in."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    eco_id, scope_error = await _target_ecosystem(db, ecosystem_ids, args)
+    if eco_id is None:
+        return {"success": False, "error": scope_error}
+    if not is_active_member_in(await _caller_row(db, caller_user_id, eco_id), eco_id):
+        return {"success": False, "error": MEMBER_REQUIRED}
+    from neos_agent.services import health
+
+    snapshot = await health.health_snapshot(db, eco_id)
+    return {
+        "success": True,
+        "data": {
+            **snapshot,
+            "link": "/safeguards",
+            "note": ("Values are computed; the framework band is for reference. Statuses are rated by a human auditor "
+                     "who is not a steward, and published on the safeguards page."),
+        },
+    }
+
+
+GOVERNANCE_TOOLS.append(ToolDef(
+    name="get_governance_health",
+    description=("Read an ecosystem's governance health: the framework indicators computed from its records (authorship "
+                 "diversity, approval by role, participation trend, leadership tenure, objection integration, review "
+                 "compliance, cross-unit engagement) with their reference band, and counts that need attention. "
+                 "Read-only; it never rates a status."),
+    parameters={"type": "object", "properties": {"ecosystem": _ECOSYSTEM_PARAM}},
+    handler=get_governance_health,
+))
+_TOOL_HANDLERS["get_governance_health"] = get_governance_health
+CALLER_AWARE_TOOLS = CALLER_AWARE_TOOLS | {"get_governance_health"}
+
+
+# FX-Maint (wave-c F7): the stewards' response to a published audit, through the same function as
+# POST /api/v1/safeguards/audits/:id/respond; it clears respond_to_audit for every steward.
+
+async def respond_to_health_audit(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+    confirmed_keys: frozenset | None = None,
+) -> dict:
+    """Record the stewards' response on an audit (default: the ecosystem's latest published one), optionally naming a proposal."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    from neos_agent.api import safeguards
+    from neos_agent.api.policy import can_respond_to_audit as policy_can_respond_to_audit
+    from neos_agent.services import health
+
+    key = str(args.get("audit") or "").strip()
+    if key:
+        audit = await _find(db, GovernanceHealthAudit, key, "audit_id", ecosystem_ids, title_field=None)
+    else:
+        eco_id, scope_error = await _target_ecosystem(db, ecosystem_ids, args)
+        if eco_id is None:
+            return {"success": False, "error": scope_error}
+        audit = await health.latest_published_audit(db, eco_id)
+    if audit is None:
+        return {"success": False, "error": "No published audit found to respond to."}
+    proposal_id = None
+    if args.get("proposal"):
+        proposal = await _find_proposal(db, args["proposal"], [audit.ecosystem_id])
+        if proposal is None:
+            return {"success": False, "error": f"Proposal '{args['proposal']}' not found in this ecosystem."}
+        proposal_id = proposal.id
+    caller = await _caller_row(db, caller_user_id, audit.ecosystem_id)
+    if not policy_can_respond_to_audit(caller, audit):
+        return {"success": False, "error": safeguards.RESPOND_DENIED}
+    asked = _needs_confirmation(args, f"respond_to_health_audit:{audit.id}",
+                                f"Recording this response on audit {audit.audit_id} clears it for every steward.",
+                                confirmed_keys)
+    if asked:
+        return asked
+    try:
+        await safeguards.record_audit_response(db, audit, caller, args.get("note"), proposal_id)
+    except ApiError as refusal:
+        return {"success": False, "error": refusal.message, "code": refusal.extra.get("code")}
+    await db.flush()
+    return {"success": True, "data": {"audit_id": audit.audit_id, "link": _link("audit", audit.id),
+                                      "note": "Recorded. The response item clears for every steward."}}
+
+
+GOVERNANCE_TOOLS.append(ToolDef(
+    name="respond_to_health_audit",
+    description=("Record the stewards' response to a published governance health audit (what they will do about "
+                 "the indicators it rated critical, or why no change is needed), optionally naming a proposal of "
+                 "that ecosystem. Stewards only. It clears 'Respond to the critical health indicators' for every "
+                 "steward. The member confirms first (see `confirmed`)."),
+    parameters={"type": "object", "properties": {
+        "audit": {"type": "string", "description": "The audit's id or AUDIT- key; default: the ecosystem's latest published audit."},
+        "ecosystem": _ECOSYSTEM_PARAM,
+        "note": {"type": "string", "description": "The response, at least 8 characters."},
+        "proposal": {"type": "string", "description": "Optional: a proposal (id, PROP- key or exact title) it names."},
+        "confirmed": _CONFIRMED_PARAM,
+    }, "required": ["note"]},
+    handler=respond_to_health_audit,
+))
+_TOOL_HANDLERS["respond_to_health_audit"] = respond_to_health_audit
+CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {"respond_to_health_audit"}
+CONFIRMATION_TOOLS = CONFIRMATION_TOOLS | {"respond_to_health_audit"}
+
+
+# G-Onboard: join, consent to join, steward membership moves; same helpers as REST (api/AGENTS.md "Onboarding (G-Onboard)").
+
+from neos_agent.api.agreements import CONSENT_NOT_OPEN, CONSENT_OPEN_STATUSES, record_member_consent  # noqa: E402
+from neos_agent.services import member_lifecycle as _lifecycle  # noqa: E402
+from neos_agent.services.agreement_consent import required_agreements_for_scope  # noqa: E402
+
+
+def _api_refusal(error: ApiError) -> dict:
+    """A tool failure carrying the REST refusal's words, `code` and `allowed`/`required_agreements`, as REST answers."""
+    extra = {key: error.extra[key] for key in ("code", "allowed", "required_agreements") if key in error.extra}
+    return {"success": False, "error": error.message, **extra}
+
+
+async def _joinable_ecosystem(db: AsyncSession, key: str, caller_user_id: uuid.UUID) -> Ecosystem | None:
+    """An ecosystem by id or exact name that the caller may join or return to: public, or one they hold a row in
+    (a private ecosystem is "not found", as REST answers 404)."""
+    raw = str(key or "").strip()
+    if not raw:
+        return None
+    record_id = _as_uuid(raw)
+    candidates = ([await db.get(Ecosystem, record_id)] if record_id else (await db.scalars(
+        select(Ecosystem).where(func.lower(Ecosystem.name) == raw.lower()).order_by(Ecosystem.created_at, Ecosystem.id)
+    )).all())
+    joinable = [ecosystem for ecosystem in candidates if ecosystem is not None and (
+        ecosystem.visibility == "public" or await _caller_row(db, caller_user_id, ecosystem.id) is not None)]
+    if len(joinable) > 1:  # FX-Onboard A12: a lookalike name never decides where someone joins
+        raise ApiError(409, f"More than one ecosystem is called {raw}. Say which one by its id: "
+                            + ", ".join(f"{ecosystem.name} ({ecosystem.id})" for ecosystem in joinable) + ".",
+                       {"code": "AMBIGUOUS_ECOSYSTEM"})
+    return joinable[0] if joinable else None
+
+
+async def join_ecosystem(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *,
+    caller_user_id: uuid.UUID | None = None, confirmed_keys: frozenset | None = None,
+) -> dict:
+    """Join an ecosystem (or return after leaving) as the signed-in user, through member_lifecycle.place_member."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    try:
+        ecosystem = await _joinable_ecosystem(db, args.get("ecosystem_id") or args.get("ecosystem"), caller_user_id)
+    except ApiError as ambiguous:
+        return _api_refusal(ambiguous)
+    if ecosystem is None:
+        return {"success": False, "error": "Ecosystem not found"}
+    existing = await _caller_row(db, caller_user_id, ecosystem.id)
+    gate = await required_agreements_for_scope(db, ecosystem.id, "ecosystem")
+    what = (f"This makes you a member of {ecosystem.name}"
+            + (f"; you take part once you consent to {', '.join(a.title for a in gate)}." if gate else
+               ", active at once (it has no membership agreements)."))
+    asked = _needs_confirmation(args, f"join_ecosystem:{ecosystem.id}", what, confirmed_keys)
+    if asked is not None and (existing is None or existing.current_status == "exited"):
+        return asked
+    user = await db.get(User, caller_user_id)
+    default = await db.scalar(select(Member).where(Member.user_id == caller_user_id)
+                              .order_by(Member.created_at, Member.id).limit(1))
+    display_name = (default.display_name if default else None) or (user.display_name if user else "Member")
+    key = f"did-{user.did[-12:]}" if user is not None and user.did else f"usr-{uuid.uuid4().hex[:12]}"
+    try:
+        placement = await _lifecycle.place_member(db, user_id=caller_user_id, ecosystem=ecosystem,
+                                                  display_name=display_name, member_key=key)
+    except ApiError as refusal:
+        await db.rollback()
+        return _api_refusal(refusal)
+    payload = _lifecycle.placement_payload(placement, ecosystem.name)
+    await db.commit()
+    return {"success": True, "data": {**payload, "link": "/welcome/consent" if placement.missing else "/dashboard"}}
+
+
+async def attest_agreement_consent(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *,
+    caller_user_id: uuid.UUID | None = None, confirmed_keys: frozenset | None = None,
+) -> dict:
+    """Consent to an agreement's current version as the signed-in member (agreements.record_member_consent, as REST
+    and MCP): a pending newcomer's last membership consent makes them active."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    attestation = str(args.get("attestation") or "").strip()
+    if len(attestation) < 8:
+        return {"success": False, "error": "Say in a sentence what the member is agreeing to (at least 8 characters)."}
+    pending = (await db.scalars(select(Member.ecosystem_id).where(
+        Member.user_id == caller_user_id, Member.current_status == "pending_consent"))).all()
+    scope = list(ecosystem_ids or []) + [eco for eco in pending if eco not in (ecosystem_ids or [])]  # REST rule 5
+    agr = await _find_agreement(db, args.get("agreement_id"), scope)
+    if agr is None:
+        return {"success": False, "error": "Agreement not found"}
+    member = await _caller_row(db, caller_user_id, agr.ecosystem_id)
+    if member is None:
+        return {"success": False, "error": "Only an ecosystem member may attest agreement consent"}
+    if agr.status not in CONSENT_OPEN_STATUSES:
+        return {"success": False, "error": CONSENT_NOT_OPEN}
+    if await agreement_act_puts_in_force(db, agr, attester=member):
+        asked = _needs_confirmation(args, f"attest_agreement_consent:{agr.id}",
+                                    f"Your consent completes {agr.title}'s consent round and puts it in force.",
+                                    confirmed_keys)
+        if asked is not None:
+            return asked
+    await db.refresh(member, with_for_update=True)
+    was = member.current_status
+    try:
+        await record_member_consent(db, agr, member, attestation)
+        await conduct_agreement_transition(db, agr, caller=member)
+    except ApiError as refusal:
+        await db.rollback()
+        return _api_refusal(refusal)
+    await db.commit()
+    activated = was == "pending_consent" and member.current_status == "active"
+    return {"success": True, "data": {
+        "agreement": agr.title, "agreement_status": agr.status, "membership_status": member.current_status,
+        "message": ("Consent recorded. You are now an active member." if activated else "Consent recorded."),
+        "link": record_link("agreement", agr.id),
+    }}
+
+
+async def move_member(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *,
+    caller_user_id: uuid.UUID | None = None, confirmed_keys: frozenset | None = None,
+) -> dict:
+    """A steward's membership move through policy.MEMBER_MOVES (member_lifecycle.move_member, as REST)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    key = str(args.get("member") or "").strip()
+    record_id = _as_uuid(key)
+    stmt = select(Member).where(Member.id == record_id) if record_id else select(Member).where(
+        or_(func.lower(Member.display_name) == key.lower(), Member.member_id == key))
+    candidates = (await db.execute(_scope(stmt, Member, ecosystem_ids, include_shared=False).limit(2))).scalars().all()
+    if len(candidates) != 1:
+        return {"success": False, "error": "Member not found" if not candidates else
+                "Several members have that name: use the id from their member page."}
+    target = candidates[0]
+    to_status = str(args.get("status") or "").strip()
+    caller = await _caller_row(db, caller_user_id, target.ecosystem_id)
+    refusal = await _lifecycle.move_refusal(db, target, to_status, caller=caller)
+    if refusal is not None:
+        return _api_refusal(refusal)
+    names = await _ecosystem_names(db, [target.ecosystem_id])
+    words = await _lifecycle.caller_member_moves(db, target, caller=caller, ecosystem_name=names.get(str(target.ecosystem_id), ""))
+    sentence = next((move["confirm"] for move in words if move["status"] == to_status), "")
+    asked = _needs_confirmation(args, f"move_member:{target.id}:{to_status}", sentence, confirmed_keys)
+    if asked is not None:
+        return asked
+    await db.refresh(target, with_for_update=True)
+    try:
+        await _lifecycle.move_member(db, target, to_status, caller=caller, notes=args.get("notes"))
+    except ApiError as refused:  # the status changed while the member was asked
+        await db.rollback()
+        return _api_refusal(refused)
+    await db.commit()
+    return {"success": True, "data": {"member": target.display_name, "membership_status": target.current_status,
+                                      "link": f"/members/{target.id}"}}
+
+
+GOVERNANCE_TOOLS.extend([
+    ToolDef(
+        name="join_ecosystem",
+        description=("Join a public ecosystem, or return to one the member left, as the signed-in member. Nobody "
+                     "approves newcomers: the member is active at once, or once they consent to its membership "
+                     "agreements (attest_agreement_consent). Private ecosystems cannot be joined. The member "
+                     "confirms first (see `confirmed`)."),
+        parameters={"type": "object", "properties": {
+            "ecosystem": {"type": "string", "description": "The ecosystem's exact name or its id."},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["ecosystem"]},
+        handler=join_ecosystem,
+    ),
+    ToolDef(
+        name="attest_agreement_consent",
+        description=("Record the signed-in member's own consent to an agreement's current version (a membership "
+                     "agreement included: consenting to the last one makes a newcomer active). Only during the "
+                     "agreement's consent or in-force stages. When this consent would put the agreement in force, "
+                     "the member confirms first (see `confirmed`)."),
+        parameters={"type": "object", "properties": {
+            "agreement_id": {"type": "string", "description": "The agreement's id from the page, its AGR- key, or its exact title."},
+            "attestation": {"type": "string", "description": "What the member is agreeing to, in their words (a sentence)."},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["agreement_id", "attestation"]},
+        handler=attest_agreement_consent,
+    ),
+    ToolDef(
+        name="move_member",
+        description=("As a steward who outranks them, change another member's membership: suspend (active -> "
+                     "suspended), restore (suspended or inactive -> active), or confirm a newcomer who has nothing "
+                     "left to consent to (pending_consent -> active). Leaving is the member's own exit, never a "
+                     "move. The member confirms first (see `confirmed`)."),
+        parameters={"type": "object", "properties": {
+            "member": {"type": "string", "description": "The member's id from their page, member key, or exact display name."},
+            "status": {"type": "string", "enum": ["active", "suspended"], "description": "The membership status to set."},
+            "notes": {"type": "string", "description": "Why, in the steward's words (recorded with the move)."},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["member", "status"]},
+        handler=move_member,
+    ),
+])
+_TOOL_HANDLERS.update({"join_ecosystem": join_ecosystem, "attest_agreement_consent": attest_agreement_consent,
+                       "move_member": move_member})
+CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {"join_ecosystem", "attest_agreement_consent", "move_member"}
+CONFIRMATION_TOOLS = CONFIRMATION_TOOLS | {"join_ecosystem", "attest_agreement_consent", "move_member"}
+
+
+
+# ===================================================================
+# G-Exchange: shares, needs and collaborations through services/exchange.py, the functions REST calls
+# (api/AGENTS.md "Exchange (G-Exchange)"). The visibility rule decides what a lookup can find.
+# ===================================================================
+
+from neos_agent.api.policy import can_moderate_publication as _can_moderate_publication  # noqa: E402
+from neos_agent.db.models import Collaboration as _Collaboration, SharesNeeds as _SharesNeeds  # noqa: E402
+from neos_agent.services import exchange as _exchange  # noqa: E402
+
+_EXCHANGE_BLOCKED = {  # respond_blocked code -> what the assistant tells the member (REST says the same)
+    _exchange.OWN_POST: "This is the member's own post.",
+    _exchange.POST_CLOSED: "This post is no longer open, so it cannot be answered.",
+    _exchange.AUTHOR_INACTIVE: "The person who posted this is no longer an active member, so nobody can answer it.",
+    _exchange.CONSENT_PENDING: "The member's membership still waits for their consent to its agreements.",
+    _exchange.MEMBERSHIP_REQUIRED: "Only an active member of an ecosystem can answer posts.",
+}
+
+
+def _exchange_clip(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _exchange_refused(refusal: ApiError) -> dict:
+    """A REST refusal as a tool result, keeping its code and the fields the model can act on."""
+    result = {"success": False, "error": refusal.message}
+    for key in ("code", "allowed", "field", "existing_id", "options", "required_agreements", "status"):
+        if key in refusal.extra:
+            result[key] = refusal.extra[key]
+    return result
+
+
+def _post_brief(payload: dict) -> dict:
+    """What the model needs from a post payload: names, state, the caller's options and the page link."""
+    keys = ("id", "type", "title", "status", "visibility", "author_name", "domain_name", "ecosystem_name", "age_days",
+            "hidden", "hidden_reason", "status_reason", "fulfilled_by_name", "respond_blocked", "caller_has_responded",
+            "allowed_next", "caller_can_moderate")
+    return {**{key: payload.get(key) for key in keys}, "link": f"/discover?tab=shares-needs&post={payload['id']}"}
+
+
+async def _find_post(db: AsyncSession, viewer, key) -> _SharesNeeds | None:
+    """A post the caller may see, by its id or its exact title (only when one post has it)."""
+    raw = str(key or "").strip()
+    if not raw:
+        return None
+    post_id = _as_uuid(raw)
+    stmt = select(_SharesNeeds).where(_exchange.visible_clause(viewer))
+    stmt = stmt.where(_SharesNeeds.id == post_id) if post_id else stmt.where(
+        func.lower(_SharesNeeds.title) == raw.lower()).limit(2)
+    rows = (await db.execute(stmt)).scalars().all()
+    return rows[0] if len(rows) == 1 else None
+
+
+async def find_shares_needs(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Discover for the caller: posts across ecosystems under the one visibility rule (open ones by default)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    stmt = select(_SharesNeeds).where(_exchange.visible_clause(viewer), _SharesNeeds.hidden_at.is_(None))
+    status = str(args.get("status") or _exchange.OPEN)
+    if status != "all":
+        if status not in _exchange.PUBLICATION_STATUSES:
+            return {"success": False, "error": "status is active, fulfilled, withdrawn or all."}
+        stmt = stmt.where(_SharesNeeds.status == status)
+    if args.get("query"):
+        stmt = stmt.where(or_(_contains(_SharesNeeds.title, str(args["query"])),
+                              _contains(_SharesNeeds.description, str(args["query"]))))
+    for field in ("type", "category"):
+        if args.get(field):
+            stmt = stmt.where(getattr(_SharesNeeds, field) == str(args[field]).strip().lower())
+    rows = (await db.execute(stmt.order_by(_SharesNeeds.created_at.desc()).limit(20))).scalars().all()
+    posts = [_post_brief(p) for p in await _exchange.publication_payloads(db, rows, viewer)]
+    return {"success": True, "data": {"posts": posts, "count": len(posts)}}
+
+
+async def publish_share_need(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Post a share, need or solution in a domain as the caller (REST POST /discover/shares-needs: same gates)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    key = args.get("domain") or ""
+    if not key:
+        return {"success": False, "error": "Say which domain it belongs to (its name)."}
+    domain = await _find_domain(db, key, ecosystem_ids)
+    if domain is None:
+        return {"success": False, "error": f"Domain '{key}' not found in the selected ecosystems."}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    body = {"ecosystem_id": str(domain.ecosystem_id), "domain_id": str(domain.id),
+            **{field: args[field] for field in ("type", "title", "description", "category", "capacity", "visibility")
+               if field in args}}
+    try:
+        record = await _exchange.publish(db, viewer, body)
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    payload = await _exchange.publication_payload(db, record, viewer)
+    return {"success": True, "data": _post_brief(payload),
+            "message": f"Posted “{record.title}” in {payload['domain_name']} ({record.visibility})."}
+
+
+async def respond_to_share_need(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+    confirmed_keys: frozenset | None = None,
+) -> dict:
+    """Answer a post: a direct message to its author, tagged to the post (REST .../respond). Confirmed first."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    post = await _find_post(db, viewer, args.get("post"))
+    if post is None:
+        return {"success": False, "error": "Post not found: pass its id or exact title (find_shares_needs)."}
+    message = str(args.get("message") or "").strip()
+    if not message:
+        return {"success": False, "error": "Ask the member what to say to the person who posted it."}
+    author = await db.get(Member, post.author_member_id) if post.author_member_id else None
+    blocked = _exchange.respond_blocked(viewer, post, author)
+    if blocked:
+        return {"success": False, "code": blocked, "error": _EXCHANGE_BLOCKED[blocked]}
+    ask = _needs_confirmation(args, f"respond:{post.id}",
+                              f"This sends the member's message to {author.display_name} about “{post.title}”: "
+                              f"“{_exchange_clip(message, 200)}”.", confirmed_keys)
+    if ask:
+        return ask
+    try:
+        locked = await _exchange.load_visible(db, viewer, post.id, for_update=True)
+        conversation_id, created = await _exchange.respond(db, viewer, locked, message)
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    return {"success": True, "data": {"conversation_id": str(conversation_id), "created": created,
+                                      "link": f"/messaging?conversation={conversation_id}"},
+            "message": f"Sent to {author.display_name}; the conversation is in Messages."}
+
+
+async def update_share_need_status(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+    confirmed_keys: frozenset | None = None,
+) -> dict:
+    """The author's moves (fulfilled, withdrawn, active = reopen or keep open) or a steward's hide/restore."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    post = await _find_post(db, viewer, args.get("post"))
+    if post is None:
+        return {"success": False, "error": "Post not found: pass its id or exact title (find_shares_needs)."}
+    target = str(args.get("status") or "").strip().lower()
+    reason = args.get("reason") or args.get("note")
+    try:
+        # Locked as REST's _write_post does, so two hides at once cannot both pass ALREADY_HIDDEN (wave-c A13).
+        post = await _exchange.load_visible(db, viewer, post.id, for_update=True)
+        if target in ("hidden", "restored"):
+            if not _can_moderate_publication(viewer.row_in(post.ecosystem_id), post):
+                return {"success": False, "code": _exchange.MODERATOR_ONLY,
+                        "error": "Only a steward of this post's ecosystem can hide or restore it."}
+            if target == "hidden":
+                if not str(reason or "").strip():
+                    return {"success": False, "code": _exchange.REASON_REQUIRED,
+                            "error": "Hiding needs a reason; it is recorded. Ask the member for it."}
+                ask = _needs_confirmation(args, f"hide:{post.id}",
+                                          f"This hides “{post.title}” from everyone but its author and the "
+                                          f"stewards, with the reason “{_exchange_clip(str(reason), 200)}”.", confirmed_keys)
+                if ask:
+                    return ask
+                await _exchange.hide_publication(db, viewer, post, reason)
+            else:
+                await _exchange.restore_publication(db, viewer, post)
+        else:
+            fulfilled_by = None
+            if target == "fulfilled" and args.get("fulfilled_by"):
+                payload = await _exchange.publication_payload(db, post, viewer)
+                wanted = str(args["fulfilled_by"]).strip().lower()
+                matches = [r["member_id"] for r in payload["responders"] if (r["name"] or "").strip().lower() == wanted]
+                if len(matches) != 1:
+                    return {"success": False, "code": _exchange.NOT_A_RESPONDER,
+                            "error": "Name exactly one person who answered the post, or leave fulfilled_by out.",
+                            "responders": [r["name"] for r in payload["responders"]]}
+                fulfilled_by = matches[0]
+            await _exchange.move_publication(db, viewer, post, target, note=reason, fulfilled_by=fulfilled_by)
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    return {"success": True, "data": _post_brief(await _exchange.publication_payload(db, post, viewer))}
+
+
+async def _find_collaboration(db: AsyncSession, viewer, key):
+    """A collaboration the caller may read, by id or exact title (only when one has it), with its sides."""
+    raw = str(key or "").strip()
+    if not raw:
+        return None
+    record_id = _as_uuid(raw)
+    stmt = select(_Collaboration).where(_exchange.collaboration_visible_clause(viewer))
+    stmt = stmt.where(_Collaboration.id == record_id) if record_id else stmt.where(
+        func.lower(_Collaboration.title) == raw.lower()).limit(2)
+    rows = (await db.execute(stmt)).scalars().all()
+    if len(rows) != 1:
+        return None
+    return await _exchange.load_collaboration(db, viewer, rows[0].id, for_update=True)
+
+
+def _collaboration_brief(payload: dict) -> dict:
+    keys = ("id", "title", "status", "source_ecosystem_name", "target_ecosystem_name", "proposed_by_name",
+            "approvals", "awaiting", "caller_can_approve_for", "caller_can_end", "end_outcomes", "review_date",
+            "end_reason", "review_due", "caller_can_review", "reviewed_by_name", "reviewed_at", "review_note")
+    return {**{key: payload.get(key) for key in keys}, "link": f"/discover/collaborations/{payload['id']}"}
+
+
+async def approve_collaboration(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Approve one side of a proposed collaboration as a steward there (owner decision; REST .../approve)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    try:
+        found = await _find_collaboration(db, viewer, args.get("collaboration"))
+        if found is None:
+            return {"success": False, "error": "Collaboration not found: pass its id or exact title."}
+        record, sides = found
+        side = None
+        if args.get("ecosystem"):
+            names = await _ecosystem_names(db, sides.ecosystems)
+            side = next((eco for eco in sides.ecosystems
+                         if (names.get(str(eco)) or "").lower() == str(args["ecosystem"]).strip().lower()
+                         or str(eco) == str(args["ecosystem"]).strip()), None)
+            if side is None:
+                return {"success": False, "error": "That ecosystem is not a side of this collaboration.",
+                        "sides": [names.get(str(eco)) for eco in sides.ecosystems]}
+        await _exchange.approve_collaboration(db, viewer, record, sides, side)
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    return {"success": True, "data": _collaboration_brief(await _exchange.collaboration_payload(db, viewer, record, sides))}
+
+
+async def end_collaboration(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+    confirmed_keys: frozenset | None = None,
+) -> dict:
+    """Complete or dissolve a collaboration with a reason (REST .../end); the member confirms first."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    try:
+        found = await _find_collaboration(db, viewer, args.get("collaboration"))
+        if found is None:
+            return {"success": False, "error": "Collaboration not found: pass its id or exact title."}
+        record, sides = found
+        outcome, reason = str(args.get("outcome") or "").strip().lower(), str(args.get("reason") or "").strip()
+        if not any(_exchange._may_end(viewer.row_in(eco), eco, sides, record) for eco in sides.ecosystems):
+            return {"success": False, "code": _exchange.END_DENIED,
+                    "error": "Only a steward of either side can end this collaboration."}
+        allowed = list(_exchange.END_OUTCOMES.get(record.status, ()))
+        if outcome not in allowed:
+            return {"success": False, "code": _exchange.END_NOT_ALLOWED, "allowed": allowed,
+                    "error": f"A {record.status} collaboration can end as: {', '.join(allowed) or 'nothing'}."}
+        if not reason:
+            return {"success": False, "code": _exchange.REASON_REQUIRED, "error": "Ending needs a reason; ask the member."}
+        ask = _needs_confirmation(args, f"end:{record.id}:{outcome}",
+                                  f"This ends “{record.title}” as {outcome} with the reason “{_exchange_clip(reason, 200)}”. "
+                                  "It cannot be reopened.", confirmed_keys)
+        if ask:
+            return ask
+        await _exchange.end_collaboration(db, viewer, record, sides, outcome, reason)
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    return {"success": True, "data": _collaboration_brief(await _exchange.collaboration_payload(db, viewer, record, sides))}
+
+
+_POST_PARAM = {"type": "string", "description": "The post's id (from find_shares_needs or the page) or its exact title."}
+_COLLABORATION_PARAM = {"type": "string", "description": "The collaboration's id or its exact title."}
+
+GOVERNANCE_TOOLS.extend([
+    ToolDef(
+        name="find_shares_needs",
+        description=("Find shares, needs and solutions the member may see, across ecosystems (Discover). Each result "
+                     "names its author, domain, ecosystem and age, and says whether the member can answer it "
+                     "(respond_blocked). Open posts unless status says otherwise. Up to 20, newest first."),
+        parameters={"type": "object", "properties": {
+            "query": {"type": "string", "description": "Words from the title or description."},
+            "type": {"type": "string", "description": "share, need or solution."},
+            "category": {"type": "string", "description": "technology, resources, skills, knowledge, infrastructure, funding, space, labor or other."},
+            "status": {"type": "string", "description": "active (default), fulfilled, withdrawn or all."},
+        }},
+        handler=find_shares_needs,
+    ),
+    ToolDef(
+        name="publish_share_need",
+        description=("Post a share, need or solution as the signed-in member in a domain of their ecosystem. "
+                     "visibility: public (anyone signed in), ecosystem (its active members) or domain (the domain's "
+                     "participants and the ecosystem's stewards). Refuses a duplicate of their open post."),
+        parameters={"type": "object", "properties": {
+            "domain": {"type": "string", "description": "The domain's name or id."},
+            "type": {"type": "string", "description": "share, need or solution."},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "category": {"type": "string", "description": "One of the categories listed for find_shares_needs."},
+            "capacity": {"type": "string", "description": "How much or how often (optional)."},
+            "visibility": {"type": "string", "description": "public (default), ecosystem or domain."},
+        }, "required": ["domain", "type", "title"]},
+        handler=publish_share_need,
+    ),
+    ToolDef(
+        name="respond_to_share_need",
+        description=("Answer a post: sends the member's message to its author as a direct conversation tagged to "
+                     "the post (they see it unread in Messages). Works across ecosystems. The member confirms the "
+                     "exact message first (see `confirmed`)."),
+        parameters={"type": "object", "properties": {
+            "post": _POST_PARAM,
+            "message": {"type": "string", "description": "The member's message, in their words."},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["post", "message"]},
+        handler=respond_to_share_need,
+    ),
+    ToolDef(
+        name="update_share_need_status",
+        description=("Change a post's state. Its author: fulfilled (optionally naming who answered, `fulfilled_by`), "
+                     "withdrawn, or active (reopen, or keep open after the 90-day check-in). A steward of the post's "
+                     "ecosystem: hidden (needs a reason; the member confirms first) or restored. Nobody else."),
+        parameters={"type": "object", "properties": {
+            "post": _POST_PARAM,
+            "status": {"type": "string", "description": "fulfilled, withdrawn, active, hidden or restored."},
+            "reason": {"type": "string", "description": "A note for the author's moves; required to hide."},
+            "fulfilled_by": {"type": "string", "description": "Name of the person who answered and met it."},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["post", "status"]},
+        handler=update_share_need_status,
+    ),
+    ToolDef(
+        name="approve_collaboration",
+        description=("Approve a proposed collaboration for one side, as a steward of that side's ecosystem (the "
+                     "proposer never approves the other side). It becomes active, with a review date, once each "
+                     "side approved. Name the side (`ecosystem`) when the member stewards both."),
+        parameters={"type": "object", "properties": {
+            "collaboration": _COLLABORATION_PARAM,
+            "ecosystem": {"type": "string", "description": "The side's ecosystem name (only when it is ambiguous)."},
+        }, "required": ["collaboration"]},
+        handler=approve_collaboration,
+    ),
+    ToolDef(
+        name="end_collaboration",
+        description=("End a collaboration with a reason: completed or dissolved (a proposed one can only be "
+                     "dissolved). A steward of either side, or its proposer while it is proposed. The member "
+                     "confirms first (see `confirmed`)."),
+        parameters={"type": "object", "properties": {
+            "collaboration": _COLLABORATION_PARAM,
+            "outcome": {"type": "string", "description": "completed or dissolved."},
+            "reason": {"type": "string"},
+            "confirmed": _CONFIRMED_PARAM,
+        }, "required": ["collaboration", "outcome", "reason"]},
+        handler=end_collaboration,
+    ),
+])
+_TOOL_HANDLERS.update({"find_shares_needs": find_shares_needs, "publish_share_need": publish_share_need,
+                       "respond_to_share_need": respond_to_share_need,
+                       "update_share_need_status": update_share_need_status,
+                       "approve_collaboration": approve_collaboration, "end_collaboration": end_collaboration})
+CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {"publish_share_need", "respond_to_share_need", "update_share_need_status",
+                                             "approve_collaboration", "end_collaboration"}
+CALLER_AWARE_TOOLS = CALLER_AWARE_TOOLS | {"find_shares_needs"}
+CONFIRMATION_TOOLS = CONFIRMATION_TOOLS | {"respond_to_share_need", "update_share_need_status", "end_collaboration"}
+
+
+# ===================================================================
+# FX-Exchange: record a collaboration's review (wave-c F3), the same services/exchange function as
+# REST POST /discover/collaborations/:id/review and MCP review_collaboration.
+# ===================================================================
+
+
+async def review_collaboration(
+    args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
+) -> dict:
+    """Record a review of an active collaboration: what it found and the next review date (default a year out)."""
+    if caller_user_id is None:
+        return {"success": False, "error": CALLER_REQUIRED}
+    viewer = await _exchange.load_viewer(db, caller_user_id)
+    try:
+        found = await _find_collaboration(db, viewer, args.get("collaboration"))
+        if found is None:
+            return {"success": False, "error": "Collaboration not found: pass its id or exact title."}
+        record, sides = found
+        await _exchange.review_collaboration(db, viewer, record, sides, args.get("note"), args.get("next_review_date"))
+    except ApiError as refusal:
+        return _exchange_refused(refusal)
+    return {"success": True,
+            "data": _collaboration_brief(await _exchange.collaboration_payload(db, viewer, record, sides)),
+            "message": f"Review of “{record.title}” recorded; the next review is due {record.review_date.isoformat()}."}
+
+
+GOVERNANCE_TOOLS.append(ToolDef(
+    name="review_collaboration",
+    description=("Record a review of an active collaboration, as a steward of either side: what the review found "
+                 "(`note`, required; both ecosystems read it) and the next review date (default a year from today; "
+                 "a chosen date must be after today). This is how stewards keep a collaboration whose review date "
+                 "has passed; to stop it instead use end_collaboration."),
+    parameters={"type": "object", "properties": {
+        "collaboration": _COLLABORATION_PARAM,
+        "note": {"type": "string", "description": "What the review found, in the member's words."},
+        "next_review_date": {"type": "string", "description": "YYYY-MM-DD, after today (optional)."},
+    }, "required": ["collaboration", "note"]},
+    handler=review_collaboration,
+))
+_TOOL_HANDLERS["review_collaboration"] = review_collaboration
+CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {"review_collaboration"}

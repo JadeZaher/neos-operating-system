@@ -58,6 +58,7 @@ PEOPLE = {
 }
 MISSING_ECOSYSTEM = uuid.UUID(int=99)
 JOURNEY_MAP_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "journey.map")
+OMNIONE_MAP_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "journey.map.omnione")  # G-Onboard: progress takes only its ecosystem's journeys
 OASIS_EXIT = uuid.uuid5(uuid.NAMESPACE_DNS, "journey.exit.oasis")
 OMNIONE_EXIT = uuid.uuid5(uuid.NAMESPACE_DNS, "journey.exit.omnione")
 SAM_OASIS = _member_id(PEOPLE["sam"].user_id, OASIS)
@@ -77,6 +78,7 @@ async def _seed(session: AsyncSession) -> None:
                 member_id=f"MEM-{key}-{ecosystem_id.int}", display_name=key.title(), role="user", current_status=status,
             ))
     session.add(JourneyMap(id=JOURNEY_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OASIS, content_sequence=[], step_count=0))
+    session.add(JourneyMap(id=OMNIONE_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OMNIONE, content_sequence=[], step_count=0))
     session.add_all([
         ExitRecord(id=OASIS_EXIT, ecosystem_id=OASIS, member_id=SAM_OASIS, exit_type="standard", status="declared"),
         ExitRecord(id=OMNIONE_EXIT, ecosystem_id=OMNIONE, member_id=SAM_OMNIONE, exit_type="standard", status="declared"),
@@ -147,7 +149,7 @@ async def test_journey_progress_lands_on_the_member_row_of_the_ecosystem_it_name
     assert omnione_progress.json == {}
     _, omnione_saved = await journey.app.asgi_client.post(
         f"/api/v1/orientation/ethos/{OMNIONE}/progress", headers=_as("sam"),
-        json={"journey_map_id": str(JOURNEY_MAP_ID), "current_step": 1, "status": "in_progress"},
+        json={"journey_map_id": str(OMNIONE_MAP_ID), "current_step": 1, "status": "in_progress"},
     )
     assert omnione_saved.json["user_id"] == str(SAM_OMNIONE)
     async with journey.db() as session:

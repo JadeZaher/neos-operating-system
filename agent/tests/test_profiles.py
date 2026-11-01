@@ -16,10 +16,9 @@ from neos_agent.api.errors import register_api_errors
 from neos_agent.api.members import members_api_bp
 from neos_agent.api.profiles import _build_profile_response, profiles_api_bp
 from neos_agent.api.schemas.profiles import ProfileUpdateRequest
-from neos_agent.api.discover import (
-    _require_auth_for_shares_needs,
-    _shares_needs_stats,
-)
+from neos_agent.api.discover import _shares_needs_stats
+from neos_agent.api.errors import ApiError
+from neos_agent.services import exchange
 from neos_agent.db.course_models import Course, Quiz, QuizResult
 from neos_agent.db.models import (
     CircleMembership,
@@ -242,8 +241,10 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
 
 
 @pytest.mark.asyncio
-async def test_publication_mutation_is_author_only_except_for_admins(db_session):
+async def test_publication_edits_are_author_only_and_a_profile_admin_moderates_only_its_own_ecosystem(db_session):
+    """Flipped by G-Exchange (D1): this used to assert that any co_creator/builder manages any publication."""
     ecosystem = Ecosystem(id=uuid.uuid4(), name="Author Test", status="active")
+    elsewhere = Ecosystem(id=uuid.uuid4(), name="Founded Elsewhere", status="active")
     domain = Domain(
         id=uuid.uuid4(),
         ecosystem_id=ecosystem.id,
@@ -280,37 +281,46 @@ async def test_publication_mutation_is_author_only_except_for_admins(db_session)
         visibility="public",
         status="active",
     )
+    founder_user = User(id=uuid.uuid4(), display_name="Founder")
+    founder = Member(  # founded another ecosystem: co_creator there, a plain member here (the D1 exploit)
+        id=uuid.uuid4(), ecosystem_id=elsewhere.id, user_id=founder_user.id, member_id="founder",
+        display_name="Founder", current_status="active", profile="co_creator",
+    )
+    founder_here = Member(
+        id=uuid.uuid4(), ecosystem_id=ecosystem.id, user_id=founder_user.id, member_id="founder-here",
+        display_name="Founder", current_status="active", profile="townhall",
+    )
     db_session.add_all(
-        [ecosystem, domain, author_user, other_user, author, other, publication]
+        [ecosystem, elsewhere, domain, author_user, other_user, founder_user, author, other, founder,
+         founder_here, publication]
     )
     await db_session.commit()
 
-    request = SimpleNamespace(ctx=SimpleNamespace(member=other))
-    _, _, error = await _require_auth_for_shares_needs(
-        request,
-        db_session,
-        publication.id,
-    )
-    assert error.status == 403
+    async def attempt(user, write):
+        viewer = await exchange.load_viewer(db_session, user.id)
+        try:
+            await write(db_session, viewer, publication)
+        except ApiError as refusal:
+            return refusal.status, refusal.extra.get("code")
+        return 200, None
 
-    request.ctx.member = author
-    _, owned_record, error = await _require_auth_for_shares_needs(
-        request,
-        db_session,
-        publication.id,
-    )
-    assert error is None
-    assert owned_record.id == publication.id
+    def edit(session, viewer, record):
+        return exchange.update_publication(session, viewer, record, {"title": "Edited"})
 
+    def hide(session, viewer, record):
+        return exchange.hide_publication(session, viewer, record, "Off-topic")
+
+    assert await attempt(other_user, edit) == (403, "AUTHOR_ONLY")
+    assert await attempt(author_user, edit) == (200, None)
+    # A co_creator profile on a row in ANOTHER ecosystem moderates nothing here.
+    assert await attempt(founder_user, hide) == (403, "MODERATOR_ONLY")
+    assert await attempt(founder_user, edit) == (403, "AUTHOR_ONLY")
+    # A builder profile on a row in the post's own ecosystem moderates it (hide), but still never edits it.
     other.profile = "builder"
-    request.ctx.member = other
-    _, admin_record, error = await _require_auth_for_shares_needs(
-        request,
-        db_session,
-        publication.id,
-    )
-    assert error is None
-    assert admin_record.id == publication.id
+    await db_session.commit()
+    assert await attempt(other_user, edit) == (403, "AUTHOR_ONLY")
+    assert await attempt(other_user, hide) == (200, None)
+    assert (publication.title, publication.hidden_reason) == ("Edited", "Off-topic")
 
 
 # ---------------------------------------------------------------------------

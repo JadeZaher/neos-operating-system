@@ -4,7 +4,8 @@ Blueprint: ctc_handoff_api_bp, url_prefix="/api/v1/admin/ctc-handoff"
 
 Tracks whether a member has been marked ready to graduate from CTC into the
 NEOS Den. Members without a row are absent from the list and default to
-not-ready on the frontend.
+not-ready on the frontend. Platform admins only (helpers.require_admin): the
+course hand-off spans every ecosystem.
 Returns JSON responses only.
 """
 

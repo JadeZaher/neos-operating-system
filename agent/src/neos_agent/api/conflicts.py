@@ -31,6 +31,7 @@ from neos_agent.api.helpers import (
     serialize_shared_ecosystem_ids,
 )
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.services import dates
 from neos_agent.api.schemas.conflicts import (
     ConflictCreateRequest,
     ConflictDetail,
@@ -123,7 +124,7 @@ def conflict_stage(case: ConflictCase, facilitator_name: str | None = None) -> d
 
 def next_checkin(repair: RepairAgreementRecord, today: _dt.date | None = None) -> tuple[_dt.date | None, bool]:
     """The earliest scheduled check-in with no notes yet and whether it is past due; none once fulfilled."""
-    today = today or _dt.date.today()
+    today = today or dates.aoe_today()  # FX-Maint (F18): the one date rule, as the queue's Clock
     if repair.status == REPAIR_FULFILLED:
         return None, False
     for days in REPAIR_CHECKIN_DAYS:
@@ -393,7 +394,7 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
                 summary = changes.get("resolution_summary") or case.resolution_summary
                 if not (summary or "").strip():
                     raise ApiError(400, RESOLUTION_SUMMARY_REQUIRED)
-                case.resolved_date = _dt.date.today()
+                case.resolved_date = dates.utc_today()
         elif new_status == case.status:
             changes.pop("status")
 
@@ -445,7 +446,7 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
             if create_req.facilitator_notes:
                 commitments_data["facilitator_notes"] = create_req.facilitator_notes
 
-        today = _dt.date.today()
+        today = dates.utc_today()
         scheduled = {
             days: getattr(create_req, f"checkin_{days}_date") or today + _dt.timedelta(days=days)
             for days in REPAIR_CHECKIN_DAYS
@@ -494,7 +495,7 @@ async def update_repair_agreement(request: Request, conflict_id: uuid.UUID, repa
         if changes.get("status") == REPAIR_FULFILLED and repair.status != REPAIR_FULFILLED:
             if not confirmed:
                 raise ApiError(400, REPAIR_NEEDS_CONFIRMATION)
-            repair.completed_date = _dt.date.today()
+            repair.completed_date = dates.utc_today()
             repair.commitments = {**(repair.commitments or {}), "confirmed_by_parties_on": str(repair.completed_date)}
         for field, value in changes.items():
             setattr(repair, field, value)

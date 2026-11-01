@@ -3,7 +3,10 @@
 Blueprint: badges_api_bp, url_prefix="/api/v1/badges"
 
 Manages the admin-curated catalog of badge definitions (distinct from
-earned UserBadge awards in db/course_models.py).
+earned UserBadge awards in db/course_models.py). A badge of one ecosystem is
+changed by an administrator of that ecosystem (policy.can_administer_ecosystem);
+a global badge (no ecosystem) by a platform admin (helpers.require_admin); see
+api/AGENTS.md "Platform admin (G-Authority)".
 Returns JSON responses only.
 """
 
@@ -18,7 +21,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from neos_agent.db.models import BadgeDefinition
-from neos_agent.api.helpers import require_auth, require_admin, get_ecosystem_ids
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_ids, require_admin
+from neos_agent.api.policy import can_administer_ecosystem
 from neos_agent.api.schemas.badges import (
     BadgeDefinitionCreateRequest,
     BadgeDefinitionSchema,
@@ -26,6 +31,8 @@ from neos_agent.api.schemas.badges import (
 )
 
 logger = logging.getLogger(__name__)
+
+BADGE_MANAGE_DENIED = "Only a steward or administrator of this ecosystem can change its badges"
 
 
 # ---------------------------------------------------------------------------
@@ -57,18 +64,35 @@ def _badge_to_schema(b: BadgeDefinition) -> dict:
     ).model_dump(mode="json")
 
 
+async def _badge_administrator(session, request: Request, ecosystem_id: uuid.UUID | None):
+    """(acting row, None) when the caller may change badges of `ecosystem_id` (None = global), else (None, 403)."""
+    if ecosystem_id is None:
+        return require_admin(request)
+    caller = await caller_in(session, request, ecosystem_id)
+    if not can_administer_ecosystem(caller, ecosystem_id):
+        return None, json({"error": BADGE_MANAGE_DENIED}, status=403)
+    return caller, None
+
+
+async def _visible_badge(session, request: Request, badge_id: uuid.UUID) -> BadgeDefinition | None:
+    """A global badge, or one of an ecosystem the caller belongs to; anything else reads as missing."""
+    badge = await session.get(BadgeDefinition, badge_id)
+    if badge is None:
+        return None
+    if badge.ecosystem_id is not None and badge.ecosystem_id not in get_authorized_ecosystem_ids(request):
+        return None
+    return badge
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 
 @badges_api_bp.get("/")
+@authenticated
 async def list_badges(request: Request):
     """GET /api/v1/badges -- List badge definitions in scope, plus global badges."""
-    member, err = require_auth(request)
-    if err:
-        return err
-
     eco_ids = get_ecosystem_ids(request)
 
     async with request.app.ctx.db() as session:
@@ -90,16 +114,13 @@ async def list_badges(request: Request):
 
 
 @badges_api_bp.post("/")
+@authenticated
 async def create_badge(request: Request):
-    """POST /api/v1/badges -- Create a badge definition.
+    """POST /api/v1/badges -- Create a badge definition in `ecosystem_id` (default: the first selected ecosystem).
 
     Accepts JSON: BadgeDefinitionCreateRequest
     Returns JSON: BadgeDefinitionSchema with 201 status.
     """
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         create_req = BadgeDefinitionCreateRequest(**body)
@@ -113,6 +134,9 @@ async def create_badge(request: Request):
             ecosystem_id = eco_ids[0]
 
     async with request.app.ctx.db() as session:
+        admin, refused = await _badge_administrator(session, request, ecosystem_id)
+        if refused is not None:
+            return refused
         badge = BadgeDefinition(
             id=uuid.uuid4(),
             ecosystem_id=ecosystem_id,
@@ -137,12 +161,9 @@ async def create_badge(request: Request):
 
 
 @badges_api_bp.put("/<badge_id:uuid>")
+@authenticated
 async def update_badge(request: Request, badge_id: uuid.UUID):
     """PUT /api/v1/badges/:id -- Update non-None fields of a badge definition."""
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     body = request.json or {}
     try:
         update_req = BadgeDefinitionUpdateRequest(**body)
@@ -150,9 +171,12 @@ async def update_badge(request: Request, badge_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     async with request.app.ctx.db() as session:
-        badge = await session.get(BadgeDefinition, badge_id)
+        badge = await _visible_badge(session, request, badge_id)
         if badge is None:
             return json({"error": "Badge not found"}, status=404)
+        _, refused = await _badge_administrator(session, request, badge.ecosystem_id)
+        if refused is not None:
+            return refused
 
         for field, value in update_req.model_dump(exclude_none=True).items():
             setattr(badge, field, value)
@@ -164,16 +188,16 @@ async def update_badge(request: Request, badge_id: uuid.UUID):
 
 
 @badges_api_bp.delete("/<badge_id:uuid>")
+@authenticated
 async def delete_badge(request: Request, badge_id: uuid.UUID):
     """DELETE /api/v1/badges/:id -- Delete a badge definition."""
-    admin, err = require_admin(request)
-    if err:
-        return err
-
     async with request.app.ctx.db() as session:
-        badge = await session.get(BadgeDefinition, badge_id)
+        badge = await _visible_badge(session, request, badge_id)
         if badge is None:
             return json({"error": "Badge not found"}, status=404)
+        _, refused = await _badge_administrator(session, request, badge.ecosystem_id)
+        if refused is not None:
+            return refused
 
         await session.delete(badge)
         await session.commit()

@@ -90,7 +90,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         # Ensure a default OmniOne ecosystem exists
         try:
             from sqlalchemy import select
-            from neos_agent.db.models import Ecosystem
+            from neos_agent.api.helpers import PLATFORM_HOME_SETTING_KEY
+            from neos_agent.db.models import AppSetting, Ecosystem
 
             async with app.ctx.db() as session:
                 result = await session.execute(
@@ -105,6 +106,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                         status="active",
                     )
                     session.add(ecosystem)
+                    # G-Authority: the ecosystem the server founds on an empty database is the platform home, pinned by id.
+                    if await session.scalar(select(AppSetting.id).where(AppSetting.key == PLATFORM_HOME_SETTING_KEY)) is None:
+                        session.add(AppSetting(key=PLATFORM_HOME_SETTING_KEY, value={"ecosystem_id": str(ecosystem.id)}))
                     await session.commit()
                     logger.info("Created default OmniOne ecosystem")
         except Exception as e:
@@ -296,6 +300,14 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 return None
             return await default_member(db, user.id, selected_ids=selected_ids, authorized_ids=authorized_ids)
 
+        # G-Authority: platform admin is decided once per request, never from ctx.member (api/AGENTS.md "Platform admin (G-Authority)").
+        async def _resolve_platform_admin(db, user):
+            from neos_agent.api.helpers import platform_admin_row
+
+            row = await platform_admin_row(db, settings, user.id) if user is not None else None
+            request.ctx.platform_admin_member = row
+            request.ctx.platform_admin = row is not None
+
         # Helper: resolve user from session cookie
         async def _try_resolve_user():
             cookie = request.cookies.get("neos_session")
@@ -321,6 +333,10 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 logger.debug("Session resolve failed on public route")
             return None
 
+        # Anonymous, preflight and failed lookups are never platform admins.
+        request.ctx.platform_admin = False
+        request.ctx.platform_admin_member = None
+
         # CORS preflight requests (OPTIONS) never carry cookies — let them through
         if request.method == "OPTIONS":
             return None
@@ -333,7 +349,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 async with app.ctx.db() as db:
                     ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
                     request.ctx.member = await _default_member(db, user, eco_ids, all_auth_ids)
+                    await _resolve_platform_admin(db, user)
             except Exception:
+                request.ctx.platform_admin, request.ctx.platform_admin_member = False, None
                 ecosystems, eco_ids, all_auth_ids = [], [], []
                 request.ctx.member = None
                 request.ctx.ecosystem_scope = EcosystemScope.empty()
@@ -382,6 +400,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                 selected_ids = _parse_selected_cookie()
                 ecosystems, eco_ids, all_auth_ids = await _load_ecosystems(db, user, selected_ids)
                 request.ctx.member = await _default_member(db, user, eco_ids, all_auth_ids)
+                await _resolve_platform_admin(db, user)
                 request.ctx.ecosystems = ecosystems
                 request.ctx.selected_ecosystem_ids = eco_ids
                 request.ctx.authorized_ecosystem_ids = all_auth_ids

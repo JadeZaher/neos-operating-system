@@ -41,6 +41,7 @@ from neos_agent.api.policy import (
     is_proposal_author,
 )
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.services.dates import aoe_today  # G-Maint: the one date rule
 from neos_agent.services.act_gates import (
     MANAGE_DENIED,
     ActOutcome,
@@ -391,7 +392,7 @@ async def _proposal_detail_payload(session, proposal: Proposal, caller: Member |
     if outcome is not None:
         outcome.attach(payload)
     _attach_caller_flags(payload, caller, proposal)
-    payload["allowed_next"] = proposal_next_moves(proposal, payload["gates"], caller)
+    payload["allowed_next"] = proposal_next_moves(proposal, payload["gates"], caller, today=aoe_today())  # G-Maint
     payload["caller_position"] = await _caller_position(session, proposal, caller)
     payload["caller_has_advised"], payload["caller_has_reported"] = await _caller_contributions(session, proposal, caller)
     payload["caller_can_register"] = (

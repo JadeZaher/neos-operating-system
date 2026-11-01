@@ -170,3 +170,67 @@ exactly one member of the case's ecosystem has that display name (compared case-
 trimmed); an ambiguous or unknown name stays in `labels`, which never authorizes access. Only
 `member_ids` grants party access (display names are user-editable). Rows already holding
 `member_ids` are left alone. The downgrade does not restore the old shape.
+
+
+### u7d2f4b8a3c6: maintenance and health (G-Maint)
+
+Adds `governance_health_audits.self_assessment` (boolean, server default false) when missing: an
+audit a steward recorded of their own ecosystem because no member who is not a steward could
+(`api/AGENTS.md` "Maintenance and health (G-Maint)"). Frozen indicator values and review findings
+need no column: they live in the existing JSON (`indicator_scores`, `review_records.evaluation`).
+
+Data, only NULLs filled (a rerun and a create_all database are safe), in Python over `sa.table`
+columns:
+- An agreement in force (`active`, `under_review`) with no review date gets the per-type interval
+  (a frozen copy of `REVIEW_INTERVAL_MONTHS`) from its ratification date, else its creation. When
+  that date is already past, the first review is due 30 days after the migration, so years of
+  undated agreements do not all show overdue on the first page load (the r6c1e8a4f2d7 rule).
+- An agreement in `sunset` with no sunset date gets 60 days (the framework's notice) after its
+  latest sunset ceremony, else after its last update, else after the migration date; archiving is
+  offered after it.
+
+The four study agreements stuck under review need no special case: they can now be finished with
+findings. The downgrade drops the column; the filled dates stay (they cannot be told apart from set
+ones). `tests/test_g_health_migration.py` runs it on SQLite and on a disposable PostgreSQL.
+
+### v1b4e7c9d2f5: platform home pin (G-Authority)
+
+The platform home (whose co_creator/builder rows are platform admins) is an id, never a name: at
+request time `PLATFORM_HOME_ECOSYSTEM_ID`, else the `app_settings` row `platform_home_ecosystem_id` =
+`{"ecosystem_id": "<uuid>"}`, else nobody (`api/AGENTS.md` "Platform admin (G-Authority)"). This
+revision writes that row once, resolving the home the way sign-up placement did: the
+`SIGNUP_DEFAULT_ECOSYSTEM_SLUG` environment variable (an id or a name slug), else "omnione"; the oldest
+match (`created_at`, `founded_date` nulls last, `id`; the ordering is done in Python, so it is the same
+on both databases). Why at migration time: production runs `alembic upgrade head` on deploy while the
+seeded OmniOne still carries its name, so the pin lands on the real one before a rename (or a later
+ecosystem named "omnione") could matter. No match: no row (fail closed). A row already present is never
+touched, so a re-run, or an operator's own pin, survives. Fresh `create_all` + stamp databases skip the
+revision; the server pins the OmniOne it founds on an empty database (`main.init_db`), and any other
+fresh environment sets `PLATFORM_HOME_ECOSYSTEM_ID`. The downgrade deletes the row whatever it holds.
+`tests/test_platform_admin_migration.py` runs it on SQLite and on a disposable PostgreSQL.
+
+
+### s3e8b1d7c4a2: exchange integrity (G-Exchange)
+
+Adds `shares_needs.status_reason`, `status_changed_by_member_id`, `status_changed_at`, `fulfilled_by_member_id`,
+`hidden_at`, `hidden_by_member_id`, `hidden_reason` and `collaborations.proposed_by_member_id`,
+`ended_by_member_id`, `end_reason`, `ended_at`, plus the last recorded review `reviewed_by_member_id`, `review_note`,
+`reviewed_at` (FX-Exchange amendment before any deploy) (member columns `SET NULL`; SQLite the bare column, PostgreSQL also
+the foreign key; each only when missing). Why: who moved a post and why, whom a fulfilled post names, a
+restorable hide, who proposed and who ended a collaboration (services/AGENTS.md "Exchange (G-Exchange)").
+
+Data, on both kinds of database (typed `sa.table` statements, no dialect SQL):
+
+| Rows | Becomes | Why |
+|---|---|---|
+| `category` blank | NULL | an empty category matched no filter |
+| `category` in the vocabulary up to case and spaces | the vocabulary value | the filters compare exactly |
+| `category` `skill` / `resource` | `skills` / `resources` | DomainDetail sent the singulars (D11) |
+| `visibility` `private` | `domain` | `private` is retired; `domain` is its narrowest successor |
+| active, no author | withdrawn, "No author on record (legacy post)" | nobody can answer it (there is no one to message) |
+| active, author `exited` | withdrawn, "author left" | what `api/exit.py` now does at exit |
+| active collaboration, no review date | `started_date` (else the created date) + 365 days; already past: the migration date + 30 days (`FIRST_REVIEW_GRACE_DAYS`, as u7d2f4b8a3c6 for agreements) | activation now sets one; the grace keeps every year-old collaboration from being due the day it deploys (wave-c A10) |
+
+Other free-text categories are left as they are (the server refuses new ones). The downgrade drops the columns;
+the data rewrites are not restored. `proposed_by_member_id` is not backfilled (nothing recorded the proposer).
+Tested by `tests/test_exchange_migration.py` (SQLite, and PostgreSQL with downgrade and re-upgrade).

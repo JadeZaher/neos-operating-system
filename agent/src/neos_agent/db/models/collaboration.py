@@ -59,6 +59,21 @@ class Collaboration(TimestampMixin, Base):
     started_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     review_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     version_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # G-Exchange (s3e8b1d7c4a2): who proposed it and how it ended; see services/AGENTS.md "Exchange (G-Exchange)".
+    proposed_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    ended_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    end_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # FX-Exchange (s3e8b1d7c4a2): the last recorded review (who, what it found, when); it also set review_date.
+    reviewed_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 # ========================

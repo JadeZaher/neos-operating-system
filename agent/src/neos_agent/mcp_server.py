@@ -39,6 +39,9 @@ from neos_agent.agent.governance_tools import (
 )
 from neos_agent.api.agreements import CONSENT_NOT_OPEN, CONSENT_OPEN_STATUSES, record_member_consent
 from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
+from neos_agent.db.session import utc_connect_args  # G-Maint
+from neos_agent.api.agreements import parse_review_date  # G-Maint
+from neos_agent.api.errors import ApiError  # G-Maint
 from neos_agent.api.policy import is_proposal_author
 from neos_agent.api.proposals import SELF_ADVICE_DENIED
 from neos_agent.db.models import (
@@ -100,7 +103,8 @@ _session_factory: async_sessionmaker | None = None
 def _db() -> async_sessionmaker:
     global _engine, _session_factory
     if _session_factory is None:
-        _engine = create_async_engine(get_settings().DATABASE_URL)
+        url = get_settings().DATABASE_URL
+        _engine = create_async_engine(url, connect_args=utc_connect_args(url))  # G-Maint: sessions in UTC
         _session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _session_factory
 
@@ -534,8 +538,12 @@ async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Con
 
 
 @mcp.tool()
-async def transition_agreement(agreement_id: str, status: str, evidence: str, ctx: Context, confirm: bool = False) -> dict:
+async def transition_agreement(agreement_id: str, status: str, evidence: str, ctx: Context, confirm: bool = False,
+                               next_review_date: str | None = None) -> dict:
     """Conduct the ceremony moving an agreement through the ACT sequence.
+
+    Ending a review (under_review -> active or sunset): `evidence` is the review findings (min 8 chars),
+    written to a review record; keeping it in force sets `next_review_date` (YYYY-MM-DD, default by type).
 
     Mirrors the UI rules: only an active ecosystem steward (admin/owner) may
     conduct; forward ceremonies need documented evidence (min 8 chars);
@@ -553,16 +561,21 @@ async def transition_agreement(agreement_id: str, status: str, evidence: str, ct
             raise ValueError("Agreement not found")
         # Same engine as REST POST /agreements/:id/status: ceremony steward, table, evidence, gate.
         actor = await _row(s, caller.user.id, agreement.ecosystem_id)
+        try:
+            next_date = parse_review_date(next_review_date)  # G-Maint
+        except ApiError as refusal:
+            raise ValueError(refusal.message) from None
         if confirm is not True:
             ask_as = target if target in _AGREEMENT_CONFIRM else (
                 "active" if await agreement_act_puts_in_force(s, agreement, to=target) else None)
             if ask_as is not None:
-                refusal = await _agreement_move_refusal(s, agreement, target, actor, evidence)
+                refusal = await _agreement_move_refusal(s, agreement, target, actor, evidence, next_date)
                 if refusal:
                     raise ValueError(refusal)
                 return await _agreement_question(s, agreement, ask_as, "transition_agreement")
         try:
-            outcome = await conduct_agreement_transition(s, agreement, to=target, caller=actor, evidence=evidence)
+            outcome = await conduct_agreement_transition(s, agreement, to=target, caller=actor, evidence=evidence,
+                                                         next_review_date=next_date)
         except TransitionRefused as refusal:
             raise _refused(refusal) from None
         await s.commit()
@@ -799,6 +812,135 @@ async def transition_proposal(
             raise _refused(refusal) from None
         await s.commit()
         return _outcome(outcome, proposal_id=proposal.proposal_id)
+
+
+# ---------------------------------------------------------------------------
+# G-Onboard: join an ecosystem through the same placement as REST (api/AGENTS.md "Onboarding (G-Onboard)")
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def join_ecosystem(ecosystem_id: str, ctx: Context, confirm: bool = False) -> dict:
+    """Join a public ecosystem, or return to one the token owner left (member_lifecycle.place_member, as REST
+    POST /ecosystems/:id/join). Nobody approves newcomers: active at once, or once the membership agreements are
+    consented to (attest_agreement_consent). Nothing changes without confirm=true: ask the owner first."""
+    from neos_agent.api.errors import ApiError
+    from neos_agent.db.models import Ecosystem
+    from neos_agent.services import member_lifecycle
+    from neos_agent.services.agreement_consent import required_agreements_for_scope
+
+    caller = await _caller(ctx)
+    async with _db()() as s:
+        try:
+            ecosystem = await s.get(Ecosystem, uuid.UUID(ecosystem_id.strip()))
+        except ValueError:
+            ecosystem = None
+        existing = await _row(s, caller.user.id, ecosystem.id) if ecosystem is not None else None
+        if ecosystem is None or (ecosystem.visibility != "public" and existing is None):
+            raise ValueError("Ecosystem not found")  # a private ecosystem answers like a missing one (REST 404)
+        if confirm is not True and (existing is None or existing.current_status == "exited"):
+            gate = await required_agreements_for_scope(s, ecosystem.id, "ecosystem")
+            return {"needs_confirmation": f"This makes the token owner a member of {ecosystem.name}"
+                    + (f"; they take part once they consent to {', '.join(a.title for a in gate)}." if gate
+                       else ", active at once."), "ecosystem_id": str(ecosystem.id)}
+        user = caller.user
+        key = f"did-{user.did[-12:]}" if user.did else f"usr-{uuid.uuid4().hex[:12]}"
+        try:
+            placement = await member_lifecycle.place_member(
+                s, user_id=user.id, ecosystem=ecosystem, display_name=user.display_name or "Member", member_key=key,
+            )
+        except ApiError as refusal:
+            code = refusal.extra.get("code")
+            raise ValueError(f"{code}: {refusal.message}" if code else refusal.message) from None
+        payload = member_lifecycle.placement_payload(placement, ecosystem.name)
+        await s.commit()
+        return payload
+
+
+# ---------------------------------------------------------------------------
+# G-Exchange: shares, needs and collaborations; each tool runs the chat tool of the same rule
+# (services/exchange.py via governance_tools), so REST, chat and MCP refuse and allow the same moves.
+# ---------------------------------------------------------------------------
+
+
+async def _exchange_tool(ctx: Context, name: str, args: dict, *, confirm: bool = False) -> dict:
+    """Run governance_tools `name` as the token owner (their active ecosystems); refusals become ValueError."""
+    from neos_agent.agent.governance_tools import execute_tool
+
+    caller = await _caller(ctx)
+    async with _db()() as s:
+        active = (await s.scalars(select(Member.ecosystem_id).where(
+            Member.user_id == caller.user.id, Member.current_status == "active"))).all()
+        result = await execute_tool(name, {**args, "confirmed": confirm}, s, ecosystem_ids=[str(e) for e in active],
+                                    caller_user_id=caller.user.id, confirmed_keys=None)
+        if result.get("needs_confirmation"):
+            return {"needs_confirmation": result["needs_confirmation"],
+                    "next": f"Nothing changed. Ask the token owner; only if they agree, call {name} again with confirm=true."}
+        if not result.get("success"):
+            code = result.get("code")
+            raise ValueError(f"{code}: {result['error']}" if code else result["error"])
+        await s.commit()
+        return {key: value for key, value in result.items() if key != "success"}
+
+
+@mcp.tool()
+async def find_shares_needs(ctx: Context, query: str | None = None, type: str | None = None,
+                            category: str | None = None, status: str | None = None) -> dict:
+    """Shares, needs and solutions the token owner may see across ecosystems (open ones unless status is given)."""
+    return await _exchange_tool(ctx, "find_shares_needs", {"query": query, "type": type, "category": category,
+                                                           "status": status})
+
+
+@mcp.tool()
+async def post_share_need(domain: str, type: str, title: str, ctx: Context, description: str | None = None,
+                          category: str | None = None, capacity: str | None = None,
+                          visibility: str | None = None) -> dict:
+    """Post a share, need or solution in a domain as the token owner (visibility public, ecosystem or domain)."""
+    args = {"domain": domain, "type": type, "title": title, "description": description, "category": category,
+            "capacity": capacity, "visibility": visibility}
+    return await _exchange_tool(ctx, "publish_share_need", {k: v for k, v in args.items() if v is not None})
+
+
+@mcp.tool()
+async def respond_to_share_need(post: str, message: str, ctx: Context, confirm: bool = False) -> dict:
+    """Message a post's author about it (a direct conversation tagged to the post). Without confirm=true nothing is
+    sent and the result says what would be; ask the token owner first."""
+    return await _exchange_tool(ctx, "respond_to_share_need", {"post": post, "message": message}, confirm=confirm)
+
+
+@mcp.tool()
+async def update_share_need_status(post: str, status: str, ctx: Context, reason: str | None = None,
+                                   fulfilled_by: str | None = None, confirm: bool = False) -> dict:
+    """The author: fulfilled / withdrawn / active (reopen or keep open). A steward there: hidden (reason; needs
+    confirm=true) or restored."""
+    args = {"post": post, "status": status, "reason": reason, "fulfilled_by": fulfilled_by}
+    return await _exchange_tool(ctx, "update_share_need_status", {k: v for k, v in args.items() if v is not None},
+                                confirm=confirm)
+
+
+@mcp.tool()
+async def approve_collaboration(collaboration: str, ctx: Context, ecosystem: str | None = None) -> dict:
+    """Approve one side of a proposed collaboration as a steward of that side (never the proposer's other side)."""
+    args = {"collaboration": collaboration, **({"ecosystem": ecosystem} if ecosystem else {})}
+    return await _exchange_tool(ctx, "approve_collaboration", args)
+
+
+@mcp.tool()
+async def end_collaboration(collaboration: str, outcome: str, reason: str, ctx: Context, confirm: bool = False) -> dict:
+    """Complete or dissolve a collaboration with a reason (a steward of either side; the proposer while proposed).
+    Without confirm=true nothing changes."""
+    return await _exchange_tool(ctx, "end_collaboration", {"collaboration": collaboration, "outcome": outcome,
+                                                           "reason": reason}, confirm=confirm)
+
+
+# FX-Exchange: record a collaboration's review (wave-c F3); the chat tool of the same name, as REST .../review.
+@mcp.tool()
+async def review_collaboration(collaboration: str, note: str, ctx: Context, next_review_date: str | None = None) -> dict:
+    """Record a review of an active collaboration as a steward of either side: what it found and the next review
+    date (YYYY-MM-DD after today; default a year out)."""
+    args = {"collaboration": collaboration, "note": note,
+            **({"next_review_date": next_review_date} if next_review_date else {})}
+    return await _exchange_tool(ctx, "review_collaboration", args)
 
 
 # ---------------------------------------------------------------------------

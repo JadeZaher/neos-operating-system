@@ -29,3 +29,19 @@ def canonical_agreement_status(value: str) -> str:
     if normalized not in AGREEMENT_STATUSES:
         raise ValueError(f"Unsupported agreement status: {value}")
     return normalized
+
+
+# G-Maint: review cycle (services/AGENTS.md "Maintenance and health (G-Maint)").
+
+# Months from a renewal (or from creation) to the next review, by agreement type; others use the default.
+REVIEW_INTERVAL_MONTHS = {"space": 12, "access": 6, "organizational": 24, "uaf": 12, "culture_code": 12}
+DEFAULT_REVIEW_INTERVAL_MONTHS = 12
+# Framework agreement-review E.3: a sunset gives this many days' notice before the agreement ends.
+SUNSET_NOTICE_DAYS = 60
+
+
+def default_review_date(agreement_type: str | None, today):
+    """The next review date for an agreement of `agreement_type`, counted from `today` (a date)."""
+    from neos_agent.services.dates import add_months
+
+    return add_months(today, REVIEW_INTERVAL_MONTHS.get(agreement_type or "", DEFAULT_REVIEW_INTERVAL_MONTHS))

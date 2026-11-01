@@ -17,17 +17,22 @@ from typing import Optional
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import (
+    Ecosystem,
     Member,
     MemberOnboarding,
+    UserJourneyProgress,
 )
 from neos_agent.api.errors import ApiError, get_scoped_or_404
 from neos_agent.api.guards import authenticated, caller_in
-from neos_agent.api.policy import can_record_onboarding_consent
-from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
+from neos_agent.api.policy import can_manage_onboarding, can_read_onboarding_record, can_record_onboarding_consent
+from neos_agent.services import dates
+from neos_agent.services.agreement_consent import missing_agreement_consents
+from neos_agent.services.member_lifecycle import agreement_brief
+from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_ids, parse_pagination
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.onboarding import CeremonyState, OnboardingListItem, SectionConsentRequest
 
@@ -61,20 +66,30 @@ onboarding_api_bp = Blueprint("onboarding_api", url_prefix="/api/v1/onboarding")
 
 
 def _calc_completion(section_consents: dict | None) -> int:
-    """Calculate completion percentage from section consents."""
+    """Completion from section consents: a stand-aside or objection is recorded but is not consent (review M3)."""
     if not section_consents:
-        return 0
-    total = len(_CONSENT_SECTIONS)
-    if total == 0:
         return 0
     completed = 0
     for section in _CONSENT_SECTIONS:
         val = section_consents.get(section)
         if val is True:
             completed += 1
-        elif isinstance(val, dict) and val.get("consented"):
+        elif isinstance(val, dict) and val.get("consented") and val.get("position") in (None, "consent"):
             completed += 1
-    return round((completed / total) * 100)
+    return round((completed / len(_CONSENT_SECTIONS)) * 100)
+
+
+NEWCOMER_WINDOW_DAYS = 30  # a member counts as new for this long after joining
+STEWARDS_ONLY = "Only stewards see newcomers"
+
+
+async def _stewarded_ecosystem_ids(session, request: Request, ecosystem_ids) -> list[uuid.UUID]:
+    """The ecosystems among `ecosystem_ids` whose onboarding the caller manages (policy.can_manage_onboarding)."""
+    stewarded = []
+    for ecosystem_id in ecosystem_ids:
+        if can_manage_onboarding(await caller_in(session, request, ecosystem_id), ecosystem_id):
+            stewarded.append(ecosystem_id)
+    return stewarded
 
 
 # ---------------------------------------------------------------------------
@@ -85,16 +100,15 @@ def _calc_completion(section_consents: dict | None) -> int:
 @onboarding_api_bp.get("/")
 @authenticated
 async def list_pending_onboardings(request: Request):
-    """GET /api/v1/onboarding -- List pending onboardings.
+    """GET /api/v1/onboarding -- Ceremony records below 100% (read-only history), for stewards of the selection.
 
-    Returns onboarding records where completion_percentage < 100.
-    Ecosystem scoped via the member join.
+    Members no longer see everyone's ceremony progress (review L-row "List onboardings").
     Query params: page (default 1), per_page (default 25, max 100).
     """
-    eco_ids = get_ecosystem_ids(request)
     page = parse_pagination(request)
 
     async with request.app.ctx.db() as session:
+        eco_ids = await _stewarded_ecosystem_ids(session, request, get_ecosystem_ids(request))
         stmt = (
             select(MemberOnboarding, Member.display_name)
             .join(Member, MemberOnboarding.member_id == Member.id)
@@ -138,6 +152,52 @@ async def list_pending_onboardings(request: Request):
     })
 
 
+@onboarding_api_bp.get("/newcomers")
+@authenticated
+async def list_newcomers(request: Request):
+    """GET /api/v1/onboarding/newcomers -- Stewards' Newcomers list: pending members and members joined in the last
+    30 days in EVERY ecosystem they steward (the queue's reach, not the selection: FX-Onboard F12); stuck ones
+    (pending, nothing left to consent to) first. 403 otherwise."""
+    cutoff = dates.utc_now() - _dt.timedelta(days=NEWCOMER_WINDOW_DAYS)
+    async with request.app.ctx.db() as session:
+        eco_ids = await _stewarded_ecosystem_ids(session, request, get_authorized_ecosystem_ids(request))
+        if not eco_ids:
+            raise ApiError(403, STEWARDS_ONLY)
+        rows = (await session.execute(
+            select(Member, Ecosystem.name)
+            .join(Ecosystem, Ecosystem.id == Member.ecosystem_id)
+            .where(
+                Member.ecosystem_id.in_(eco_ids),
+                or_(Member.current_status == "pending_consent",
+                    and_(Member.current_status == "active", Member.created_at >= cutoff)),
+            )
+            .order_by(Member.created_at.desc(), Member.id)
+        )).all()
+        progress: dict[uuid.UUID, str] = {}
+        for record in (await session.execute(
+            select(UserJourneyProgress).where(UserJourneyProgress.member_id.in_([member.id for member, _ in rows]))
+            .order_by(UserJourneyProgress.created_at)
+        )).scalars():
+            progress[record.member_id] = record.status or "in_progress"  # the latest row wins
+        items = []
+        for member, ecosystem_name in rows:
+            missing = (await missing_agreement_consents(session, member.id, member.ecosystem_id, "ecosystem")
+                       if member.current_status == "pending_consent" else [])
+            items.append({
+                "id": str(member.id),
+                "display_name": member.display_name,
+                "ecosystem_id": str(member.ecosystem_id),
+                "ecosystem_name": ecosystem_name,
+                "current_status": member.current_status,
+                "joined_at": member.created_at.isoformat() if member.created_at else None,
+                "required_agreements": [agreement_brief(agreement) for agreement in missing],
+                "orientation_status": progress.get(member.id, "not_started"),
+                "stuck": member.current_status == "pending_consent" and not missing,
+            })
+    items.sort(key=lambda item: (not item["stuck"], item["current_status"] != "pending_consent"))  # stable: newest first within
+    return json({"items": items, "total": len(items)})
+
+
 @onboarding_api_bp.get("/<member_id:uuid>/ceremony")
 @authenticated
 async def get_ceremony_state(request: Request, member_id: uuid.UUID):
@@ -148,7 +208,10 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         # A member opens from any authorized ecosystem, matching the list's owner-only rule.
         target = await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
-        can_record = can_record_onboarding_consent(await caller_in(session, request, target.ecosystem_id), target)
+        caller = await caller_in(session, request, target.ecosystem_id)
+        if not can_read_onboarding_record(caller, target):  # FX-Onboard A8: positions and objections are not public
+            raise ApiError(404, "Member not found")
+        can_record = can_record_onboarding_consent(caller, target)
 
         stmt = select(MemberOnboarding).where(
             MemberOnboarding.member_id == member_id
@@ -202,11 +265,11 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
         if not can_record_onboarding_consent(await caller_in(session, request, target.ecosystem_id), target):
             raise ApiError(403, ONBOARDING_CONSENT_DENIED)
 
-        stmt = select(MemberOnboarding).where(
-            MemberOnboarding.member_id == member_id
+        stmt = (  # locked: a section write is a JSON read-modify-write, so two at once must not lose one (L4)
+            select(MemberOnboarding).where(MemberOnboarding.member_id == member_id)
+            .order_by(MemberOnboarding.created_at, MemberOnboarding.id).limit(1).with_for_update()
         )
-        result = await session.execute(stmt)
-        ob = result.scalar_one_or_none()
+        ob = (await session.execute(stmt)).scalars().first()
 
         if ob is None:
             raise ApiError(404, "No onboarding record found for this member")
@@ -229,7 +292,7 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
 
         # If fully complete and no consent_date yet, set it
         if ob.completion_percentage == 100 and ob.consent_date is None:
-            ob.consent_date = _dt.date.today()
+            ob.consent_date = dates.utc_today()
 
         await session.commit()
         await session.refresh(ob)

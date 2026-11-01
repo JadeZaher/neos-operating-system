@@ -19,11 +19,12 @@ from neos_agent.db.models import Domain, Ecosystem, Member, SharesNeeds, User
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
+from neos_agent.services.member_lifecycle import JOINED, place_member, placement_payload  # G-Onboard
 
 from .errors import ApiError
 from .guards import authenticated, caller_in
 from .helpers import _escape_like, parse_pagination
-from .policy import can_update_ecosystem
+from .policy import can_manage_onboarding, can_update_ecosystem
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
@@ -338,65 +339,40 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/join")
 @authenticated
 async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
-    """Join an ecosystem.
+    """Join an ecosystem, heal a pending row with nothing left to consent to, or return after leaving.
 
-    Creates a pending member when agreement consent is a participation gate.
-    The member becomes active after attesting to each required agreement.
+    member_lifecycle.place_member (one transition per move): 201 for a new row, 200 for an existing one;
+    a private or unknown ecosystem is 404; see api/AGENTS.md "Onboarding (G-Onboard)".
     """
     member = request.ctx.member
+    user = getattr(request.ctx, "user", None)
+    user_id = user.id if user else member.user_id
+    member_key = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
 
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
             raise ApiError(404, "Ecosystem not found")
-
-        # Check if already a member
-        user = getattr(request.ctx, "user", None)
-        user_id = user.id if user else member.user_id
-        if await caller_in(db, request, ecosystem_id) is not None:
-            raise ApiError(409, "Already a member of this ecosystem")
-
-        # A gate is evaluated only after a member identity exists so consent is
-        # self-attested, auditable, and bound to this ecosystem membership.
-        mid = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
-        new_member = Member(
-            id=uuid.uuid4(),
-            ecosystem_id=ecosystem_id,
-            user_id=user_id,
-            member_id=mid,
-            display_name=member.display_name,
-            current_status="pending_consent",
-            onboarding_status="agreement_consent_required",
-        )
-        db.add(new_member)
-        await db.flush()
-        missing = await missing_agreement_consents(
-            db, new_member.id, ecosystem_id, "ecosystem"
-        )
-        if not missing:
-            new_member.current_status = "active"
-            new_member.onboarding_status = "complete"
+        placement = await place_member(db, user_id=user_id, ecosystem=eco, display_name=member.display_name,
+                                       member_key=member_key, trigger=JOINED)
+        payload = placement_payload(placement, eco.name)
         await db.commit()
 
-        eco_name = eco.name
-
-    if missing:
-        return json({
-            "status": "consent_required",
-            "message": f"Consent to the ecosystem agreements before participating in {eco_name}.",
-            "required_agreements": [
-                {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
-                for agreement in missing
-            ],
-        }, status=201)
-    return json({
-        "status": "joined",
-        "message": f"Welcome to {eco_name}! You are now an active member.",
-        "required_agreements": [],
-    }, status=201)
+    return json(payload, status=201 if placement.created else 200)
 
 
 # --- Ecosystem Quiz Endpoints ---
+
+ONBOARDING_STEWARDS_ONLY = "Only an active steward of this ecosystem can change its onboarding"
+QUIZ_OTHER_ECOSYSTEM = "That quiz belongs to another ecosystem"
+
+
+async def _onboarding_steward_or_error(db, request: Request, ecosystem_id: uuid.UUID) -> Member:
+    """The caller's row when they may manage this ecosystem's onboarding (policy.can_manage_onboarding), else 404/403."""
+    _eco, caller = await _ecosystem_as_member_or_error(db, request, ecosystem_id)
+    if not can_manage_onboarding(caller, ecosystem_id):
+        raise ApiError(403, ONBOARDING_STEWARDS_ONLY)
+    return caller
 
 
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/quizzes")
@@ -457,11 +433,18 @@ async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
         raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as db:
-        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
+        steward = await _onboarding_steward_or_error(db, request, ecosystem_id)
 
-        quiz = await db.get(Quiz, quiz_id)
+        quiz = await db.get(Quiz, quiz_id, with_for_update=True)
         if quiz is None:
             raise ApiError(404, "Quiz not found")
+        if quiz.ecosystem_id not in (None, ecosystem_id):  # never take another ecosystem's quiz
+            raise ApiError(403, QUIZ_OTHER_ECOSYSTEM)
+        if quiz.ecosystem_id is None:  # FX-Onboard A9: a shared quiz stays shared; this ecosystem gets its own copy
+            from neos_agent.api.quizzes import copy_quiz
+            quiz = copy_quiz(quiz, ecosystem_id=ecosystem_id, domain_id=None, created_by=steward.id)
+            db.add(quiz)
+            quiz_id = quiz.id
 
         # If marking as entry quiz, clear any existing entry quiz for this ecosystem
         if is_entry_quiz:
@@ -504,7 +487,7 @@ async def unassign_quiz_from_ecosystem(request: Request, ecosystem_id: uuid.UUID
         raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as db:
-        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
+        await _onboarding_steward_or_error(db, request, ecosystem_id)
 
         quiz = await db.get(Quiz, quiz_id)
         if quiz is None or quiz.ecosystem_id != ecosystem_id:
@@ -526,7 +509,7 @@ async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
     Each result includes member display_name and quiz title.
     """
     async with request.app.ctx.db() as db:
-        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
+        await _onboarding_steward_or_error(db, request, ecosystem_id)  # members' scores are for its stewards
 
         # Get all quizzes for this ecosystem
         quiz_result = await db.execute(
@@ -583,59 +566,25 @@ async def ecosystem_quiz_results(request: Request, ecosystem_id: uuid.UUID):
 @ecosystems_api_bp.get("/<ecosystem_id:uuid>/shares-needs")
 @authenticated
 async def list_ecosystem_shares_needs(request: Request, ecosystem_id: uuid.UUID):
-    """GET /api/v1/ecosystems/:id/shares-needs -- List shares & needs for this ecosystem.
-
-    Returns all items (not just public/active) so members can manage them.
-    Query params: type, category, status
+    """GET /api/v1/ecosystems/:id/shares-needs -- for ACTIVE members there, every status under the one visibility
+    rule (G-Exchange; a pending or exited row reads nothing here). Query params: type, category, status.
     """
+    from neos_agent.api.guards import caller_user_id  # G-Exchange
+    from neos_agent.api.policy import is_active_member_in  # G-Exchange
+    from neos_agent.services import exchange  # G-Exchange
+
     async with request.app.ctx.db() as db:
-        await _ecosystem_as_member_or_error(db, request, ecosystem_id)
-
-        filters = [SharesNeeds.ecosystem_id == ecosystem_id]
-        type_filter = request.args.get("type")
-        if type_filter:
-            filters.append(SharesNeeds.type == type_filter)
-        category_filter = request.args.get("category")
-        if category_filter:
-            filters.append(SharesNeeds.category == category_filter)
-        status_filter = request.args.get("status")
-        if status_filter:
-            filters.append(SharesNeeds.status == status_filter)
-
-        stmt = (
-            select(SharesNeeds)
-            .where(*filters)
-            .order_by(SharesNeeds.created_at.desc())
-        )
-        rows = (await db.execute(stmt)).scalars().all()
-
-        # Bulk-load domain names
-        domain_ids = list({r.domain_id for r in rows if r.domain_id})
-        domain_names: dict[uuid.UUID, str] = {}
-        if domain_ids:
-            d_rows = await db.execute(
-                select(Domain.id, Domain.domain_id).where(Domain.id.in_(domain_ids))
-            )
-            for d in d_rows.all():
-                domain_names[d.id] = d.domain_id
-
-        items = [
-            {
-                "id": str(r.id),
-                "ecosystem_id": str(r.ecosystem_id),
-                "domain_id": str(r.domain_id),
-                "domain_name": domain_names.get(r.domain_id),
-                "type": r.type,
-                "title": r.title,
-                "description": r.description,
-                "category": r.category,
-                "capacity": r.capacity,
-                "tags": r.tags if isinstance(r.tags, list) else [],
-                "visibility": r.visibility,
-                "status": r.status,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in rows
-        ]
+        _, caller = await _ecosystem_as_member_or_error(db, request, ecosystem_id)
+        if not is_active_member_in(caller, ecosystem_id):
+            raise ApiError(403, "Only an active member of this ecosystem can list its shares and needs.")
+        viewer = await exchange.load_viewer(db, caller_user_id(request))
+        filters = [SharesNeeds.ecosystem_id == ecosystem_id, exchange.visible_clause(viewer)]
+        for name in ("type", "category", "status"):
+            if request.args.get(name):
+                filters.append(getattr(SharesNeeds, name) == request.args.get(name))
+        rows = (await db.execute(
+            select(SharesNeeds).where(*filters).order_by(SharesNeeds.created_at.desc(), SharesNeeds.id)
+        )).scalars().all()
+        items = await exchange.publication_payloads(db, rows, viewer)
 
     return json({"items": items})

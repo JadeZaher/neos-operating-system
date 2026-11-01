@@ -35,6 +35,7 @@ from neos_agent.api.safeguards import safeguards_api_bp
 from neos_agent.auth.ecosystem_scope import EcosystemScope
 from neos_agent.db.models import Agreement, Base, EmergencyState, Ecosystem, Member, Proposal, User
 from neos_agent.services.next_steps import ADVICE_DEADLINE_PROMPT, ADVICE_DEADLINE_STEWARD_PROMPT, ADVICE_READY_PROMPT
+from neos_agent.services.dates import aoe_today  # G-Maint: "yesterday" by the one date rule
 
 OASIS = uuid.UUID("0000000e-0000-0000-0000-000000000001")
 RIVER = uuid.UUID("0000000e-0000-0000-0000-000000000002")
@@ -188,7 +189,7 @@ COSIGN = ("cosign_emergency", "The hall is flooding")
 ATTEST = ("attest_agreement", "House rules")
 TRIAGE = ("triage_conflict", "Noise at night")
 HANDOFF = ("exit_unwinding", "Cy is leaving Oasis")
-AUDIT = ("finish_audit", "Q4 health")
+AUDIT = ("finish_audit", "Governance health of Oasis")  # FX-Maint F14: titled by ecosystem, the scope ("Q4 health") is detail
 
 # Who should see what once _world() has run; every rule is a policy predicate or a lifecycle row.
 EXPECTED = {
@@ -231,7 +232,7 @@ async def test_items_leave_the_queue_once_done_and_the_owner_decisions_shape_the
     assert {who for who in OASIS_MEMBERS if close in await _items(env, who)} == {"ada"}
     async with env.db() as session:
         await session.execute(update(Proposal).where(Proposal.id == uuid.UUID(proposal_id))
-                              .values(advice_deadline=dt.date.today() - dt.timedelta(days=1)))
+                              .values(advice_deadline=aoe_today() - dt.timedelta(days=1)))  # passed everywhere
         await session.commit()
     [prompt] = [i for i in (await _queue(env, "ada"))["items"] if i["kind"] == "proposal"]
     assert (prompt["action"], prompt["what"], prompt["overdue"]) == ("close_advice", ADVICE_DEADLINE_PROMPT, True)

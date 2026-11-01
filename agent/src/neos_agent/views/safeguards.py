@@ -14,7 +14,9 @@ from sanic import Blueprint, html
 from sanic.request import Request
 from sqlalchemy import select, func
 
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.db.models import GovernanceHealthAudit
+from neos_agent.services.health import AUDIT_PUBLISHED
 from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, retired_write
 
 logger = logging.getLogger(__name__)
@@ -27,10 +29,8 @@ safeguards_bp = Blueprint("safeguards", url_prefix="/dashboard/safeguards")
 # ---------------------------------------------------------------------------
 
 def _apply_filters(stmt, request: Request, eco_ids=None):
-    """Apply ecosystem scoping and optional filters to a query."""
-    if eco_ids:
-        stmt = stmt.where(GovernanceHealthAudit.ecosystem_id.in_(eco_ids))
-    return stmt
+    """Scope to the selected ecosystems; none selected means no rows (fails closed, as the API)."""
+    return restrict_to_ecosystems(stmt, GovernanceHealthAudit, eco_ids or [])
 
 
 # ---------------------------------------------------------------------------
@@ -44,9 +44,9 @@ async def dashboard(request: Request):
     try:
         async with request.app.ctx.db() as session:
             # Get the latest audit
-            latest_stmt = select(GovernanceHealthAudit).order_by(
-                GovernanceHealthAudit.audit_date.desc()
-            )
+            latest_stmt = select(GovernanceHealthAudit).where(
+                GovernanceHealthAudit.status == AUDIT_PUBLISHED  # a draft is never "the latest audit"
+            ).order_by(GovernanceHealthAudit.audit_date.desc())
             latest_stmt = _apply_filters(latest_stmt, request, eco_ids)
             latest_stmt = latest_stmt.limit(1)
             latest_result = await session.execute(latest_stmt)

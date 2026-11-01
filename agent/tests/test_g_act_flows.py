@@ -298,7 +298,9 @@ async def test_advice_is_only_given_during_advice(env, stage):
 
 
 async def test_a_passed_advice_deadline_prompts_the_proposer_and_moves_nothing(env):
-    url = await _proposal(env, advice_deadline=(dt.date.today() - dt.timedelta(days=1)).isoformat())
+    # The deadline's day has ended everywhere (services/dates, FX-Maint); the server's local yesterday may not have.
+    from neos_agent.services.dates import aoe_today
+    url = await _proposal(env, advice_deadline=(aoe_today() - dt.timedelta(days=1)).isoformat())
     await _call(env, "post", "ada", f"{url}/status", json={"status": "advice"})
     await _call(env, "post", "ben", f"{url}/advice", json={"content": "Add a rota"})
     detail = await _detail(env, url)
@@ -599,6 +601,6 @@ async def test_onboarding_section_consent_by_actor(env, actor, expected):
     state = (await _call(env, "get", "ben", url)).json
     assert state["section_consents"]["governance"] is (expected == 200)
     assert state["caller_can_record"] is True
-    if actor == "sol":
-        assert (await _call(env, "get", "sol", url)).json["caller_can_record"] is False
+    if actor == "sol":  # another member may not even read Ben's positions now (FX-Onboard, review A8)
+        assert (await _call(env, "get", "sol", url)).status == 404
 

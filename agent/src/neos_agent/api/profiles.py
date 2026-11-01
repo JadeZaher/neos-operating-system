@@ -79,6 +79,20 @@ async def _resolve_profile_user(session, identifier: str) -> User | None:
     )
 
 
+async def _rows_the_viewer_may_know(session, member_rows, user: User, viewer_user_id: uuid.UUID | None) -> list:
+    """The (member, ecosystem) rows to show: public ecosystems, and private ones only to the profile's owner or a
+    viewer with an active row there (join and sign-up never confirm a private ecosystem exists)."""
+    if viewer_user_id is not None and viewer_user_id == user.id:
+        return list(member_rows)
+    shared = set()
+    if viewer_user_id is not None:
+        shared = set((await session.scalars(select(Member.ecosystem_id).where(
+            Member.user_id == viewer_user_id, Member.current_status == "active",
+        ))).all())
+    return [(member, ecosystem) for member, ecosystem in member_rows
+            if ecosystem.visibility == "public" or ecosystem.id in shared]
+
+
 async def _build_profile_response(
     session,
     user: User,
@@ -96,6 +110,8 @@ async def _build_profile_response(
             .limit(100)
         )
     ).all()
+    # FX-Onboard (A6): a private ecosystem's membership (and what hangs off it) shows only to the owner and its members.
+    member_rows = await _rows_the_viewer_may_know(session, member_rows, user, viewer_user_id)
     member_ids = [member.id for member, _ in member_rows]
 
     ecosystems = [
@@ -265,6 +281,7 @@ async def _build_profile_response(
                     SharesNeeds.author_member_id.in_(member_ids),
                     SharesNeeds.visibility == "public",
                     SharesNeeds.status == "active",
+                    SharesNeeds.hidden_at.is_(None),  # G-Exchange: a hidden post is not public
                 )
                 .order_by(SharesNeeds.created_at.desc())
                 .limit(200)
@@ -302,6 +319,18 @@ async def _build_profile_response(
             for record, domain, ecosystem in publication_rows
         ]
 
+    # G-Exchange: the owner sees every post they wrote (any row, status, visibility, hidden) with its controls.
+    own_publications: list[dict] | None = None
+    if viewer_user_id is not None and viewer_user_id == user.id:
+        from neos_agent.services import exchange
+
+        viewer = await exchange.load_viewer(session, user.id)
+        own_rows = (await session.execute(
+            select(SharesNeeds).where(SharesNeeds.author_member_id.in_(list(viewer.member_ids) or [None]))
+            .order_by(SharesNeeds.created_at.desc(), SharesNeeds.id).limit(200)
+        )).scalars().all()
+        own_publications = await exchange.publication_payloads(session, own_rows, viewer)
+
     return {
         "profile": {
             "id": str(user.id),
@@ -323,7 +352,8 @@ async def _build_profile_response(
         "quiz_results": quiz_results,
         "badges": [],
         "tags": [],
-        "publications": publications,
+        "publications": publications if viewer_user_id is not None else [],  # FX-Onboard A6: signed out, no posts
+        **({"own_publications": own_publications} if own_publications is not None else {}),  # G-Exchange
         "is_owner": viewer_user_id == user.id,
     }
 

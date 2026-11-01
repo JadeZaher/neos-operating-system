@@ -95,6 +95,19 @@ _TOOL_DISPLAY_NAMES = {
     "cosign_emergency": "Co-signing an emergency",
     "end_emergency_authority": "Ending emergency authority",
     "record_emergency_review": "Recording the emergency review",
+    # Wave C (FX-Exchange labels every tool the wave added): onboarding, health, exchange.
+    "join_ecosystem": "Joining an ecosystem",
+    "attest_agreement_consent": "Recording your consent",
+    "move_member": "Changing a membership",
+    "get_governance_health": "Reading governance health",
+    "respond_to_health_audit": "Recording the response to a health audit",
+    "find_shares_needs": "Searching shares and needs",
+    "publish_share_need": "Posting a share or need",
+    "respond_to_share_need": "Answering a post",
+    "update_share_need_status": "Updating a post",
+    "approve_collaboration": "Approving a collaboration",
+    "end_collaboration": "Ending a collaboration",
+    "review_collaboration": "Recording a collaboration review",
 }
 
 # Tool results the model reads are shrunk to this many characters of JSON; see agent/AGENTS.md "Tool results".

@@ -60,8 +60,23 @@ class SharesNeeds(TimestampMixin, Base):
     category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # technology, resources, skills, knowledge, infrastructure, funding, space, labor, other
     capacity: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # availability level
     tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="public")  # public, ecosystem, private
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="public")  # public, ecosystem, domain
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")  # active, fulfilled, withdrawn
+    # G-Exchange (s3e8b1d7c4a2): who moved the status last and why; see services/AGENTS.md "Exchange (G-Exchange)".
+    status_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status_changed_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fulfilled_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    # Moderation is a restorable hide, orthogonal to status; the last hide's actor and reason stay as a trail.
+    hidden_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    hidden_by_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
+    hidden_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 # ========================

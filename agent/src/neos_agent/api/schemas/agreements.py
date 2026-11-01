@@ -26,6 +26,7 @@ class AgreementListItem(BaseModel):
     review_date: _dt.date | None = None
     sunset_date: _dt.date | None = None
     created_at: _dt.datetime
+    review_overdue: bool = False  # G-Maint: in force and the review date has passed (services/dates)
 
 
 class RatificationRecordSchema(BaseModel):
@@ -199,6 +200,11 @@ class ReviewRecordSchema(BaseModel):
     outcome: str | None = None
     next_review_date: _dt.date | None = None
     created_at: _dt.datetime
+    # G-Maint: what the review found, who conducted it, and whether it ended before the due date passed.
+    agreement_version: str | None = None
+    findings: str | None = None
+    conducted_by: str | None = None
+    on_time: bool | None = None
 
 
 class AgreementVersionSchema(BaseModel):

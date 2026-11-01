@@ -27,8 +27,11 @@ from neos_agent.db.course_models import (
     UserBadge,
     UserTag,
 )
-from neos_agent.db.models import Member
+from neos_agent.db.models import Domain, Member, QuizAssignment
+from neos_agent.api.errors import ApiError
+from neos_agent.api.guards import caller_in  # G-Onboard: submit_quiz keys on the row in the quiz's ecosystem
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.policy import can_manage_onboarding
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,48 @@ quizzes_api_bp = Blueprint("quizzes_api", url_prefix="/api/v1")
 
 def _escape_like(value: str) -> str:
     return re.sub(r"([%_\\])", r"\\\1", value)
+
+
+# FX-Onboard (A2): onboarding content is the ecosystem's stewards'; see api/AGENTS.md "Onboarding" § FX-Onboard.
+QUIZ_STEWARDS_ONLY = "Only an active steward of this quiz's ecosystem can change it or read its results"
+GLOBAL_QUIZ_ADMINS_ONLY = "A quiz shared by every ecosystem is changed only by a platform admin"
+
+
+async def quiz_steward_or_error(session, request: Request, ecosystem_id: uuid.UUID | None) -> Member:
+    """The row that may write a quiz of `ecosystem_id` or read its results: a steward there (can_manage_onboarding),
+    or for a global quiz (no ecosystem) a platform admin; else 403."""
+    if ecosystem_id is None:
+        if not getattr(request.ctx, "platform_admin", False):
+            raise ApiError(403, GLOBAL_QUIZ_ADMINS_ONLY)
+        return getattr(request.ctx, "platform_admin_member", None) or request.ctx.member
+    caller = await caller_in(session, request, ecosystem_id)
+    if not can_manage_onboarding(caller, ecosystem_id):
+        raise ApiError(403, QUIZ_STEWARDS_ONLY)
+    return caller
+
+
+async def _stewarded_quiz(session, request: Request, quiz_id: str, *, for_update: bool = False) -> Quiz:
+    """A quiz by id that the caller stewards (quiz_steward_or_error): 400 bad id, 404 missing, 403 not theirs."""
+    try:
+        qid = uuid.UUID(quiz_id)
+    except ValueError:
+        raise ApiError(400, "Invalid quiz ID") from None
+    stmt = select(Quiz).where(Quiz.id == qid)
+    quiz = (await session.execute(stmt.with_for_update() if for_update else stmt)).scalar_one_or_none()
+    if quiz is None:
+        raise ApiError(404, "Quiz not found")
+    await quiz_steward_or_error(session, request, quiz.ecosystem_id)
+    return quiz
+
+
+def copy_quiz(quiz: Quiz, *, ecosystem_id: uuid.UUID, domain_id: uuid.UUID | None, created_by: uuid.UUID | None) -> Quiz:
+    """A copy of a shared (global) quiz owned by one ecosystem; the original stays shared (FX-Onboard A9)."""
+    return Quiz(
+        id=uuid.uuid4(), course_id=quiz.course_id, ecosystem_id=ecosystem_id, domain_id=domain_id,
+        title=quiz.title, description=quiz.description, mode=quiz.mode, survey_json=quiz.survey_json,
+        time_limit=quiz.time_limit, passing_score=quiz.passing_score, allow_retakes=quiz.allow_retakes,
+        visibility=quiz.visibility, is_published=quiz.is_published, is_entry_quiz=False, created_by=created_by,
+    )
 
 
 def _quiz_to_list_item(q: Quiz) -> dict:
@@ -247,25 +292,29 @@ async def create_quiz(request: Request):
     except Exception as e:
         return json({"error": str(e)}, status=400)
 
-    quiz = Quiz(
-        id=uuid.uuid4(),
-        course_id=body.course_id,
-        ecosystem_id=body.ecosystem_id,
-        domain_id=body.domain_id,
-        title=body.title,
-        description=body.description,
-        mode=body.mode,
-        survey_json=body.survey_json,
-        time_limit=body.time_limit,
-        passing_score=body.passing_score,
-        allow_retakes=body.allow_retakes,
-        visibility=body.visibility,
-        is_published=body.is_published,
-        is_entry_quiz=body.is_entry_quiz,
-        created_by=body.created_by,
-    )
-
     async with request.app.ctx.db() as session:
+        author = await quiz_steward_or_error(session, request, body.ecosystem_id)
+        if body.domain_id is not None:  # a domain quiz belongs to that domain's ecosystem
+            domain_ecosystem = await session.scalar(select(Domain.ecosystem_id).where(Domain.id == body.domain_id))
+            if domain_ecosystem is None or domain_ecosystem != body.ecosystem_id:
+                raise ApiError(400, "Choose a domain of the quiz's ecosystem", {"field": "domain_id"})
+        quiz = Quiz(
+            id=uuid.uuid4(),
+            course_id=body.course_id,
+            ecosystem_id=body.ecosystem_id,
+            domain_id=body.domain_id,
+            title=body.title,
+            description=body.description,
+            mode=body.mode,
+            survey_json=body.survey_json,
+            time_limit=body.time_limit,
+            passing_score=body.passing_score,
+            allow_retakes=body.allow_retakes,
+            visibility=body.visibility,
+            is_published=body.is_published,
+            is_entry_quiz=body.is_entry_quiz,
+            created_by=author.id if author is not None else None,  # the steward's row, never a client-sent id
+        )
         session.add(quiz)
         await session.commit()
         await session.refresh(quiz)
@@ -281,21 +330,12 @@ async def update_quiz(request: Request, quiz_id: str):
         return err
 
     try:
-        qid = uuid.UUID(quiz_id)
-    except ValueError:
-        return json({"error": "Invalid quiz ID"}, status=400)
-
-    try:
         body = QuizUpdateRequest.model_validate(request.json or {})
     except Exception as e:
         return json({"error": str(e)}, status=400)
 
     async with request.app.ctx.db() as session:
-        result = await session.execute(select(Quiz).where(Quiz.id == qid))
-        quiz = result.scalar_one_or_none()
-
-        if quiz is None:
-            return json({"error": "Quiz not found"}, status=404)
+        quiz = await _stewarded_quiz(session, request, quiz_id, for_update=True)  # FX-Onboard A2
 
         if body.course_id is not None:
             quiz.course_id = body.course_id
@@ -434,11 +474,14 @@ async def submit_quiz(request: Request, quiz_id: str):
             return json({"error": "Quiz not found"}, status=404)
 
         grading = _grade_quiz(quiz, body.survey_results)
+        # G-Onboard (review M7): an ecosystem's quiz lands on the caller's row there, not the default row.
+        row = await caller_in(session, request, quiz.ecosystem_id) if quiz.ecosystem_id else None
+        member_row_id = row.id if row is not None else member.id
 
         quiz_result = QuizResult(
             id=uuid.uuid4(),
             quiz_id=qid,
-            member_id=member.id,
+            member_id=member_row_id,
             survey_results=body.survey_results,
             score=grading["score"],
             is_passed=grading["is_passed"],
@@ -446,6 +489,12 @@ async def submit_quiz(request: Request, quiz_id: str):
             result_metadata=grading["result_metadata"],
         )
         session.add(quiz_result)
+        if grading["is_passed"]:  # a pass completes the member's assignment of this quiz
+            for assignment in (await session.execute(select(QuizAssignment).where(
+                QuizAssignment.quiz_id == qid, QuizAssignment.member_id == member_row_id,
+                QuizAssignment.status != "completed",
+            ))).scalars():
+                assignment.status = "completed"
         await session.commit()
         await session.refresh(quiz_result)
 
@@ -457,21 +506,17 @@ async def submit_quiz(request: Request, quiz_id: str):
 
 @quizzes_api_bp.get("/quizzes/<quiz_id:str>/results")
 async def get_quiz_results(request: Request, quiz_id: str):
-    """GET /api/v1/quizzes/:id/results -- All results for a quiz."""
+    """GET /api/v1/quizzes/:id/results -- All results for a quiz: its stewards only (FX-Onboard A2)."""
     member, err = require_auth(request)
     if err:
         return err
-
-    try:
-        qid = uuid.UUID(quiz_id)
-    except ValueError:
-        return json({"error": "Invalid quiz ID"}, status=400)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
     offset = (page - 1) * per_page
 
     async with request.app.ctx.db() as session:
+        qid = (await _stewarded_quiz(session, request, quiz_id)).id
         total_result = await session.execute(
             select(QuizResult.id).where(QuizResult.quiz_id == qid)
         )
@@ -496,25 +541,16 @@ async def get_quiz_results(request: Request, quiz_id: str):
 
 @quizzes_api_bp.delete("/quizzes/<quiz_id:str>")
 async def delete_quiz(request: Request, quiz_id: str):
-    """DELETE /api/v1/quizzes/:id -- Delete a quiz."""
+    """DELETE /api/v1/quizzes/:id -- Delete a quiz and its results: its stewards only (FX-Onboard A2)."""
     member, err = require_auth(request)
     if err:
         return err
 
-    try:
-        qid = uuid.UUID(quiz_id)
-    except ValueError:
-        return json({"error": "Invalid quiz ID"}, status=400)
-
     async with request.app.ctx.db() as session:
-        result = await session.execute(select(Quiz).where(Quiz.id == qid))
-        quiz = result.scalar_one_or_none()
-
-        if quiz is None:
-            return json({"error": "Quiz not found"}, status=404)
+        quiz = await _stewarded_quiz(session, request, quiz_id, for_update=True)
 
         # Delete associated results first
-        await session.execute(sa_delete(QuizResult).where(QuizResult.quiz_id == qid))
+        await session.execute(sa_delete(QuizResult).where(QuizResult.quiz_id == quiz.id))
         await session.delete(quiz)
         await session.commit()
 
@@ -525,25 +561,19 @@ async def delete_quiz(request: Request, quiz_id: str):
 async def get_quiz_results_admin(request: Request, quiz_id: str):
     """GET /api/v1/quizzes/:id/results/all -- All results with member info (admin view).
 
-    Returns all quiz results enriched with member display_name.
+    Returns all quiz results enriched with member display_name: the quiz's stewards only (FX-Onboard A2).
     """
     member, err = require_auth(request)
     if err:
         return err
-
-    try:
-        qid = uuid.UUID(quiz_id)
-    except ValueError:
-        return json({"error": "Invalid quiz ID"}, status=400)
 
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, max(1, int(request.args.get("per_page", 25))))
     offset = (page - 1) * per_page
 
     async with request.app.ctx.db() as session:
-        quiz = await session.get(Quiz, qid)
-        if quiz is None:
-            return json({"error": "Quiz not found"}, status=404)
+        quiz = await _stewarded_quiz(session, request, quiz_id)
+        qid = quiz.id
 
         total_result = await session.execute(
             select(QuizResult.id).where(QuizResult.quiz_id == qid)
@@ -593,7 +623,8 @@ async def get_quiz_results_admin(request: Request, quiz_id: str):
 
 @quizzes_api_bp.get("/members/<member_id:str>/quiz-history")
 async def get_member_quiz_history(request: Request, member_id: str):
-    """GET /api/v1/members/:member_id/quiz-history -- Member's quiz results with quiz info."""
+    """GET /api/v1/members/:member_id/quiz-history -- Member's quiz results with quiz info: the member themselves (any
+    of their rows) or a steward of that member's ecosystem; anyone else 404 (FX-Onboard A2: results never leak)."""
     member, err = require_auth(request)
     if err:
         return err
@@ -608,6 +639,11 @@ async def get_member_quiz_history(request: Request, member_id: str):
     offset = (page - 1) * per_page
 
     async with request.app.ctx.db() as session:
+        target = await session.get(Member, mid)
+        own = target is not None and target.user_id == member.user_id
+        if target is None or not (own or can_manage_onboarding(
+                await caller_in(session, request, target.ecosystem_id), target.ecosystem_id)):
+            raise ApiError(404, "Member not found")
         total_result = await session.execute(
             select(QuizResult.id).where(QuizResult.member_id == mid)
         )

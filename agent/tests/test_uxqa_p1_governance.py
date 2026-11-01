@@ -420,6 +420,20 @@ _TOOL_ARGS = {
     "cosign_emergency": {"confirmed": True},
     "end_emergency_authority": {"confirmed": True},
     "record_emergency_review": {"outcome": "complete", "summary": "Held on Monday", "confirmed": True},
+    # G-Onboard
+    "join_ecosystem": {"ecosystem": "Garden", "confirmed": True},
+    "attest_agreement_consent": {"agreement_id": "AGR-GARDEN", "attestation": "I consent to it", "confirmed": True},
+    "move_member": {"member": "Ben", "status": "suspended", "confirmed": True},
+    # G-Exchange
+    "publish_share_need": {"domain": "Newcomer Garden", "type": "need", "title": "Spades"},
+    "respond_to_share_need": {"post": "Spades", "message": "I have one", "confirmed": True},
+    "update_share_need_status": {"post": "Spades", "status": "withdrawn"},
+    "approve_collaboration": {"collaboration": "Garden crews"},
+    "end_collaboration": {"collaboration": "Garden crews", "outcome": "dissolved", "reason": "No", "confirmed": True},
+    # FX-Exchange
+    "review_collaboration": {"collaboration": "Garden crews", "note": "Going well"},
+    # FX-Maint
+    "respond_to_health_audit": {"note": "We will rotate authorship.", "confirmed": True},
 }
 
 

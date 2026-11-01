@@ -347,9 +347,12 @@ def test_overdue_check_in_is_the_first_unnoted_scheduled_date():
 # Audits a human can finish
 # ---------------------------------------------------------------------------
 
+# G-Maint: publishing needs every indicator that has data rated; here stewards exist (GHI-05) and GHI-08 is a count.
 RATED = [
     {"indicator_id": "GHI-01", "indicator_name": "Proposal Authorship Diversity", "status": "healthy"},
     {"indicator_id": "GHI-02", "indicator_name": "Approval Rate by Role", "status": "warning"},
+    {"indicator_id": "GHI-05", "indicator_name": "Leadership tenure", "status": "healthy"},
+    {"indicator_id": "GHI-08", "indicator_name": "Cross-unit engagement", "status": "warning"},
 ]
 
 

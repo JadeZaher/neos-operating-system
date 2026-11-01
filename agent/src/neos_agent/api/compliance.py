@@ -3,18 +3,20 @@
 Blueprint: compliance_api_bp, url_prefix="/api/v1/compliance"
 
 Endpoints for generating and retrieving AI-powered governance compliance
-summaries for ecosystems. All endpoints require authentication.
+summaries for ecosystems. All endpoints require authentication. Scores are measured or null
+("not measured"); see api/AGENTS.md "Maintenance and health (G-Maint)".
 """
 
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 import uuid
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from neos_agent.db.models import (
     Agreement,
@@ -24,12 +26,20 @@ from neos_agent.db.models import (
     Proposal,
 )
 from neos_agent.ai.provider import acompletion, is_ai_enabled
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.services import health
 
-from .helpers import require_auth, get_ecosystem_ids
+from .errors import ApiError
+from .guards import authenticated, caller_in
+from .helpers import get_ecosystem_ids, parse_pagination
+from .policy import is_active_member_in
 
 logger = logging.getLogger(__name__)
 
 compliance_api_bp = Blueprint("compliance_api", url_prefix="/api/v1/compliance")
+
+# G-Maint (C9): only measured numbers are stored; the rest is "not measured" (null), never an invented 100.
+SCORE_KEYS = ("agreement_coverage", "domain_health", "process_adherence", "conflict_resolution")
 
 
 # ---------------------------------------------------------------------------
@@ -52,157 +62,96 @@ def _summary_to_dict(s: ComplianceSummary) -> dict:
     }
 
 
+async def _target_ecosystem(db, request: Request) -> uuid.UUID:
+    """The ecosystem a summary is generated for: the body's `ecosystem_id`, else the one selected; active members only."""
+    selected = get_ecosystem_ids(request)
+    raw = (request.json or {}).get("ecosystem_id") or (str(selected[0]) if len(selected) == 1 else None)
+    if not raw:
+        raise ApiError(400, "Choose an ecosystem (ecosystem_id)")
+    try:
+        ecosystem_id = uuid.UUID(str(raw))
+    except ValueError:
+        raise ApiError(400, "Choose an ecosystem (ecosystem_id)") from None
+    if not is_active_member_in(await caller_in(db, request, ecosystem_id), ecosystem_id):
+        raise ApiError(404, "Ecosystem not found")
+    return ecosystem_id
+
+
+async def _ai_summary(facts: str) -> tuple[str | None, list | None]:
+    """An optional narrative and issue list from the model; never scores (statuses and numbers are not the model's)."""
+    prompt = (
+        "Summarise the governance upkeep of this ecosystem for its members in plain words, from these facts only: "
+        f"{facts} Respond in JSON with keys: summary (string) and flagged_issues (array of strings). Do not give scores."
+    )
+    try:
+        # Bound the AI call so a slow provider falls back to the structural summary instead of stalling the request.
+        result = await asyncio.wait_for(
+            acompletion(messages=[{"role": "user", "content": prompt}], max_tokens=1024, temperature=0.3),
+            timeout=45,
+        )
+    except Exception as exc:
+        logger.error("AI compliance generation failed: %s", exc)
+        return None, None
+    raw = ((result or {}).get("content") or "").strip()
+    if not raw:
+        return None, None
+    if raw.startswith("```"):
+        raw = "\n".join(line for line in raw.split("\n") if not line.startswith("```")).strip()
+    try:
+        parsed = _json.loads(raw)
+    except Exception:
+        return raw, None
+    issues = parsed.get("flagged_issues")
+    return parsed.get("summary"), [str(issue) for issue in issues] if isinstance(issues, list) else None
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 
 @compliance_api_bp.post("/generate")
+@authenticated
 async def generate_compliance(request: Request):
-    """POST /api/v1/compliance/generate -- Generate a compliance summary.
+    """POST /api/v1/compliance/generate -- store a summary for ONE ecosystem (`ecosystem_id`).
 
-    Loads all agreements, domains, proposals, and open conflicts for the
-    selected ecosystem(s), then uses AI (or a structural fallback) to
-    produce a scored compliance summary stored in ComplianceSummary.
-
+    Counts agreements, domains, proposals and open conflicts of that ecosystem only, plus the health
+    snapshot's needs-attention counts. Only measured numbers are scored (agreement coverage); the
+    others are null ("not measured"). The model, when enabled, writes the narrative only.
     Returns JSON: ComplianceSummary dict with 201 status.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-    if not eco_ids:
-        return json({"error": "No ecosystem in scope"}, status=400)
-
     async with request.app.ctx.db() as session:
-        # Load agreements
-        agr_result = await session.execute(
-            select(Agreement).where(Agreement.ecosystem_id.in_(eco_ids))
-        )
-        agreements = agr_result.scalars().all()
+        ecosystem_id = await _target_ecosystem(session, request)
+        status_counts = dict((await session.execute(select(Agreement.status, func.count(Agreement.id)).where(
+            Agreement.ecosystem_id == ecosystem_id).group_by(Agreement.status))).all())
+        agr_total = sum(status_counts.values())
+        dom_total = await session.scalar(select(func.count(Domain.id)).where(Domain.ecosystem_id == ecosystem_id)) or 0
+        prop_total = await session.scalar(select(func.count(Proposal.id)).where(Proposal.ecosystem_id == ecosystem_id)) or 0
+        open_conflicts = (await session.execute(select(ConflictCase.case_id).where(
+            ConflictCase.ecosystem_id == ecosystem_id, ConflictCase.status.notin_(["resolved", "closed"]),
+        ))).scalars().all()
+        snapshot = await health.health_snapshot(session, ecosystem_id)
 
-        # Load domains
-        dom_result = await session.execute(
-            select(Domain).where(Domain.ecosystem_id.in_(eco_ids))
-        )
-        domains = dom_result.scalars().all()
+        status_summary = ", ".join(f"{count} {status}" for status, count in status_counts.items()) or "none"
+        attention = [f"{item['label']}: {item['count']}" + (f" ({item['detail']})" if item["detail"] else "")
+                     for item in snapshot["attention"] if item["count"]]
+        in_force = status_counts.get("active", 0) + status_counts.get("under_review", 0)
+        score_data = dict.fromkeys(SCORE_KEYS)
+        score_data["agreement_coverage"] = round(in_force * 100 / agr_total) if agr_total else None
+        facts = (f"Agreements: {agr_total} ({status_summary}). Domains: {dom_total}. Proposals: {prop_total}. "
+                 f"Open conflicts: {len(open_conflicts)}. Needs attention: {'; '.join(attention) or 'nothing'}.")
+        # Case id only: a harm report's title is visible to its parties and triage stewards only.
+        issues = attention + [f"Open conflict case: {case_id}" for case_id in open_conflicts]
 
-        # Load proposals
-        prop_result = await session.execute(
-            select(Proposal).where(Proposal.ecosystem_id.in_(eco_ids))
-        )
-        proposals = prop_result.scalars().all()
-
-        # Load open conflicts
-        conflict_result = await session.execute(
-            select(ConflictCase).where(
-                ConflictCase.ecosystem_id.in_(eco_ids),
-                ConflictCase.status.notin_(["resolved", "closed"]),
-            )
-        )
-        open_conflicts = conflict_result.scalars().all()
-
-        # Build summary statistics
-        agr_total = len(agreements)
-        agr_status_counts: dict[str, int] = {}
-        for a in agreements:
-            agr_status_counts[a.status] = agr_status_counts.get(a.status, 0) + 1
-
-        dom_total = len(domains)
-        prop_total = len(proposals)
-        conflict_total = len(open_conflicts)
-
-        status_summary = ", ".join(
-            f"{count} {status}" for status, count in agr_status_counts.items()
-        ) or "none"
-
-        summary_text: str | None = None
-        score_data: dict | None = None
-        flagged_issues: dict | None = None
-
-        if is_ai_enabled():
-            prompt = (
-                f"Analyze the governance compliance of this ecosystem. "
-                f"Agreements: {agr_total} ({status_summary}). "
-                f"Domains: {dom_total}. "
-                f"Proposals: {prop_total}. "
-                f"Open conflicts: {conflict_total}. "
-                f"Generate a compliance summary with scores (0-100) for: "
-                f"agreement_coverage, domain_health, process_adherence, conflict_resolution. "
-                f"Flag any issues. Respond in JSON with keys: summary (string), scores (object), flagged_issues (array)."
-            )
-            try:
-                # Bound the AI call so a slow provider falls back to the
-                # structural summary instead of stalling the request.
-                ai_result = await asyncio.wait_for(
-                    acompletion(
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=1024,
-                        temperature=0.3,
-                    ),
-                    timeout=45,
-                )
-                if ai_result and ai_result.get("content"):
-                    import json as _json
-                    raw = ai_result["content"].strip()
-                    # Strip markdown code fences if present
-                    if raw.startswith("```"):
-                        lines = raw.split("\n")
-                        raw = "\n".join(
-                            l for l in lines
-                            if not l.startswith("```")
-                        ).strip()
-                    try:
-                        parsed = _json.loads(raw)
-                        summary_text = parsed.get("summary")
-                        scores = parsed.get("scores", {})
-                        score_data = {
-                            "agreement_coverage": scores.get("agreement_coverage"),
-                            "domain_health": scores.get("domain_health"),
-                            "process_adherence": scores.get("process_adherence"),
-                            "conflict_resolution": scores.get("conflict_resolution"),
-                        }
-                        issues = parsed.get("flagged_issues", [])
-                        flagged_issues = {"issues": issues}
-                    except Exception:
-                        summary_text = ai_result["content"]
-            except Exception as exc:
-                logger.error("AI compliance generation failed: %s", exc)
-                # Fall through to structural summary
-
+        summary_text, ai_issues = await _ai_summary(facts) if is_ai_enabled() else (None, None)
         if summary_text is None:
-            # Structural fallback — no AI needed
-            active_count = agr_status_counts.get("active", 0)
-            agr_coverage_score = int((active_count / agr_total * 100)) if agr_total else 0
-            conflict_score = max(0, 100 - conflict_total * 10)
-            summary_text = (
-                f"Structural compliance summary: {agr_total} agreements "
-                f"({status_summary}), {dom_total} domains, {prop_total} proposals, "
-                f"{conflict_total} open conflicts."
-            )
-            score_data = {
-                "agreement_coverage": agr_coverage_score,
-                "domain_health": 100 if dom_total > 0 else 0,
-                "process_adherence": 100 if prop_total > 0 else 50,
-                "conflict_resolution": conflict_score,
-            }
-            flagged_issues = {
-                "issues": [
-                    # Case id only: a harm report's title is visible to its parties and triage stewards only.
-                    f"Open conflict case: {c.case_id}" for c in open_conflicts
-                ]
-            }
-
-        # Use first ecosystem_id for storage (one summary per generate call)
-        ecosystem_id = eco_ids[0]
-
+            summary_text = f"Structural compliance summary: {facts}"
         compliance = ComplianceSummary(
             id=uuid.uuid4(),
             ecosystem_id=ecosystem_id,
             summary=summary_text,
             score_data=score_data,
-            flagged_issues=flagged_issues,
+            flagged_issues={"issues": issues + [issue for issue in ai_issues or [] if issue not in issues]},
         )
         session.add(compliance)
         await session.commit()
@@ -212,71 +161,43 @@ async def generate_compliance(request: Request):
 
 
 @compliance_api_bp.get("/latest")
+@authenticated
 async def get_latest_compliance(request: Request):
-    """GET /api/v1/compliance/latest -- Most recent compliance summary.
-
-    Returns the latest ComplianceSummary for the selected ecosystem(s).
-    Returns 404 if none exists.
-    """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
+    """GET /api/v1/compliance/latest -- the newest summary of the selected ecosystem(s); 404 if none (fails closed)."""
     async with request.app.ctx.db() as session:
-        stmt = (
-            select(ComplianceSummary)
-            .order_by(ComplianceSummary.generated_at.desc())
+        stmt = restrict_to_ecosystems(
+            select(ComplianceSummary).order_by(ComplianceSummary.generated_at.desc()),
+            ComplianceSummary, get_ecosystem_ids(request),
         )
-        if eco_ids:
-            stmt = stmt.where(ComplianceSummary.ecosystem_id.in_(eco_ids))
-
-        result = await session.execute(stmt.limit(1))
-        summary = result.scalar_one_or_none()
+        summary = (await session.execute(stmt.limit(1))).scalar_one_or_none()
 
     if summary is None:
-        return json({"error": "No compliance summary found"}, status=404)
+        raise ApiError(404, "No compliance summary found")
 
     return json(_summary_to_dict(summary))
 
 
 @compliance_api_bp.get("/history")
+@authenticated
 async def get_compliance_history(request: Request):
-    """GET /api/v1/compliance/history -- Paginated compliance history.
+    """GET /api/v1/compliance/history -- paginated summaries of the selected ecosystem(s) (fails closed).
 
     Query params: page (default 1), per_page (default 25, max 100).
     Returns JSON: {"items": [...], "total": N, "page": P, "per_page": PP}
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    eco_ids = get_ecosystem_ids(request)
-
-    page = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, max(1, int(request.args.get("per_page", 25))))
-    offset = (page - 1) * per_page
-
-    from sqlalchemy import func
+    page = parse_pagination(request)
 
     async with request.app.ctx.db() as session:
-        stmt = select(ComplianceSummary).order_by(
-            ComplianceSummary.generated_at.desc()
+        stmt = restrict_to_ecosystems(
+            select(ComplianceSummary).order_by(ComplianceSummary.generated_at.desc()),
+            ComplianceSummary, get_ecosystem_ids(request),
         )
-        if eco_ids:
-            stmt = stmt.where(ComplianceSummary.ecosystem_id.in_(eco_ids))
-
-        count_stmt = select(func.count()).select_from(stmt.subquery())
-        total = await session.scalar(count_stmt) or 0
-
-        stmt = stmt.offset(offset).limit(per_page)
-        result = await session.execute(stmt)
-        summaries = result.scalars().all()
+        total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        summaries = (await session.execute(stmt.offset(page.offset).limit(page.per_page))).scalars().all()
 
     return json({
         "items": [_summary_to_dict(s) for s in summaries],
         "total": total,
-        "page": page,
-        "per_page": per_page,
+        "page": page.page,
+        "per_page": page.per_page,
     })

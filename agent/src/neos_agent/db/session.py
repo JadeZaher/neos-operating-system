@@ -23,13 +23,22 @@ def _ensure_async_url(url: str) -> str:
     return url
 
 
+def utc_connect_args(engine_url: str, connect_args: dict | None = None) -> dict:
+    """asyncpg connect args with the session TimeZone pinned to UTC; see services/AGENTS.md "Maintenance and health"."""
+    args = dict(connect_args or {})
+    if "+asyncpg" in engine_url:
+        args["server_settings"] = {**args.get("server_settings", {}), "timezone": "UTC"}
+    return args
+
+
 async def create_db_engine(database_url: str, **kwargs: Any) -> AsyncEngine:
-    """Create an async SQLAlchemy engine."""
+    """Create an async SQLAlchemy engine; PostgreSQL sessions run in UTC, so `server_default=now()` is UTC."""
     is_sqlite = "sqlite" in database_url.lower()
     if not is_sqlite:
         kwargs.setdefault("pool_size", 10)
         kwargs.setdefault("max_overflow", 5)
         kwargs.setdefault("pool_timeout", 30)
+        kwargs["connect_args"] = utc_connect_args(_ensure_async_url(database_url), kwargs.get("connect_args"))
     kwargs.setdefault("pool_recycle", 1800)
     kwargs.setdefault("pool_pre_ping", True)
     return create_async_engine(_ensure_async_url(database_url), **kwargs)

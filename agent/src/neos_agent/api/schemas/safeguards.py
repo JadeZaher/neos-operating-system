@@ -13,8 +13,13 @@ class IndicatorScoreSchema(BaseModel):
     measured_value: str | int | float | None = None
     status: str | None = None  # healthy, warning, critical
     prior_value: str | int | float | None = None
-    trend: str | None = None  # improving, stable, degrading
+    trend: str | None = None  # improving, stable, degrading, baseline
     notes: str | None = None
+    # G-Maint: frozen at publish from services/health (the computed value's unit, how it was computed, its band).
+    unit: str | None = None
+    basis: str | None = None
+    band: str | None = None
+    computable: bool | None = None
 
 
 class TriggeredSafeguardSchema(BaseModel):
@@ -38,6 +43,7 @@ class AuditListItem(BaseModel):
     overall_health: str | None = None
     audit_scope: str | None = None
     trigger_type: str | None = None
+    self_assessment: bool = False  # G-Maint: a steward audited their own ecosystem because nobody else could
 
 
 class AuditDetail(AuditListItem):
@@ -54,6 +60,17 @@ class AuditDetail(AuditListItem):
     triggered_safeguards: list[TriggeredSafeguardSchema] | None = None
     structured_recommendations: list[str] | None = None
     caller_can_edit: bool = False
+
+
+class AuditAbandonRequest(BaseModel):
+    """FX-Maint: why a draft is abandoned (recorded)."""
+    reason: str = ""
+
+
+class AuditRespondRequest(BaseModel):
+    """FX-Maint: the stewards' response to a published audit, optionally naming a proposal of that ecosystem."""
+    note: str = ""
+    proposal_id: uuid.UUID | None = None
 
 
 class AuditCreateRequest(BaseModel):
@@ -83,3 +100,4 @@ class HealthSummary(BaseModel):
     health_score: int | None = None
     indicator_scores: list[IndicatorScoreSchema] | None = None
     triggered_safeguards: list[TriggeredSafeguardSchema] | None = None
+    ecosystems: list[dict] = []  # G-Maint: the latest published audit per selected ecosystem, labelled

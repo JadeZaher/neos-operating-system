@@ -80,3 +80,4 @@ class DomainUpdateRequest(BaseModel):
     shared_ecosystem_ids: list[uuid.UUID] | None = None
     metric_definitions: str | dict | None = None
     elements: dict | None = None
+    reason: str | None = None  # G-Maint: required (8+ characters) when steward_id or status changes; recorded

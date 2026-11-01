@@ -25,6 +25,10 @@ from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie, verify_session_cookie
 from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
 from neos_agent.services.agreement_consent import missing_agreement_consents
+from neos_agent.services.member_lifecycle import SIGNUP, place_member
+from neos_agent.api.guards import default_member
+from neos_agent.api.helpers import home_ecosystem_id  # FX-Onboard: sign-up prefers the pinned home
+from neos_agent.api.policy import can_administer_ecosystem  # FX-Onboard: /auth/me `is_steward` per ecosystem
 
 from .schemas import (
     AuthMeResponse,
@@ -95,16 +99,21 @@ def requested_ecosystem_id(body: dict) -> uuid.UUID | None:
 
 
 async def signup_ecosystem(session, settings, requested_id: uuid.UUID | None = None) -> Ecosystem | None:
-    """Ecosystem a new account joins: requested id, then SIGNUP_DEFAULT_ECOSYSTEM_SLUG, then oldest.
+    """Ecosystem a new account joins: requested id, then the pinned platform home, then
+    SIGNUP_DEFAULT_ECOSYSTEM_SLUG, then the oldest PUBLIC one (FX-Onboard: never a private ecosystem nobody chose).
 
     "Oldest" breaks created_at ties (a seed inserts every ecosystem in one
     transaction) by founded_date before id; see api/AGENTS.md "Sign-up placement".
     """
     if requested_id is not None:
         ecosystem = await session.get(Ecosystem, requested_id)
-        if ecosystem is None:
+        if ecosystem is None or ecosystem.visibility != "public":  # private ecosystems are not self-service (owner Q3)
             raise SignupEcosystemNotFound(str(requested_id))
         return ecosystem
+
+    home_id = await home_ecosystem_id(session, settings)  # the operator's pin, by id (G-Authority)
+    if home_id is not None:
+        return await session.get(Ecosystem, home_id)
 
     ecosystems = list((await session.execute(
         select(Ecosystem).order_by(
@@ -122,32 +131,24 @@ async def signup_ecosystem(session, settings, requested_id: uuid.UUID | None = N
         logger.warning(
             "SIGNUP_DEFAULT_ECOSYSTEM_SLUG=%r matches no ecosystem; using the oldest", configured,
         )
-    return ecosystems[0] if ecosystems else None
+    return next((ecosystem for ecosystem in ecosystems if ecosystem.visibility == "public"), None)
 
 
 async def create_signup_member(
     session, *, user: User, ecosystem: Ecosystem, member_id: str, display_name: str,
 ) -> tuple[Member, list]:
-    """Create a newcomer's membership behind the ecosystem's agreement-consent gate.
+    """Place a newcomer behind the ecosystem's agreement-consent gate through member_lifecycle.place_member.
 
-    Same status semantics as ``POST /ecosystems/:id/join``: ``pending_consent`` until
-    every ecosystem-membership agreement is attested, otherwise ``active``.
+    Same path as ``POST /ecosystems/:id/join`` (trigger ``signup``, one transition): ``pending_consent``
+    until every ecosystem-membership agreement is attested, otherwise ``active``. The configured default
+    may be private (the operator chose it); a requested private ecosystem was refused by signup_ecosystem.
     """
-    member = Member(
-        id=uuid.uuid4(),
-        user_id=user.id,
-        ecosystem_id=ecosystem.id,
-        member_id=member_id,
-        display_name=display_name,
-        current_status="active",
+    placement = await place_member(
+        session, user_id=user.id, ecosystem=ecosystem, display_name=display_name, member_key=member_id,
+        trigger=SIGNUP, public_only=False,
     )
-    missing = await missing_agreement_consents(session, member.id, ecosystem.id, "ecosystem")
-    if missing:
-        member.current_status = "pending_consent"
-        member.onboarding_status = "agreement_consent_required"
-    session.add(member)
     await session.flush()
-    return member, missing
+    return placement.member, placement.missing
 
 
 async def existing_membership(session, user_id: uuid.UUID) -> Member | None:
@@ -165,7 +166,7 @@ def _agreement_brief(agreement) -> dict:
     return {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
 
 
-def _consent_gate_payload(missing: list) -> dict:
+def consent_gate_payload(missing: list) -> dict:
     """Extra sign-up response keys mirroring the join endpoint's consent contract."""
     return {
         "status": "consent_required" if missing else "joined",
@@ -300,7 +301,7 @@ async def api_verify(request: Request):
                 member_id=f"did-{did[-12:]}",
                 display_name=display_name,
             )
-            consent_gate = _consent_gate_payload(missing)
+            consent_gate = consent_gate_payload(missing)
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -379,14 +380,14 @@ async def api_me(request: Request):
         if not user:
             return json({"error": "User not found"}, status=401)
 
-        # Find ecosystems via Member.user_id
-        member_records = await db.execute(
-            select(Member.ecosystem_id).where(Member.user_id == user.id)
-        )
-        eco_ids = list(member_records.scalars().all())
+        # Every membership row, any status: the client applies the active-only rule per ecosystem from these.
+        member_rows = (await db.execute(select(Member).where(Member.user_id == user.id))).scalars().all()
+        eco_ids = [row.ecosystem_id for row in member_rows]
+        standing = {row.ecosystem_id: (row.current_status, row.role, can_administer_ecosystem(row, row.ecosystem_id))
+                    for row in member_rows}
 
-        # The primary member is the oldest membership (the one sign-up created).
-        member = await existing_membership(db, user.id)
+        # The server's default row (oldest ACTIVE membership, else the oldest), as request.ctx.member without a selection.
+        member = await default_member(db, user.id, selected_ids=[], authorized_ids=[])
         if not member:
             return json({"error": "Member not found"}, status=401)
 
@@ -432,7 +433,13 @@ async def api_me(request: Request):
         ecosystems=ecosystems,
         pending_consents=pending_consents,
     )
-    return json(response_data.model_dump(mode="json"))
+    payload = response_data.model_dump(mode="json")
+    for item in payload["ecosystems"]:  # the caller's own standing there (api/AGENTS.md "Onboarding (G-Onboard)")
+        status, role, steward = standing.get(uuid.UUID(item["id"]), (None, None, False))
+        item["membership_status"], item["role"] = status, role
+        item["is_steward"] = steward  # FX-Onboard: policy.can_administer_ecosystem there, so the client never re-derives it
+    payload["is_platform_admin"] = bool(getattr(request.ctx, "platform_admin", False))  # set by G-Authority's middleware
+    return json(payload)
 
 
 @auth_api_bp.post("/logout")
@@ -632,7 +639,7 @@ async def api_register(request: Request):
         member=member_summary,
     )
     payload = response_data.model_dump(mode="json")
-    payload.update(_consent_gate_payload(missing))
+    payload.update(consent_gate_payload(missing))
     response = json(payload, status=200)
     response.add_cookie(
         "neos_session",

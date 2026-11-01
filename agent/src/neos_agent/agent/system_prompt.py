@@ -522,3 +522,32 @@ def assemble_system_prompt(
             layers.append(dep_prompt)
 
     return _LAYER_SEPARATOR.join(layers)
+
+
+# G-Exchange: the Discover hint names the tools that keep its promise (api/AGENTS.md "Exchange (G-Exchange)").
+_PAGE_CONTEXT_HINTS["discover"] += (
+    " Search with find_shares_needs; answer a post with respond_to_share_need (it messages the author; the member "
+    "confirms the exact message); post with publish_share_need; the author closes, reopens or keeps a post open with "
+    "update_share_need_status, and stewards hide one there with a reason; stewards approve or end collaborations "
+    "with approve_collaboration and end_collaboration."
+)
+
+# FX-Exchange: page hints name the wave-C tools where the prompt describes those pages (api/AGENTS.md "Exchange").
+_PAGE_CONTEXT_HINTS["discover"] += (
+    " Once a collaboration's review date has passed, a steward of either side keeps it with review_collaboration "
+    "(what the review found and the next review date) or stops it with end_collaboration."
+)
+_PAGE_CONTEXT_HINTS["onboarding"] += (
+    " A newcomer joins a public ecosystem with join_ecosystem (nobody approves newcomers) and becomes active by "
+    "consenting to its membership agreements with attest_agreement_consent; a steward confirms a newcomer who has "
+    "nothing left to consent to with move_member. Each asks the member to confirm first."
+)
+_PAGE_CONTEXT_HINTS["members"] += (
+    " A steward who outranks a member suspends, restores, or confirms a stuck newcomer with move_member (the member "
+    "confirms first); leaving is the member's own exit."
+)
+_PAGE_CONTEXT_HINTS["safeguards"] += (
+    " Read an ecosystem's governance health indicators with get_governance_health before starting an audit draft with "
+    "create_safeguard_audit; stewards record their response to a published audit's critical ratings with "
+    "respond_to_health_audit (the member confirms first)."
+)

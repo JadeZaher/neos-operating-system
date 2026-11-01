@@ -345,3 +345,179 @@ def can_grant_profile(caller: Member | None, target: Member, *, ecosystem_has_ow
         and caller.id != target.id
         and can_assign_role(caller, target, "admin", ecosystem_has_owner=ecosystem_has_owner, founder_id=founder_id)
     )
+
+
+# G-Authority
+
+# Owner decision 2026-11-01: platform admin lives on one row only; see api/AGENTS.md "Platform admin (G-Authority)".
+def is_platform_admin(member: Member | None, home_ecosystem_id: uuid.UUID | None) -> bool:
+    """Platform-wide administration: an ACTIVE co_creator/builder row in the home ecosystem; any other row fails closed."""
+    return home_ecosystem_id is not None and is_active_member_in(member, home_ecosystem_id) and is_profile_admin(member)
+
+
+def can_administer_ecosystem(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """Wave C's one "steward of this ecosystem" outside the ACT engine: an ACTIVE row there that is mod+ or holds
+    co_creator/builder ON THAT ROW (founders included). Onboarding, exchange, catalog and audit independence use it."""
+    return is_active_member_in(member, ecosystem_id) and (is_steward(member) or is_profile_admin(member))
+
+
+# G-Maint
+
+# Owner decision 2026-11-01: an audit's auditor is not a steward (mod+) of the audited ecosystem; when no active
+# non-steward member exists there, a steward may record it as a self-assessment. False reverts to "any active member".
+AUDIT_EXCLUDES_STEWARDS = True
+
+
+def can_record_audit(member: Member | None, ecosystem_id: uuid.UUID | None, *, has_independent_member: bool) -> bool:
+    """Record (start or publish) a health audit of `ecosystem_id`: an active member there who is not a steward, or a
+    steward when `has_independent_member` is False (nobody else could); see api/AGENTS.md "Maintenance and health"."""
+    if not is_active_member_in(member, ecosystem_id):
+        return False
+    return not AUDIT_EXCLUDES_STEWARDS or not can_administer_ecosystem(member, ecosystem_id) or not has_independent_member
+
+
+def is_self_assessment(member: Member | None) -> bool:
+    """An audit recorded by a steward of the audited ecosystem (mod+ or an admin profile on that row) rates its own leadership."""
+    return AUDIT_EXCLUDES_STEWARDS and member is not None and (is_steward(member) or is_profile_admin(member))
+
+
+def can_change_domain_authority(member: Member | None, domain: Domain) -> bool:
+    """Change a domain's steward or status: an active steward (mod+) of its ecosystem who is not that domain's steward."""
+    return (
+        is_active_member_in(member, domain.ecosystem_id)
+        and is_steward(member)
+        and not is_domain_steward(member, domain)
+    )
+
+
+# FX-Maint: who closes an audit loop (wave-c F6, F7); one steward rule with the audit queue (can_administer_ecosystem).
+
+def can_abandon_audit(member: Member | None, audit) -> bool:
+    """Abandon a draft audit, with a recorded reason: its auditor, or a steward of the audited ecosystem."""
+    return can_finish_audit(member, audit) or can_administer_ecosystem(member, audit.ecosystem_id)
+
+
+def can_respond_to_audit(member: Member | None, audit) -> bool:
+    """Record the stewards' response to a published audit (clears respond_to_audit): a steward of that ecosystem."""
+    return can_administer_ecosystem(member, audit.ecosystem_id)
+
+
+# G-Onboard
+
+# Owner decision 2026-11-01: newcomers need no approval; see api/AGENTS.md "Onboarding (G-Onboard)".
+def can_manage_onboarding(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """Change `ecosystem_id`'s onboarding content (journeys, ethos access, quiz assignments, entry quiz): its steward."""
+    return can_administer_ecosystem(member, ecosystem_id)
+
+
+# Closed table of steward moves on a membership: from status -> the statuses a steward may set.
+# pending_consent -> active only when nothing is left to consent to (the stuck case); exiting uses api/exit.py.
+MEMBER_MOVES: dict[str, frozenset[str]] = {
+    "active": frozenset({"suspended"}),
+    "suspended": frozenset({"active"}),
+    "inactive": frozenset({"active"}),
+    "pending_consent": frozenset({"active"}),
+}
+
+
+def can_move_member(caller: Member | None, target: Member) -> bool:
+    """Move another member's status, never your own: confirming a pending newcomer is any steward of their ecosystem
+    (can_manage_onboarding; it confers nothing); suspending or restoring needs an active mod+ who outranks them."""
+    if not is_active_member_in(caller, target.ecosystem_id) or caller.id == target.id:
+        return False
+    if target.current_status == "pending_consent":
+        return can_manage_onboarding(caller, target.ecosystem_id)
+    return is_steward(caller) and role_rank(caller) > role_rank(target)
+
+
+# FX-Onboard
+
+def can_read_onboarding_record(caller: Member | None, member: Member) -> bool:
+    """Read a member's ceremony record (section positions, objections): the member themselves or a steward there."""
+    return _same_ecosystem(caller, member) and (caller.id == member.id
+                                                or can_manage_onboarding(caller, member.ecosystem_id))
+
+
+# G-Exchange
+
+# Owner decision 2026-11-01: per-ecosystem moderation and per-side collaboration approval; see services/AGENTS.md
+# "Exchange (G-Exchange)". "Steward" here is one rule for moderation, visibility and approvals.
+def is_exchange_steward(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
+    """Steward for shares, needs and collaborations in `ecosystem_id` (a caller_in row; never platform-wide)."""
+    return can_administer_ecosystem(member, ecosystem_id)
+
+
+def is_publication_author(member: Member | None, record) -> bool:
+    """The member row that wrote the share/need (legacy rows without an author have none)."""
+    return member is not None and record.author_member_id is not None and member.id == record.author_member_id
+
+
+def can_edit_publication(member: Member | None, record) -> bool:
+    """Edit, close, reopen or keep open a share/need: only its author (moderators hide instead)."""
+    return is_publication_author(member, record)
+
+
+def can_moderate_publication(member: Member | None, record) -> bool:
+    """Hide or restore a share/need with a recorded reason: a steward of the post's OWN ecosystem."""
+    return is_exchange_steward(member, record.ecosystem_id)
+
+
+def can_manage_publication(member: Member | None, record) -> bool:
+    """Any management of a share/need: its author, or a steward of its ecosystem (pass a caller_in row)."""
+    return can_edit_publication(member, record) or can_moderate_publication(member, record)
+
+
+def can_delete_publication(member: Member | None, record, *, answered: bool) -> bool:
+    """Hard delete (owner decision): only the author, and only while nobody has answered the post."""
+    return is_publication_author(member, record) and not answered
+
+
+def can_see_publication(viewer, record) -> bool:
+    """One visibility rule (services/exchange.Viewer facts): author and the ecosystem's stewards always; a hidden post
+    nobody else; public: anyone signed in; ecosystem: its active members; domain: the domain's participants."""
+    if viewer is None or viewer.user_id is None:
+        return False
+    if record.author_member_id is not None and record.author_member_id in viewer.member_ids:
+        return True
+    if record.ecosystem_id in viewer.steward_ecosystems:
+        return True
+    if record.hidden_at is not None:
+        return False
+    if record.visibility == "public":
+        return True
+    if record.visibility == "ecosystem":
+        return record.ecosystem_id in viewer.active_ecosystems
+    if record.visibility in ("domain", "private"):  # "private" is the retired spelling of "domain"
+        return record.domain_id in viewer.domains
+    return False
+
+
+def can_approve_collaboration(member: Member | None, ecosystem_id: uuid.UUID | None, *,
+                              source_ecosystem_id: uuid.UUID, target_ecosystem_id: uuid.UUID,
+                              proposer_user_id: uuid.UUID | None) -> bool:
+    """Approve one side of a collaboration (owner decision): a steward of that side's ecosystem. The proposer counts
+    only for the source side of a cross-ecosystem one, so nobody activates a collaboration alone."""
+    if ecosystem_id not in (source_ecosystem_id, target_ecosystem_id) or not is_exchange_steward(member, ecosystem_id):
+        return False
+    if proposer_user_id is not None and member.user_id == proposer_user_id:
+        return ecosystem_id == source_ecosystem_id and source_ecosystem_id != target_ecosystem_id
+    return True
+
+
+def can_end_collaboration(member: Member | None, ecosystem_id: uuid.UUID | None, *, source_ecosystem_id: uuid.UUID,
+                          target_ecosystem_id: uuid.UUID, proposer_member_id: uuid.UUID | None, status: str) -> bool:
+    """End a collaboration with a reason: a steward of either side; its proposer may also withdraw it while proposed."""
+    if ecosystem_id not in (source_ecosystem_id, target_ecosystem_id):
+        return False
+    if is_exchange_steward(member, ecosystem_id):
+        return True
+    return (status == "proposed" and is_active_member_in(member, ecosystem_id)
+            and proposer_member_id is not None and member.id == proposer_member_id)
+
+
+# FX-Exchange
+
+def can_review_collaboration(member: Member | None, ecosystem_id: uuid.UUID | None, *,
+                             source_ecosystem_id: uuid.UUID, target_ecosystem_id: uuid.UUID) -> bool:
+    """Record a collaboration's review (and its next review date): a steward of either side (wave-c F3)."""
+    return ecosystem_id in (source_ecosystem_id, target_ecosystem_id) and is_exchange_steward(member, ecosystem_id)

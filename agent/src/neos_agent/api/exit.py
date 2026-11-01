@@ -26,8 +26,9 @@ from neos_agent.api.schemas.exit import ExitCreateRequest, ExitDetail, ExitListI
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.db.models import (
     AdviceEntry, AdviceLog, Agreement, AgreementMemberConsent, ConsentParticipant, ConsentRecord, Ecosystem,
-    ExitRecord, Member, MemberStatusTransition, Proposal, TestReport,
+    ExitRecord, Member, Proposal, TestReport,
 )
+from neos_agent.services.member_lifecycle import end_membership  # FX-Onboard: role/profile/consent on exit
 
 logger = logging.getLogger(__name__)
 
@@ -214,16 +215,15 @@ async def create_exit(request: Request):
         return json(to_detail(record, leaver.display_name, leaver), status=201)
 
 
-async def _mark_exited(session, member_id: uuid.UUID, exit_id: uuid.UUID, today: _dt.date) -> None:
-    """The leaver's membership becomes `exited` (outside the participating set, so no further consent asks)."""
-    leaver = await session.get(Member, member_id)
+async def _mark_exited(session, member_id: uuid.UUID, exit_id: uuid.UUID, steward: Member | None) -> None:
+    """The leaver's membership becomes `exited` (outside the participating set, so no further consent asks), and they
+    keep no role, admin profile or consent there (FX-Onboard: member_lifecycle.end_membership, recorded)."""
+    leaver = await session.get(Member, member_id, with_for_update=True)
     if leaver is None or leaver.current_status == EXITED:
         return
-    session.add(MemberStatusTransition(
-        id=uuid.uuid4(), member_id=leaver.id, from_status=leaver.current_status, to_status=EXITED,
-        date=today, trigger="exit_completed", notes=f"Exit {exit_id} confirmed by a steward.",
-    ))
-    leaver.current_status = EXITED
+    await end_membership(session, leaver, actor=steward, notes=f"Exit {exit_id} confirmed by a steward.")
+    from neos_agent.services.exchange import withdraw_on_exit  # G-Exchange: open posts withdrawn, "author left"
+    await withdraw_on_exit(session, leaver)
 
 
 @exit_api_bp.post("/<exit_id:uuid>/status")
@@ -255,7 +255,7 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
             record.coordinator_id = caller.id
         if new_status == "completed":
             record.completed_date = today
-            await _mark_exited(session, record.member_id, record.id, today)
+            await _mark_exited(session, record.member_id, record.id, caller)
         await session.commit()
         await session.refresh(record)
         logger.info("Exit %s status: %s -> %s", exit_id, old_status, new_status)

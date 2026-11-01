@@ -30,6 +30,7 @@ from neos_agent.api.schemas.domains import (
     DomainUpdateRequest,
 )
 from neos_agent.db.models import (
+    DecisionRecord,
     Domain,
     CircleMembership,
     DomainElement,
@@ -42,6 +43,9 @@ from neos_agent.api.errors import ApiError, get_scoped_or_404
 from neos_agent.api.guards import authenticated, caller_in
 from neos_agent.api.helpers import get_ecosystem_ids, apply_ecosystem_name_filter, parse_pagination, serialize_shared_ecosystem_ids, build_search_filter
 from neos_agent.api.policy import can_create_domain, can_edit_domain, is_domain_steward, is_profile_admin
+from neos_agent.api.policy import can_change_domain_authority, is_active_member_in  # G-Maint
+from neos_agent.api.policy import can_manage_onboarding  # domain quiz results
+from neos_agent.services import dates  # G-Maint
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
@@ -71,6 +75,15 @@ NAME_SEPARATOR = " — "
 MAX_DERIVED_NAME = 120
 CREATE_DENIED = "Only an ecosystem steward (moderator or above) can create a domain"
 EDIT_DENIED = "Only this domain's steward or an ecosystem steward can edit this domain"
+# G-Maint (C10): who holds a domain and whether it continues are the delegating body's call, recorded with a reason.
+AUTHORITY_DENIED = ("Only a steward of this ecosystem who does not steward this domain can change its steward or "
+                    "status (a domain's own steward cannot hand it on or end it alone).")
+REASON_REQUIRED = "Give a reason for changing the domain's steward or status (at least 8 characters); it is recorded."
+AUTHORITY_FIELDS = {"steward_id": "role-transfer", "status": "role-sunset"}
+# FX-Maint: the shown steward name follows steward_id (api/AGENTS.md "Domain steward and status").
+NEW_STEWARD_INVALID = "The steward must be an active member of this ecosystem."
+STEWARD_NAME_FOLLOWS = ("The steward's name follows the member chosen as steward: choose a member as the new steward "
+                        "(with a reason) instead of typing a name.")
 
 
 def domain_display_name(d) -> str:
@@ -94,7 +107,8 @@ def _clean_name(value: str | None) -> str | None:
 _DETAIL_OPTIONS = (selectinload(Domain.domain_elements), selectinload(Domain.domain_metrics))
 
 
-def _domain_to_list_item(d: Domain, *, is_participant: bool = False, is_steward: bool = False) -> dict:
+def _domain_to_list_item(d: Domain, *, is_participant: bool = False, is_steward: bool = False,
+                         steward_name: str | None = None) -> dict:
     return DomainListItem(
         id=d.id,
         ecosystem_id=d.ecosystem_id,
@@ -104,7 +118,7 @@ def _domain_to_list_item(d: Domain, *, is_participant: bool = False, is_steward:
         version=d.version,
         status=d.status,
         purpose=d.purpose,
-        current_steward=d.current_steward,
+        current_steward=steward_name or d.current_steward,  # FX-Maint: the steward_id member's name when set
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
         version_fingerprint=d.version_fingerprint,
@@ -120,6 +134,7 @@ def _domain_to_detail(
     is_steward: bool = False,
     can_edit: bool = False,
     participants: list[DomainParticipantSchema] | None = None,
+    steward_name: str | None = None,
 ) -> dict:
     participants = participants or []
     return DomainDetail(
@@ -130,7 +145,7 @@ def _domain_to_detail(
         version=d.version,
         status=d.status,
         purpose=d.purpose,
-        current_steward=d.current_steward,
+        current_steward=steward_name or d.current_steward,  # FX-Maint: the steward_id member's name when set
         parent_domain_id=d.parent_domain_id,
         created_at=d.created_at,
         version_fingerprint=d.version_fingerprint,
@@ -179,13 +194,25 @@ async def _domain_detail_payload(session, request: Request, d: Domain) -> dict:
         DomainParticipantSchema(member_id=row.member_id, display_name=row.display_name, role=row.role)
         for row in rows
     ]
-    return _domain_to_detail(
+    payload = _domain_to_detail(
         d,
         is_participant=caller is not None and any(p.member_id == caller.id for p in participants),
         is_steward=is_domain_steward(caller, d),
         can_edit=can_edit_domain(caller, d),
         participants=participants,
+        steward_name=(await _steward_names(session, [d])).get(d.steward_id),
     )
+    # FX-Maint: the form offers the steward and status fields only to who may change them (with a reason).
+    payload["caller_can_change_authority"] = can_change_domain_authority(caller, d)
+    return payload
+
+
+async def _steward_names(session, domains) -> dict:
+    """steward_id -> that member's display name: what members see as a domain's steward follows steward_id."""
+    ids = {d.steward_id for d in domains if d.steward_id is not None}
+    if not ids:
+        return {}
+    return dict((await session.execute(select(Member.id, Member.display_name).where(Member.id.in_(ids)))).all())
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +281,7 @@ async def list_domains(request: Request):
             row.ecosystem_id in scope and can_create_domain(row)
             for row in caller_rows
         )
+        steward_names = await _steward_names(session, domains)
 
     return json({
         "items": [
@@ -261,6 +289,7 @@ async def list_domains(request: Request):
                 d,
                 is_participant=d.id in participating,
                 is_steward=d.steward_id is not None and d.steward_id in caller_member_ids,
+                steward_name=steward_names.get(d.steward_id),
             )
             for d in domains
         ],
@@ -302,6 +331,12 @@ async def create_domain(request: Request):
     async with request.app.ctx.db() as session:
         if not can_create_domain(await caller_in(session, request, create_req.ecosystem_id)):
             raise ApiError(403, CREATE_DENIED)
+        steward_name = create_req.current_steward
+        if create_req.steward_id is not None:  # FX-Maint: the shown name follows the chosen member
+            steward = await session.get(Member, create_req.steward_id)
+            if not is_active_member_in(steward, create_req.ecosystem_id):
+                raise ApiError(400, NEW_STEWARD_INVALID, {"code": "STEWARD_INVALID", "field": "steward_id"})
+            steward_name = steward.display_name
 
     short_id = uuid.uuid4().hex[:8].upper()
     domain_id_str = f"DOM-{short_id}"
@@ -316,7 +351,7 @@ async def create_domain(request: Request):
             version="1.0",
             status="active",
             purpose=create_req.purpose,
-            current_steward=create_req.current_steward,
+            current_steward=steward_name,
             steward_id=create_req.steward_id,
             parent_domain_id=create_req.parent_domain_id,
             created_by=create_req.created_by,
@@ -338,6 +373,43 @@ async def create_domain(request: Request):
     return json(payload, status=201)
 
 
+async def _authority_records(session, d: Domain, caller: Member | None, update_data: dict,
+                             reason: str | None) -> list[DecisionRecord]:
+    """Changing the steward or status: policy.can_change_domain_authority plus a reason; one DecisionRecord per change.
+
+    A new steward must be an active member of the domain's ecosystem; `current_steward` follows their name.
+    """
+    changes = {field: update_data[field] for field in AUTHORITY_FIELDS
+               if field in update_data and update_data[field] != getattr(d, field)}
+    if not changes:
+        return []
+    if not can_change_domain_authority(caller, d):
+        raise ApiError(403, AUTHORITY_DENIED, {"code": "DOMAIN_AUTHORITY_DENIED"})
+    reason = (reason or "").strip()
+    if len(reason) < 8:
+        raise ApiError(400, REASON_REQUIRED, {"code": "REASON_REQUIRED"})
+    label = domain_display_name(d)
+    records = []
+    if "steward_id" in changes:
+        new_steward = await session.get(Member, changes["steward_id"])
+        if not is_active_member_in(new_steward, d.ecosystem_id):
+            raise ApiError(400, NEW_STEWARD_INVALID, {"code": "STEWARD_INVALID", "field": "steward_id"})
+        old_name = await session.scalar(select(Member.display_name).where(Member.id == d.steward_id)) if d.steward_id else None
+        update_data["current_steward"] = new_steward.display_name
+        holding = f"Stewardship of the domain “{label}” moved from {old_name or 'nobody'} to {new_steward.display_name}."
+        records.append(("steward_id", holding))
+    if "status" in changes:
+        records.append(("status", f"The domain “{label}” changed status from {d.status} to {changes['status']}."))
+    return [DecisionRecord(
+        id=uuid.uuid4(), ecosystem_id=d.ecosystem_id, record_id=f"DEC-DOM-{uuid.uuid4().hex[:8].upper()}",
+        date=dates.utc_today(), holding=holding, ratio_decidendi=reason,
+        deliberation_summary=f"Recorded by {caller.display_name}, a steward of the ecosystem, when the domain was edited.",
+        source_skill=AUTHORITY_FIELDS[field], source_layer=2, artifact_type="domain", artifact_reference=d.domain_id,
+        domain=label, precedent_level="domain", status="active", recorder=caller.display_name,
+        recorder_role="ecosystem steward",
+    ) for field, holding in records]
+
+
 @domains_api_bp.put("/<domain_id:uuid>")
 @authenticated
 async def update_domain(request: Request, domain_id: uuid.UUID):
@@ -351,10 +423,16 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         d = await get_scoped_or_404(session, request, Domain, domain_id, label="Domain")
 
-        if not can_edit_domain(await caller_in(session, request, d.ecosystem_id), d):
+        caller = await caller_in(session, request, d.ecosystem_id)
+        if not can_edit_domain(caller, d):
             raise ApiError(403, EDIT_DENIED)
 
-        update_data = update_req.model_dump(exclude_none=True)
+        update_data = update_req.model_dump(exclude_none=True, exclude={"reason"})
+        if "current_steward" in update_data:  # FX-Maint: never a free-text rename of who members see as steward
+            shown = (await _steward_names(session, [d])).get(d.steward_id) or d.current_steward
+            if (update_data.pop("current_steward") or "").strip() != (shown or "").strip():
+                raise ApiError(400, STEWARD_NAME_FOLLOWS, {"code": "STEWARD_NAME_FOLLOWS", "field": "current_steward"})
+        records = await _authority_records(session, d, caller, update_data, update_req.reason)
         if "name" in body:
             # Present-and-empty (or null) clears the name back to the derived label.
             update_data["name"] = _clean_name(update_req.name)
@@ -368,6 +446,7 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
         d.version_fingerprint = generate_fingerprint(
             d.domain_id, d.purpose or "", d.version, d.status
         )
+        session.add_all(records)
 
         await session.commit()
 
@@ -489,11 +568,19 @@ async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
         raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as session:
-        await get_scoped_or_404(session, request, Domain, domain_id_a, label="Domain")
+        domain = await get_scoped_or_404(session, request, Domain, domain_id_a, label="Domain")
+        from neos_agent.api.quizzes import copy_quiz, quiz_steward_or_error  # FX-Onboard A2/A9
+        steward = await quiz_steward_or_error(session, request, domain.ecosystem_id)
 
-        quiz = await session.get(Quiz, quiz_id)
+        quiz = await session.get(Quiz, quiz_id, with_for_update=True)
         if quiz is None:
             raise ApiError(404, "Quiz not found")
+        if quiz.ecosystem_id not in (None, domain.ecosystem_id):  # never take another ecosystem's quiz
+            raise ApiError(403, "That quiz belongs to another ecosystem")
+        if quiz.ecosystem_id is None:  # a shared quiz stays shared: the domain gets its own copy
+            quiz = copy_quiz(quiz, ecosystem_id=domain.ecosystem_id, domain_id=domain_id_a, created_by=steward.id)
+            session.add(quiz)
+            quiz_id = quiz.id
 
         if is_entry:
             from sqlalchemy import update
@@ -528,9 +615,11 @@ async def unassign_quiz_from_domain(request: Request, domain_id_u: uuid.UUID):
         raise ApiError(400, "Invalid quiz_id") from None
 
     async with request.app.ctx.db() as session:
-        await get_scoped_or_404(session, request, Domain, domain_id_u, label="Domain")
+        domain = await get_scoped_or_404(session, request, Domain, domain_id_u, label="Domain")
+        from neos_agent.api.quizzes import quiz_steward_or_error  # FX-Onboard A2
+        await quiz_steward_or_error(session, request, domain.ecosystem_id)
 
-        quiz = await session.get(Quiz, quiz_id)
+        quiz = await session.get(Quiz, quiz_id, with_for_update=True)
         if quiz is None or quiz.domain_id != domain_id_u:
             raise ApiError(404, "Quiz not found in this domain")
 
@@ -544,9 +633,12 @@ async def unassign_quiz_from_domain(request: Request, domain_id_u: uuid.UUID):
 @domains_api_bp.get("/<domain_id_r:uuid>/quiz-results")
 @authenticated
 async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
-    """GET /api/v1/domains/:id/quiz-results -- View quiz results for domain quizzes."""
+    """GET /api/v1/domains/:id/quiz-results -- the domain's quiz results: all of them for its ecosystem's stewards, else your own."""
     async with request.app.ctx.db() as session:
-        await get_scoped_or_404(session, request, Domain, domain_id_r, label="Domain")
+        domain = await get_scoped_or_404(session, request, Domain, domain_id_r, label="Domain")
+        caller = await caller_in(session, request, domain.ecosystem_id)
+        if caller is None:
+            return json({"items": [], "total": 0})
         quiz_stmt = select(Quiz.id, Quiz.title).where(Quiz.domain_id == domain_id_r)
         quiz_rows = await session.execute(quiz_stmt)
         quiz_map = {row.id: row.title for row in quiz_rows}
@@ -557,8 +649,10 @@ async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
         result_stmt = (
             select(QuizResult)
             .where(QuizResult.quiz_id.in_(list(quiz_map.keys())))
-            .order_by(QuizResult.created_at.desc())
+            .order_by(QuizResult.completed_at.desc())
         )
+        if not can_manage_onboarding(caller, domain.ecosystem_id):  # results carry names: members see only their own
+            result_stmt = result_stmt.where(QuizResult.member_id == caller.id)
         results = (await session.execute(result_stmt)).scalars().all()
 
         member_ids = list({r.member_id for r in results if r.member_id})
@@ -579,8 +673,8 @@ async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
                 "member_id": str(r.member_id) if r.member_id else None,
                 "member_name": member_names.get(r.member_id) if r.member_id else None,
                 "score": r.score,
-                "passed": r.passed,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "passed": r.is_passed,
+                "created_at": r.completed_at.isoformat() if r.completed_at else None,
             })
 
     return json({"items": items, "total": len(items)})
@@ -594,52 +688,23 @@ async def domain_quiz_results(request: Request, domain_id_r: uuid.UUID):
 @domains_api_bp.get("/<domain_id_sn:uuid>/shares-needs")
 @authenticated
 async def list_domain_shares_needs(request: Request, domain_id_sn: uuid.UUID):
-    """GET /api/v1/domains/:id/shares-needs -- List shares & needs for this domain.
+    """GET /api/v1/domains/:id/shares-needs -- every status, under the one visibility rule (G-Exchange).
 
-    Query params: type, category, status
+    Query params: type, category, status. Hidden posts appear only for their author and the ecosystem's stewards.
     """
+    from neos_agent.api.guards import caller_user_id  # G-Exchange
+    from neos_agent.services import exchange  # G-Exchange (it imports this module)
+
     async with request.app.ctx.db() as session:
         domain = await get_scoped_or_404(session, request, Domain, domain_id_sn, label="Domain")
-
-        # Verify the requester is a member of this domain's ecosystem (profile admins bootstrap past it)
-        if not is_profile_admin(request.ctx.member) and await caller_in(session, request, domain.ecosystem_id) is None:
-            raise ApiError(403, "You are not a member of this domain's ecosystem")
-
-        filters = [SharesNeeds.domain_id == domain_id_sn]
-        type_filter = request.args.get("type")
-        if type_filter:
-            filters.append(SharesNeeds.type == type_filter)
-        category_filter = request.args.get("category")
-        if category_filter:
-            filters.append(SharesNeeds.category == category_filter)
-        status_filter = request.args.get("status")
-        if status_filter:
-            filters.append(SharesNeeds.status == status_filter)
-
-        stmt = (
-            select(SharesNeeds)
-            .where(*filters)
-            .order_by(SharesNeeds.created_at.desc())
-        )
-        rows = (await session.execute(stmt)).scalars().all()
-
-        items = [
-            {
-                "id": str(r.id),
-                "author_member_id": str(r.author_member_id) if r.author_member_id else None,
-                "ecosystem_id": str(r.ecosystem_id),
-                "domain_id": str(r.domain_id),
-                "type": r.type,
-                "title": r.title,
-                "description": r.description,
-                "category": r.category,
-                "capacity": r.capacity,
-                "tags": r.tags if isinstance(r.tags, list) else [],
-                "visibility": r.visibility,
-                "status": r.status,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in rows
-        ]
+        viewer = await exchange.load_viewer(session, caller_user_id(request))
+        filters = [SharesNeeds.domain_id == domain.id, exchange.visible_clause(viewer)]
+        for name in ("type", "category", "status"):
+            if request.args.get(name):
+                filters.append(getattr(SharesNeeds, name) == request.args.get(name))
+        rows = (await session.execute(
+            select(SharesNeeds).where(*filters).order_by(SharesNeeds.created_at.desc(), SharesNeeds.id)
+        )).scalars().all()
+        items = await exchange.publication_payloads(session, rows, viewer)
 
     return json({"items": items})
