@@ -78,6 +78,16 @@ class Proposal(TimestampMixin, Base):
     governing_agreement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(), ForeignKey("agreements.id"), nullable=True
     )
+    # The in-force agreement this proposal changes; registering the ratified proposal amends it.
+    amends_agreement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("agreements.id"), nullable=True
+    )
+    # The agreement a steward registered this ratified proposal as (new or amended); NULL until then.
+    registered_agreement_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("agreements.id"), nullable=True
+    )
+    # proposed_change as it stood when a steward confirmed ratification; registering copies this, never the live text.
+    ratified_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="proposals")
     advice_logs: Mapped[list[AdviceLog]] = relationship(back_populates="proposal")

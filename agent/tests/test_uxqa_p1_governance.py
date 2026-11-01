@@ -31,6 +31,7 @@ from neos_agent.agent.governance_tools import (
     execute_tool,
 )
 from neos_agent.api.agreements import CEREMONY_DENIED, agreements_api_bp
+from neos_agent.api.conflicts import TRIAGE_DENIED
 from neos_agent.api.domains import CREATE_DENIED, domain_display_name, domains_api_bp
 from neos_agent.api.errors import register_api_errors
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED, proposals_api_bp
@@ -260,7 +261,7 @@ async def test_blank_advice_is_rejected_and_does_not_advance(env, body):
     assert current["advice_logs"] == []
 
 
-async def test_proposer_cannot_self_advise_and_others_advance_the_round(env):
+async def test_proposer_cannot_self_advise_and_others_complete_the_round(env):
     proposal = await _create_proposal(env.app)
     await _open_for_advice(env.app, proposal["id"])
     url = f"/api/v1/proposals/{proposal['id']}/advice"
@@ -269,14 +270,14 @@ async def test_proposer_cannot_self_advise_and_others_advance_the_round(env):
     assert self_advice.status == 409
     assert self_advice.json["error"] == SELF_ADVICE_DENIED
 
-    # The advisor is the caller, whatever the body claims; the default
-    # one-round gate then advances the proposal and says so.
+    # The advisor is the caller, whatever the body claims; the default one-round
+    # gate is then met, and advice stays open until the proposer closes it (owner decision).
     advice = await _call(env.app, "post", "ben", url, json={"advisor": "Spoofed", "content": "Add a winter schedule"})
     assert advice.status == 201, advice.text
     assert [e["advisor"] for e in advice.json["entries"]] == ["Ben"]
-    assert advice.json["auto_transitions"] == ["advice->consent"]
+    assert (advice.json["auto_transitions"], advice.json["gates"]["advice"]["met"]) == ([], True)
     current = (await _call(env.app, "get", "ada", f"/api/v1/proposals/{proposal['id']}")).json
-    assert current["status"] == "consent"
+    assert current["status"] == "advice"
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +402,9 @@ _TOOL_ARGS = {
     "create_decision_record": {"holding": "Quiet hours start at ten.", "rationale": "Neighbours asked."},
     "create_conflict_case": {"title": "Noise at night", "description": "Music after midnight."},
     "triage_conflict": {"case_id": "set by the test", "tier": 1},
-    "declare_emergency": {"notes": "The river is flooding the garden."},
-    "create_exit_record": {"departure_notice": "Moving to another valley."},
+    # Irreversible acts carry the member's confirmation (no chat turns here, so the flag suffices).
+    "declare_emergency": {"notes": "The river is flooding the garden.", "confirmed": True},
+    "create_exit_record": {"departure_notice": "Moving to another valley.", "confirmed": True},
     "create_domain_draft": {"domain_id": "tools", "purpose": "Lend tools"},
     "create_ecosystem": {"name": "New Commons"},
     "create_safeguard_audit": {"findings": "Participation is healthy."},
@@ -410,7 +412,11 @@ _TOOL_ARGS = {
         "case_id": "set by the test", "title": "Quiet repair",
         "commitments": [{"commitment": "Lower the volume", "owner": "Ben"}],
     },
-    "update_proposal_status": {"proposal_id": "PROP-LEGACY", "new_status": "withdrawn"},
+    "update_proposal_status": {"proposal_id": "PROP-LEGACY", "new_status": "withdrawn", "confirmed": True},
+    "join_domain": {"domain": "Newcomer Garden"},
+    "submit_test_report": {"proposal_id": "PROP-LEGACY", "outcome": "passed", "observations": "It worked."},
+    "record_agreement_evidence": {"agreement_id": "AGR-GARDEN", "stage": "advice", "note": "Advice round held"},
+    "withdraw_consent_position": {"proposal_id": "PROP-LEGACY"},
 }
 
 
@@ -450,9 +456,11 @@ async def test_chat_tools_apply_authorship_advice_and_manage_rules(env):
         env, "ben", "record_advice", proposal_id=proposal_key, advice_text="Add a swap shelf", advisor="Mo",
     )
     assert advised["data"]["advisor"] == "Ben"
-    assert advised["data"]["auto_transitions"] == ["advice->consent"]
+    assert advised["data"]["auto_transitions"] == []  # the proposer closes advice (owner decision)
 
-    withdrawn = await _tool(env, "mo", "update_proposal_status", proposal_id=proposal_key, new_status="withdrawn")
+    withdrawn = await _tool(
+        env, "mo", "update_proposal_status", proposal_id=proposal_key, new_status="withdrawn", confirmed=True,
+    )
     assert withdrawn["data"]["new_status"] == "withdrawn"
 
 
@@ -500,11 +508,11 @@ async def _governance_state(env) -> tuple:
     ("update_agreement_status", "ben", CEREMONY_DENIED, "ari"),  # active admin or owner, as REST ceremonies
     ("create_decision_record", "ben", DECISION_DENIED, "mo"),  # no REST route: stewards only
     ("create_conflict_case", "olu", MEMBER_REQUIRED, "ben"),
-    ("triage_conflict", "olu", MEMBER_REQUIRED, "ben"),
+    ("triage_conflict", "ben", TRIAGE_DENIED, "mo"),  # G-Care: a steward there (ben reported it), never a party
     ("declare_emergency", "olu", MEMBER_REQUIRED, "ben"),  # owner decision: any active member
     ("create_exit_record", "olu", MEMBER_REQUIRED, "ben"),
     ("create_safeguard_audit", "olu", MEMBER_REQUIRED, "ben"),
-    ("create_repair_agreement", "olu", MEMBER_REQUIRED, "ben"),
+    ("create_repair_agreement", "ben", TRIAGE_DENIED, "mo"),
 ])
 async def test_chat_tools_apply_the_rule_for_the_callers_ecosystem(env, name, denied, refusal, allowed):
     args = dict(_TOOL_ARGS[name])
@@ -560,11 +568,13 @@ async def test_chat_ecosystem_founder_joins_and_stewards_its_core_domain(env):
 
 
 async def _proposal_in_consent(env) -> dict:
-    """Ada's proposal after Ben's advice: the default one-round gate has moved it to consent."""
+    """Ada's proposal after Ben's advice, with advice closed by Ada (the proposer closes advice)."""
     proposal = await _create_proposal(env.app)
     await _open_for_advice(env.app, proposal["id"])
     advice = await _call(env.app, "post", "ben", f"/api/v1/proposals/{proposal['id']}/advice", json={"content": "Add a rota"})
-    assert advice.json["auto_transitions"] == ["advice->consent"], advice.text
+    assert advice.status == 201, advice.text
+    closed = await _call(env.app, "post", "ada", f"/api/v1/proposals/{proposal['id']}/status", json={"status": "consent"})
+    assert closed.json["status"] == "consent", closed.text
     return proposal
 
 

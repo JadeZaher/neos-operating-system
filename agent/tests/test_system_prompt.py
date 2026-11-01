@@ -307,6 +307,31 @@ def test_foundation_contains_global_rules():
 
 
 # ---------------------------------------------------------------------------
+# test_act_guide_follows_the_lifecycle_table
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("move, line", [
+    (dict(source="advice", target="consent", gate="advice", automatic=True),
+     "- advice -> consent: by itself once the advice rounds it needs have advice."),
+    (dict(source="advice", target="consent", gate="advice"),
+     "- advice -> consent: the author or a steward moves it, once the advice rounds it needs have advice."),
+    (dict(source="test", target="ratified", gate="test", steward_only=True),
+     "- test -> ratified: a steward who did not write it confirms it once the test evidence is in."),
+])
+def test_act_guide_follows_the_lifecycle_table(monkeypatch, move, line):
+    """The prompt's ACT guide is generated from PROPOSAL_LIFECYCLE, so an owner's table edit reaches the assistant."""
+    from neos_agent.agent import system_prompt
+    from neos_agent.services.act_gates import Lifecycle, Move
+
+    monkeypatch.setattr(system_prompt, "PROPOSAL_LIFECYCLE", Lifecycle(moves=(Move(**move),), withdrawn="withdrawn"))
+    prompt = build_foundation_prompt(["OmniOne"], [])
+    assert line in prompt
+    # Only a steward-confirmed move brings the "another steward confirms" guidance.
+    assert ("another member the moderator role" in prompt) is bool(move.get("steward_only"))
+
+
+# ---------------------------------------------------------------------------
 # test_foundation_budget_warning_logged
 # ---------------------------------------------------------------------------
 

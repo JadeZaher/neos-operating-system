@@ -53,11 +53,28 @@ class AuditDetail(AuditListItem):
     indicator_scores: list[IndicatorScoreSchema] | None = None
     triggered_safeguards: list[TriggeredSafeguardSchema] | None = None
     structured_recommendations: list[str] | None = None
+    caller_can_edit: bool = False
 
 
 class AuditCreateRequest(BaseModel):
+    """Start an audit as the signed-in member (the auditor is always the caller)."""
     ecosystem_id: uuid.UUID
-    auditor: str = "AI Governance Agent"
+    audit_scope: str | None = None
+    audit_period_start: _dt.date | None = None
+    audit_period_end: _dt.date | None = None
+    indicator_scores: list[IndicatorScoreSchema] | None = None
+    findings: str | None = None
+    structured_recommendations: list[str] | None = None
+
+
+class AuditUpdateRequest(BaseModel):
+    """Edit a draft audit; only fields that are sent change."""
+    audit_scope: str | None = None
+    audit_period_start: _dt.date | None = None
+    audit_period_end: _dt.date | None = None
+    indicator_scores: list[IndicatorScoreSchema] | None = None
+    findings: str | None = None
+    structured_recommendations: list[str] | None = None
 
 
 class HealthSummary(BaseModel):

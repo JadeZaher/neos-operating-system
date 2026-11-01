@@ -242,7 +242,8 @@ async def test_member_detail_with_transitions_shows_history(app):
 
 
 # ---------------------------------------------------------------------------
-# Task 1.3: Edit/update ownership guard tests (FR-3)
+# Task 1.3: Edit form ownership guard tests (FR-3). Every member write route
+# (create, profile update, status, onboarding) is retired: tests/test_legacy_dashboard.py.
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_edit_form_own_profile_200(app):
@@ -268,41 +269,6 @@ async def test_edit_form_other_profile_redirects(app_as_other):
 
 
 @pytest.mark.asyncio
-async def test_update_own_profile_redirects_to_detail(app):
-    """POST /members/<own-id> with valid data redirects to detail page."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={"display_name": "Alice Updated", "profile": "builder"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    assert f"/dashboard/members/{OWNER_ID}" in response.headers.get("location", "")
-    # Verify the update persisted
-    async with app.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.display_name == "Alice Updated"
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_update_other_profile_redirects(app_as_other):
-    """POST /members/<other-id> with data redirects without updating."""
-    engine = await _setup_db(app_as_other)
-    _, response = await app_as_other.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={"display_name": "Hacked Name"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    # Verify no update
-    async with app_as_other.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.display_name == "Alice Owner"
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
 async def test_edit_form_unauthenticated_redirects(app_noauth):
     """GET /members/<id>/edit with no auth redirects to detail."""
     engine = await _setup_db(app_noauth)
@@ -316,54 +282,6 @@ async def test_edit_form_unauthenticated_redirects(app_noauth):
 # ---------------------------------------------------------------------------
 # Task 1.4: Skills/interests round-trip tests (FR-5)
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_update_skills_offered_stores_json_list(app):
-    """POST with skills_offered comma string stores JSON list."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={"skills_offered": "coding, writing, leadership"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    async with app.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.skills_offered == ["coding", "writing", "leadership"]
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_update_interests_stores_json_list(app):
-    """POST with interests comma string stores JSON list."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={"interests": "permaculture, governance"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    async with app.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.interests == ["permaculture", "governance"]
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_update_clear_skills_sets_none(app):
-    """POST with empty skills_offered clears the value."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={"skills_offered": ""},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    async with app.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.skills_offered is None
-    await engine.dispose()
-
-
 @pytest.mark.asyncio
 async def test_detail_shows_skills_tags(app):
     """GET detail page for member with skills shows skill text."""
@@ -411,149 +329,3 @@ async def test_member_create_form_200(app):
     assert "form" in response.text.lower()
     await engine.dispose()
 
-
-@pytest.mark.asyncio
-async def test_member_create_valid_redirects(app):
-    """POST /members with valid data creates member and redirects."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        "/dashboard/members",
-        data={
-            "ecosystem_id": str(ECOSYSTEM_ID),
-            "display_name": "New Member",
-            "member_id": "MEM-NEW-001",
-            "profile": "townhall",
-        },
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    assert "/dashboard/members/" in response.headers.get("location", "")
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_member_create_bad_ecosystem_403(app):
-    """POST /members with invalid ecosystem_id returns 403."""
-    engine = await _setup_db(app)
-    bad_eco = uuid.uuid4()
-    _, response = await app.asgi_client.post(
-        "/dashboard/members",
-        data={
-            "ecosystem_id": str(bad_eco),
-            "display_name": "Bad Member",
-            "member_id": "MEM-BAD-001",
-            "profile": "builder",
-        },
-    )
-    assert response.status_code == 403
-    assert "Invalid" in response.text or "unauthorized" in response.text.lower()
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_status_transition_valid_redirects(app):
-    """POST /members/<id>/status with new_status redirects."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}/status",
-        data={"new_status": "inactive", "trigger": "voluntary"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    # Verify status changed
-    async with app.ctx.db() as session:
-        member = await session.get(Member, OWNER_ID)
-        assert member.current_status == "inactive"
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_status_transition_missing_status_400(app):
-    """POST /members/<id>/status without new_status returns 400."""
-    engine = await _setup_db(app)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}/status",
-        data={},
-    )
-    assert response.status_code == 400
-    assert "new_status" in response.text.lower() or "required" in response.text.lower()
-    await engine.dispose()
-
-
-# ---------------------------------------------------------------------------
-# Phase 4: End-to-End Integration Tests
-# ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_signup_to_profile_flow(app):
-    """Simulate signup: create member, view profile, edit, verify update."""
-    engine = await _setup_db(app)
-    # 1. Create a new member
-    _, response = await app.asgi_client.post(
-        "/dashboard/members",
-        data={
-            "ecosystem_id": str(ECOSYSTEM_ID),
-            "display_name": "New Joiner",
-            "member_id": "MEM-JOINER-001",
-            "profile": "townhall",
-        },
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    location = response.headers.get("location", "")
-    assert "/dashboard/members/" in location
-    new_member_id = location.split("/dashboard/members/")[-1]
-
-    # 2. View the new member's detail page
-    _, response = await app.asgi_client.get(f"/dashboard/members/{new_member_id}")
-    assert response.status_code == 200
-    assert "New Joiner" in response.text
-    assert "MEM-JOINER-001" in response.text
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_skills_interests_complete_roundtrip(app):
-    """Full round-trip: no skills → add skills → verify display → clear → verify gone."""
-    engine = await _setup_db(app)
-    # Start: Bob has no skills
-    _, response = await app.asgi_client.get(f"/dashboard/members/{OTHER_ID}")
-    assert "Skills Offered" not in response.text
-
-    # Add skills via update (as owner of OWNER_ID, update our own profile)
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={
-            "skills_offered": "coding, mentoring, facilitation",
-            "skills_needed": "accounting",
-            "interests": "regenerative agriculture, web3",
-        },
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-
-    # Verify skills display
-    _, response = await app.asgi_client.get(f"/dashboard/members/{OWNER_ID}")
-    assert response.status_code == 200
-    assert "coding" in response.text
-    assert "mentoring" in response.text
-    assert "accounting" in response.text
-    assert "regenerative agriculture" in response.text
-
-    # Clear all skills/interests
-    _, response = await app.asgi_client.post(
-        f"/dashboard/members/{OWNER_ID}",
-        data={
-            "skills_offered": "",
-            "skills_needed": "",
-            "interests": "",
-        },
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-
-    # Verify cleared
-    _, response = await app.asgi_client.get(f"/dashboard/members/{OWNER_ID}")
-    assert response.status_code == 200
-    assert "Skills Offered" not in response.text
-    assert "Interests" not in response.text
-    await engine.dispose()

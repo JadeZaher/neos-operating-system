@@ -106,102 +106,65 @@ async def _check_compliance_regen(app):
 
 
 async def _auto_revert_emergencies(app):
-    """Auto-revert open emergencies whose auto_revert_at timer has expired.
+    """Emergency sweep: expired timers open -> half_open (Recovery); unsigned declarations lapse after the co-sign window.
 
-    Per emergency-reversion SKILL.md section C: when the auto-reversion
-    timer expires, the emergency MUST transition to half_open (Recovery)
-    regardless of whether exit criteria have been met. This satisfies
-    NEOS Principle 4: 'Emergency authority automatically expires.'
-
-    Concurrency notes:
-    - Each candidate row is re-locked individually with SELECT ... FOR
-      UPDATE SKIP LOCKED so a concurrent /resolve call (which also takes
-      a row lock) cannot double-transition the same record. SKIP LOCKED
-      ensures two overlapping cron passes do not block each other; the
-      second pass simply finds nothing.
-    - The state is re-checked inside the lock; if a manual /resolve
-      transitioned the row to half_open between our scan and our lock
-      acquisition, we skip it (no double audit entry).
-    - On engines that do not support row locks (e.g. SQLite in tests),
-      the lock hint is a no-op and the post-lock state check is what
-      enforces the invariant.
+    Recovery never auto-closes: past its window the API reports "review overdue" to stewards.
+    Rationale and locking: api/AGENTS.md "Emergency and exit".
     """
-    from sqlalchemy import select
+    from sqlalchemy import or_, and_, select
     from neos_agent.db.models import EmergencyState
     # Local import to avoid the API layer pulling in cron at startup.
     from neos_agent.api.emergency import (
-        STATE_OPEN, STATE_HALF_OPEN, RECOVERY_WINDOW_DAYS,
+        COSIGN_WINDOW_HOURS, STATE_OPEN, STATE_PENDING,
     )
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         async with app.ctx.db() as session:
-            scan_stmt = select(EmergencyState.id).where(
-                EmergencyState.state == STATE_OPEN,
-                EmergencyState.auto_revert_at.is_not(None),
-                EmergencyState.auto_revert_at < now,
-            )
-            scan_result = await session.execute(scan_stmt)
-            candidate_ids = [row[0] for row in scan_result.all()]
-            reverted = 0
+            scan_stmt = select(EmergencyState.id).where(or_(
+                and_(
+                    EmergencyState.state == STATE_OPEN,
+                    EmergencyState.auto_revert_at.is_not(None),
+                    EmergencyState.auto_revert_at < now,
+                ),
+                and_(
+                    EmergencyState.state == STATE_PENDING,
+                    EmergencyState.declared_at < now - timedelta(hours=COSIGN_WINDOW_HOURS),
+                ),
+            ))
+            candidate_ids = [row[0] for row in (await session.execute(scan_stmt)).all()]
+            changed = 0
             for eid in candidate_ids:
-                locked = await _lock_and_revert(session, eid, now,
-                                                STATE_OPEN, STATE_HALF_OPEN,
-                                                RECOVERY_WINDOW_DAYS)
-                if locked:
-                    reverted += 1
-            if reverted:
+                if await _lock_and_revert(session, eid, now):
+                    changed += 1
+            if changed:
                 await session.commit()
-                logger.info("Auto-reverted %d expired emergencies to half_open", reverted)
+                logger.info("Emergency sweep moved %d emergencies", changed)
     except Exception:
         logger.exception("Emergency auto-revert check failed")
 
 
-async def _lock_and_revert(session, emergency_id, now, state_open,
-                           state_half_open, recovery_window_days):
-    """Take a row lock on a single emergency, re-check state, and
-    transition open -> half_open if still applicable.
-
-    Returns True if the row was transitioned, False if a concurrent
-    actor beat us to it (in which case we leave the row alone).
-    """
+async def _lock_and_revert(session, emergency_id, now) -> bool:
+    """Row-lock one emergency (SKIP LOCKED), re-check it, and apply the timed move; False when nothing was due."""
     from sqlalchemy import select
     from neos_agent.db.models import EmergencyState
+    from neos_agent.api.emergency import STATE_OPEN, begin_recovery, expire_if_stale, naive_utc
     try:
         stmt = (
             select(EmergencyState)
             .where(EmergencyState.id == emergency_id)
             .with_for_update(skip_locked=True)
         )
-        result = await session.execute(stmt)
-        emergency = result.scalar_one_or_none()
+        emergency = (await session.execute(stmt)).scalar_one_or_none()
         if emergency is None:
             return False
-        if emergency.state != state_open:
+        if expire_if_stale(emergency, now):
+            logger.info("Emergency %s lapsed without a co-signer", emergency.id)
+            return True
+        revert_at = naive_utc(emergency.auto_revert_at)
+        if emergency.state != STATE_OPEN or revert_at is None or revert_at >= now:
             return False
-        if emergency.auto_revert_at is None or emergency.auto_revert_at >= now:
-            return False
-        old_revert_at = emergency.auto_revert_at
-        emergency.state = state_half_open
-        emergency.half_open_entered_at = now
-        emergency.auto_revert_at = now + timedelta(days=recovery_window_days)
-        log = emergency.actions_log or []
-        if isinstance(log, dict):
-            log = []
-        entry = dict()
-        entry["action"] = "half_open_transition"
-        entry["timestamp"] = now.isoformat()
-        entry["trigger"] = "auto_revert_timer"
-        entry["note"] = (
-            "Auto-reversion timer expired (was " + old_revert_at.isoformat() + "). "
-            "Emergency authority automatically ceased. Recovery state entered. "
-            "30-day ratification window started."
-        )
-        log.append(entry)
-        emergency.actions_log = log
-        logger.info(
-            "Emergency %s auto-reverted open->half_open (timer expired at %s)",
-            emergency.id, old_revert_at,
-        )
+        begin_recovery(emergency, now, trigger="auto_revert_timer")
+        logger.info("Emergency %s auto-reverted open->half_open (timer expired at %s)", emergency.id, revert_at)
         return True
     except Exception:
         logger.exception("Auto-revert lock-and-transition failed for %s", emergency_id)

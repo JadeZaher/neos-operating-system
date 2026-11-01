@@ -30,6 +30,8 @@ from sqlalchemy.orm import selectinload
 from mcp.server.fastmcp import Context, FastMCP
 
 from neos_agent.config import get_settings
+from neos_agent.agent.governance_tools import PROPOSAL_CONFIRM, proposal_move_refusal
+from neos_agent.api.agreements import record_member_consent
 from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
 from neos_agent.api.policy import is_proposal_author
 from neos_agent.api.proposals import SELF_ADVICE_DENIED
@@ -39,10 +41,7 @@ from neos_agent.db.models import (
     AgentToken,
     Agreement,
     AgreementCeremony,
-    AgreementMemberConsent,
     AuthSession,
-    ConsentParticipant,
-    ConsentRecord,
     DecisionRecord,
     Ecosystem,
     Member,
@@ -58,6 +57,7 @@ from neos_agent.services.act_gates import (
     consent_position,
     normalize_act_policy,
     proposal_gate_status,
+    record_consent_position,
 )
 from neos_agent.services.act_gates import transition_proposal as apply_proposal_transition
 from neos_agent.services.agreement_consent import (
@@ -77,7 +77,9 @@ mcp = FastMCP(
         "the record (or inherited from a proposal's governing agreement) and "
         "status advances automatically when conditions are met. Completing "
         "the process mints a browsable decision artifact. You may only act "
-        "in ecosystems where the owner is a participating member."
+        "in ecosystems where the owner is a participating member. Ratifying "
+        "or withdrawing a proposal cannot be undone: ask the owner first and "
+        "pass confirm=true only after they agree."
     ),
 )
 
@@ -467,31 +469,11 @@ async def attest_agreement_consent(agreement_id: str, attestation: str, ctx: Con
         if agreement is None:
             raise ValueError("Agreement not found")
         member = await _member(s, caller.user.id, agreement.ecosystem_id)
-        consent = await s.scalar(
-            select(AgreementMemberConsent).where(
-                AgreementMemberConsent.agreement_id == agreement.id,
-                AgreementMemberConsent.member_id == member.id,
-                AgreementMemberConsent.agreement_version == agreement.version,
-            ).with_for_update()
-        )
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        if consent is None:
-            s.add(AgreementMemberConsent(
-                id=uuid.uuid4(),
-                agreement_id=agreement.id,
-                member_id=member.id,
-                agreement_version=agreement.version,
-                attestation=attestation.strip(),
-                attested_at=now,
-            ))
-            await s.flush()
-        else:
-            consent.attestation = attestation.strip()
-            consent.attested_at = now
-            if consent.withdrawn_at is not None:
-                consent.revision += 1
-            consent.withdrawn_at = None
-            consent.withdrawal_reason = None
+        # Same write as REST POST /agreements/:id/consent: the consent row, the alignment ledger, activation.
+        try:
+            await record_member_consent(s, agreement, member, attestation.strip())
+        except TransitionRefused as refusal:
+            raise _refused(refusal) from None
         outcome = await conduct_agreement_transition(s, agreement, caller=member)
         await s.commit()
         return _outcome(outcome, agreement_id=agreement.agreement_id, gates=outcome.gates)
@@ -623,6 +605,7 @@ async def record_proposal_advice(proposal_id: str, advice_text: str, ctx: Contex
             id=uuid.uuid4(),
             advice_log_id=log.id,
             advisor=member.display_name,
+            member_id=member.id,  # standing is matched by id, never by the self-editable name
             advice_text=advice_text.strip(),
         ))
         outcome = await apply_proposal_transition(s, proposal, caller=member)
@@ -646,31 +629,13 @@ async def submit_proposal_consent(proposal_id: str, position: str, ctx: Context,
         if proposal is None:
             raise ValueError("Proposal not found")
         member = await _member(s, caller.user.id, proposal.ecosystem_id)
-        if proposal.status != "consent":
-            raise ValueError(f"Consent can only be recorded while the proposal is in consent (currently '{proposal.status}')")
-        record = await s.scalar(
-            select(ConsentRecord)
-            .where(ConsentRecord.proposal_id == proposal.id)
-            .order_by(ConsentRecord.created_at.desc())
-            .limit(1)
-        )
-        if record is None:
-            record = ConsentRecord(
-                id=uuid.uuid4(),
-                proposal_id=proposal.id,
-                consent_mode=proposal.decision_type or "consent",
-                outcome="pending",
+        # Same engine as REST POST /proposals/:id/consent: one position per member, a change replaces it.
+        try:
+            _record, outcome = await record_consent_position(
+                s, proposal, member=member, position=position, reason=objection_text,
             )
-            s.add(record)
-            await s.flush()
-        s.add(ConsentParticipant(
-            id=uuid.uuid4(),
-            consent_record_id=record.id,
-            name=member.display_name,
-            position=position,
-            reason=objection_text.strip() if objection_text else None,
-        ))
-        outcome = await apply_proposal_transition(s, proposal, caller=member)
+        except TransitionRefused as refusal:
+            raise _refused(refusal) from None
         await s.commit()
         return _outcome(outcome, proposal_id=proposal.proposal_id, gates=outcome.gates)
 
@@ -685,7 +650,8 @@ async def submit_test_report(
 ) -> dict:
     """Submit a test report (status: passed/failed/blocked) with the declared
     test-case names that are met. All declared cases met (or one passed
-    report when none are declared) auto-advances to ratification."""
+    report when none are declared) meets the test gate; a steward then
+    confirms ratification (transition_proposal status='ratified')."""
     caller = await _caller(ctx)
     status = status.strip().lower()
     if status not in {"passed", "failed", "blocked"}:
@@ -703,6 +669,7 @@ async def submit_test_report(
             test_start_date=date.today(),
             outcome=status,
             observations=summary.strip() if summary else None,
+            reporter_member_id=member.id,  # the token owner, as REST records the caller
         )
         s.add(report)
         await s.flush()
@@ -719,12 +686,18 @@ async def submit_test_report(
 
 
 @mcp.tool()
-async def transition_proposal(proposal_id: str, status: str, ctx: Context) -> dict:
+async def transition_proposal(
+    proposal_id: str, status: str, ctx: Context, note: str | None = None, confirm: bool = False,
+) -> dict:
     """Move a proposal one step through the ACT sequence (or withdraw it).
 
     Same rule as the app: only the proposer or an ecosystem steward moves a
     proposal by hand, and a forward move needs its declared (or inherited) gate.
-    Moves whose gates are already met happen automatically.
+    Sending it back for revision (consent or test -> advice) needs a `note`
+    saying what will change. Moves whose gates are already met happen automatically.
+    Ratifying and withdrawing cannot be undone: without confirm=true nothing
+    changes and the result's `needs_confirmation` says what would happen. Ask
+    the token owner; call again with confirm=true only after they agree.
     """
     caller = await _caller(ctx)
     target = status.strip().lower()
@@ -738,8 +711,24 @@ async def transition_proposal(proposal_id: str, status: str, ctx: Context) -> di
             raise ValueError(f"status must be one of {statuses}")
         if target == proposal.status:
             return {"proposal_id": proposal.proposal_id, "status": proposal.status, "auto_transitions": []}
+        if target in PROPOSAL_CONFIRM and confirm is not True:
+            # The chat's two-phase contract in MCP terms: refusals first, then a no-write question.
+            refusal = await proposal_move_refusal(s, proposal, target, member)
+            if refusal:
+                raise ValueError(refusal)
+            ecosystem = await s.get(Ecosystem, proposal.ecosystem_id)
+            return {
+                "proposal_id": proposal.proposal_id,
+                "status": proposal.status,
+                "auto_transitions": [],
+                "needs_confirmation": PROPOSAL_CONFIRM[target].format(
+                    title=proposal.title, ecosystem=ecosystem.name if ecosystem else "the ecosystem",
+                ),
+                "next": f"Nothing changed. Ask the token owner; only if they agree, call transition_proposal "
+                        f"again with status='{target}' and confirm=true.",
+            }
         try:
-            outcome = await apply_proposal_transition(s, proposal, to=target, caller=member)
+            outcome = await apply_proposal_transition(s, proposal, to=target, caller=member, note=note)
         except TransitionRefused as refusal:
             raise _refused(refusal) from None
         await s.commit()

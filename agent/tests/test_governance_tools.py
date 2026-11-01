@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 
+from neos_agent.services.act_gates import OBJECTION_REASON_REQUIRED, proposal_gate_status
 from neos_agent.agent.governance_tools import (
     check_authority,
     check_quorum,
@@ -84,7 +85,9 @@ class TestGetAgreement:
         assert data["type"] == "space"
         assert data["status"] == "active"
         assert data["proposer"] == "Kai"
-        assert "ratification_records" in data
+        # Consent progress comes from the engine: three participating members, none has consented yet.
+        assert (data["gates"]["consent"]["consented"], data["gates"]["consent"]["outstanding"]) == (0, 3)
+        assert data["link"] == f"/agreements/{data['id']}"
 
     async def test_get_agreement_not_found(self, seeded_db):
         """Returns error for non-existent agreement."""
@@ -207,25 +210,12 @@ class TestUpdateAgreementStatus:
 
 
 class TestCheckAuthority:
-    async def test_check_authority_authorized(self, seeded_db):
-        """Steward Lani is authorized in SHUR-KITCHEN domain."""
-        result = await check_authority(
-            {"member": "Lani", "domain": "SHUR-KITCHEN", "action": "update_schedule"},
-            seeded_db,
-        )
-        assert result["success"] is True
-        assert result["data"]["authorized"] is True
-        assert result["data"]["role_source"] == "domain_steward"
-
-    async def test_check_authority_unauthorized(self, seeded_db):
-        """Kai has no stewardship in SHUR-KITCHEN."""
-        result = await check_authority(
-            {"member": "Kai", "domain": "SHUR-KITCHEN", "action": "update_schedule"},
-            seeded_db,
-        )
-        assert result["success"] is True
-        assert result["data"]["authorized"] is False
-        assert "no stewardship role" in result["data"]["reason"].lower()
+    async def test_domain_stewardship_follows_steward_id(self, seeded_db):
+        """policy.is_domain_steward: Lani (steward_id) stewards SHUR-KITCHEN, Kai does not."""
+        for member, expected in (("Lani", True), ("Kai", False)):
+            result = await check_authority({"member": member, "domain": "SHUR-KITCHEN"}, seeded_db)
+            assert result["success"] is True, result
+            assert result["data"]["is_domain_steward"] is expected, member
 
 
 # ===================================================================
@@ -310,8 +300,7 @@ class TestRecordConsentPosition:
             seeded_db,
             caller_user_id=USER_MANU_ID,
         )
-        assert result["success"] is False
-        assert "reason is required" in result["error"].lower()
+        assert result == {"success": False, "error": OBJECTION_REASON_REQUIRED}
 
     async def test_record_consent_position_valid(self, seeded_db):
         """Records a valid consent position."""
@@ -343,8 +332,8 @@ class TestRecordConsentPosition:
 
 
 class TestCheckQuorum:
-    async def test_check_quorum_consent_mode(self, seeded_db):
-        """Checks 2/3 threshold for consent mode with 3 active members."""
+    async def test_check_quorum_reports_the_engines_quorum(self, seeded_db):
+        """The quorum is the proposal's declared one (3), not a share of the members (2 of 3 would pass)."""
         # Move proposal to consent phase and add a consent record with 2 participants
         from neos_agent.db.models import Proposal, ConsentRecord, ConsentParticipant
         from sqlalchemy import select
@@ -354,6 +343,7 @@ class TestCheckQuorum:
         res = await seeded_db.execute(stmt)
         prop = res.scalars().first()
         prop.status = "consent"
+        prop.act_policy = {"min_advice_rounds": 1, "consent_required": True, "consent_quorum": 3}
         await seeded_db.flush()
 
         cr = ConsentRecord(
@@ -379,11 +369,9 @@ class TestCheckQuorum:
         result = await check_quorum({"proposal_id": "PROP-2026-001"}, seeded_db)
         assert result["success"] is True
         data = result["data"]
-        assert data["total_deciding_body"] == 3
-        assert data["present_count"] == 2
-        assert data["required_count"] == 2  # int(3 * 2/3) = 2
-        assert data["quorum_met"] is True
-        assert data["consent_mode"] == "consent"
+        engine = (await proposal_gate_status(seeded_db, prop))["consent"]
+        assert (data["quorum"], data["positions"]) == (engine["quorum"], engine["positions"]) == (3, 2)
+        assert data["quorum_met"] is False
 
 
 # ===================================================================
@@ -459,8 +447,8 @@ class TestGetDomain:
         result = await get_domain({"domain_id": "SHUR-KITCHEN"}, seeded_db)
         assert result["success"] is True
         data = result["data"]
-        assert data["domain_id"] == "SHUR-KITCHEN"
-        assert data["current_steward"] == "Lani"
+        assert data["name"] == "SHUR-KITCHEN"  # no name and no "Name - " purpose: the key is the label
+        assert data["steward"] == "Lani"
         assert data["purpose"] == "Community kitchen operations and scheduling"
         assert data["elements"] is not None  # JSON blob
         assert len(data["domain_elements"]) == 2  # two DomainElement rows
@@ -503,7 +491,7 @@ class TestToolRegistry:
     def test_tool_definitions_format(self):
         """get_tool_definitions returns Claude API format."""
         defs = get_tool_definitions()
-        assert len(defs) == 29
+        assert len(defs) == 33
         for d in defs:
             assert "name" in d
             assert "description" in d
@@ -548,113 +536,62 @@ from neos_agent.db.models import EmergencyState
 ECO_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
+def _naive_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class TestGetEmergencyState:
-    """Tool 17 -- circuit-breaker introspection."""
+    """Tool 17 -- each ecosystem's state in the framework's words (NEOS.md: Normal, Crisis, Recovery)."""
 
-    async def test_returns_closed_when_no_record(self, seeded_db):
-        result = await get_emergency_state({}, seeded_db)
-        assert result["success"] is True
-        assert result["data"]["state"] == "closed"
-        assert "CLOSED" in result["data"]["message"]
+    async def _with(self, db, **fields):
+        db.add(EmergencyState(id=uuid.uuid4(), ecosystem_id=ECO_ID, declared_by="test", actions_log=[], **fields))
+        await db.commit()
+        result = await get_emergency_state({}, db)
+        assert result["success"] is True, result
+        [state] = result["data"]["ecosystems"]
+        return state
 
-    async def test_returns_open_when_active(self, seeded_db):
-        now = datetime.now(timezone.utc)
-        em = EmergencyState(
-            id=uuid.uuid4(),
-            ecosystem_id=ECO_ID,
-            state="open",
-            declared_by="test",
-            declared_at=now,
-            auto_revert_at=now + timedelta(days=30),
-            actions_log=[],
+    async def test_names_normal_and_crisis_as_the_framework_does(self, seeded_db):
+        now = _naive_now()
+        assert (await get_emergency_state({}, seeded_db))["data"]["ecosystems"][0]["state"] == "Normal"
+        crisis = await self._with(seeded_db, state="open", declared_at=now, auto_revert_at=now + timedelta(days=7))
+        assert crisis["state"] == "Crisis"
+        assert crisis["link"].startswith("/emergency/")
+
+    async def test_names_recovery_with_its_review_step(self, seeded_db):
+        now = _naive_now()
+        recovery = await self._with(
+            seeded_db, state="half_open", declared_at=now - timedelta(days=5),
+            half_open_entered_at=now - timedelta(days=1), auto_revert_at=now - timedelta(days=1),
         )
-        seeded_db.add(em)
-        await seeded_db.commit()
-        result = await get_emergency_state({}, seeded_db)
-        assert result["success"] is True
-        assert result["data"]["state"] == "open"
-        assert "OPEN" in result["data"]["message"]
-
-    async def test_returns_half_open_state(self, seeded_db):
-        now = datetime.now(timezone.utc)
-        em = EmergencyState(
-            id=uuid.uuid4(),
-            ecosystem_id=ECO_ID,
-            state="half_open",
-            declared_by="test",
-            declared_at=now - timedelta(days=5),
-            half_open_entered_at=now - timedelta(days=1),
-            auto_revert_at=now + timedelta(days=29),
-            actions_log=[],
-        )
-        seeded_db.add(em)
-        await seeded_db.commit()
-        result = await get_emergency_state({}, seeded_db)
-        assert result["success"] is True
-        assert result["data"]["state"] == "half_open"
-        assert "HALF_OPEN" in result["data"]["message"]
+        assert recovery["state"] == "Recovery"
+        assert "review" in recovery["next_step"].lower()
 
 
 class TestDeclareEmergencyTool:
-    """Tool 18 -- declare_emergency invariant: only one active emergency
-    per ecosystem at a time.
-    """
+    """Tool 18 -- declares through api/emergency.declare: confirmed first, pending until a co-signer, one at a time."""
 
-    async def test_creates_open_state_with_30_day_auto_revert(self, seeded_db):
-        args = dict()
-        args["declared_by"] = "Lani"
-        args["notes"] = "Severe storm: kitchen flooded"
-        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
-        assert result["success"] is True
-        assert result["data"]["state"] == "open"
-        assert result["data"]["id"]
-        # The auto_revert_at must be set 30 days out.
-        em_id_str = result["data"]["id"]
-        loaded = await seeded_db.execute(
-            select(EmergencyState).where(EmergencyState.id == uuid.UUID(em_id_str))
-        )
-        em = loaded.scalar_one()
-        assert em.state == "open"
-        assert em.auto_revert_at is not None
-        assert em.declared_at is not None
-        delta = em.auto_revert_at - em.declared_at
-        assert 29 <= delta.days <= 31
+    async def test_asks_first_then_records_a_pending_declaration_in_the_callers_name(self, seeded_db):
+        args = {"declared_by": "Kai", "reason": "Severe storm: kitchen flooded"}
+        asked = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
+        assert asked["success"] is False and "co-sign" in asked["needs_confirmation"]
+        assert (await seeded_db.scalar(select(EmergencyState))) is None
 
-    async def test_rejects_when_emergency_already_open(self, seeded_db):
-        now = datetime.now(timezone.utc)
-        em = EmergencyState(
-            id=uuid.uuid4(),
-            ecosystem_id=ECO_ID,
-            state="open",
-            declared_by="prior",
-            declared_at=now - timedelta(hours=1),
-            auto_revert_at=now + timedelta(days=29),
-            actions_log=[],
-        )
-        seeded_db.add(em)
+        result = await declare_emergency({**args, "confirmed": True}, seeded_db, caller_user_id=USER_LANI_ID)
+        assert result["success"] is True, result
+        em = await seeded_db.scalar(select(EmergencyState).where(EmergencyState.id == uuid.UUID(result["data"]["id"])))
+        assert (em.state, em.declared_by) == ("pending", "Lani")  # nothing changes until a second member co-signs
+
+    async def test_refuses_while_an_emergency_is_in_recovery(self, seeded_db):
+        now = _naive_now()
+        seeded_db.add(EmergencyState(
+            id=uuid.uuid4(), ecosystem_id=ECO_ID, state="half_open", declared_by="prior",
+            declared_at=now - timedelta(days=10), half_open_entered_at=now - timedelta(days=2),
+            auto_revert_at=now - timedelta(days=2), actions_log=[],
+        ))
         await seeded_db.commit()
-        args = dict()
-        args["declared_by"] = "Lani"
-        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
-        assert result["success"] is False
-        assert "already active" in result["error"].lower()
-
-    async def test_rejects_when_half_open_recovery_active(self, seeded_db):
-        now = datetime.now(timezone.utc)
-        em = EmergencyState(
-            id=uuid.uuid4(),
-            ecosystem_id=ECO_ID,
-            state="half_open",
-            declared_by="prior",
-            declared_at=now - timedelta(days=10),
-            half_open_entered_at=now - timedelta(days=2),
-            auto_revert_at=now + timedelta(days=28),
-            actions_log=[],
+        result = await declare_emergency(
+            {"reason": "Another storm", "confirmed": True}, seeded_db, caller_user_id=USER_LANI_ID,
         )
-        seeded_db.add(em)
-        await seeded_db.commit()
-        args = dict()
-        args["declared_by"] = "Lani"
-        result = await declare_emergency(args, seeded_db, caller_user_id=USER_LANI_ID)
         assert result["success"] is False
-        assert "already active" in result["error"].lower()
+        assert "already an emergency" in result["error"].lower()

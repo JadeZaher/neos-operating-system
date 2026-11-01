@@ -28,6 +28,7 @@ from neos_agent.api.errors import ApiError, get_scoped_or_404, register_api_erro
 from neos_agent.api.guards import authenticated, caller_in, reachable_ecosystem_ids
 from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
 from neos_agent.api.policy import (
+    assignable_roles,
     can_assign_role,
     can_conduct_agreement_ceremony,
     can_edit_domain,
@@ -499,24 +500,43 @@ def test_governance_permissions_by_actor(actor, steward, steward_here, manage_au
     assert can_conduct_agreement_ceremony(member, AGREEMENT) is conduct_ceremony
 
 
-PROFILE_ADMIN = _row(profile="co_creator")
+PROFILE_ADMIN = _row(profile="co_creator")  # the ecosystem's founder
+OTHER_PROFILE_ADMIN = _row(profile="builder")
 OTHER_ADMIN = _row("admin")
+OTHER_OWNER = _row("owner")
 
 
-@pytest.mark.parametrize("caller, target, new_role, allowed", [
-    ("owner", "admin", "user", True),               # owners grant anything
-    ("owner", "member", "owner", True),
-    ("profile_admin", "member", "owner", True),     # bootstrap until owners are designated
-    ("admin", "member", "mod", True),
-    ("admin", "member", "admin", False),            # admins cannot mint admins
-    ("admin", "other_admin", "user", False),        # nor demote a peer
-    ("admin", "admin", "user", True),               # anyone may step down
-    ("member", "member", "mod", False),             # but not up
-    ("mod", "member", "mod", False),
-    ("foreign_owner", "member", "mod", False),      # an owner elsewhere has no say here
-    ("nobody", "member", "mod", False),
-    ("owner", "member", "superuser", False),        # unknown tiers are never granted
+# Owner decision (2026-10-31): only roles below your own rank, to members below it; only an owner makes an owner.
+@pytest.mark.parametrize("caller, target, new_role, has_owner, allowed", [
+    ("owner", "admin", "user", True, True),               # below the owner's rank
+    ("owner", "member", "owner", True, True),             # only an owner makes an owner
+    ("admin", "member", "owner", True, False),
+    ("owner", "other_owner", "user", True, False),        # never a peer at your own rank
+    ("profile_admin", "member", "owner", False, True),    # the founder bootstraps while there is no owner
+    ("profile_admin", "member", "mod", True, False),      # ...and only then
+    ("other_profile_admin", "other_profile_admin", "owner", False, False),  # a later co_creator never does
+    ("admin", "member", "mod", True, True),
+    ("admin", "member", "admin", True, False),            # admins cannot mint admins
+    ("admin", "other_admin", "user", True, False),        # nor demote a peer
+    ("admin", "admin", "user", True, True),               # anyone may step down
+    ("admin", "admin", "owner", True, False),             # but not up
+    ("member", "member", "mod", True, False),
+    ("mod", "member", "mod", True, False),
+    ("foreign_owner", "member", "mod", True, False),      # an owner elsewhere has no say here
+    ("nobody", "member", "mod", True, False),
+    ("owner", "member", "superuser", True, False),        # unknown tiers are never granted
 ])
-def test_role_changes_by_actor(caller, target, new_role, allowed):
-    people = {**ACTORS, "profile_admin": PROFILE_ADMIN, "other_admin": OTHER_ADMIN}
-    assert can_assign_role(people[caller], people[target], new_role) is allowed
+def test_role_changes_by_actor(caller, target, new_role, has_owner, allowed):
+    people = {**ACTORS, "profile_admin": PROFILE_ADMIN, "other_admin": OTHER_ADMIN, "other_owner": OTHER_OWNER,
+              "other_profile_admin": OTHER_PROFILE_ADMIN}
+    assert can_assign_role(people[caller], people[target], new_role, ecosystem_has_owner=has_owner,
+                           founder_id=PROFILE_ADMIN.id) is allowed
+
+
+@pytest.mark.parametrize("caller, expected", [
+    ("owner", ["mod", "admin", "owner"]),  # the member's current tier is never offered
+    ("admin", ["mod"]),
+    ("mod", []),
+])
+def test_role_picker_offers_only_grantable_tiers(caller, expected):
+    assert assignable_roles(ACTORS[caller], ACTORS["member"]) == expected

@@ -42,5 +42,9 @@ class MemberStatusTransition(TimestampMixin, Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     trigger: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Who made the change (role/profile grants, steward status moves); names are rendered from the id.
+    actor_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
 
-    member: Mapped[Member] = relationship(back_populates="status_transitions")
+    member: Mapped[Member] = relationship(back_populates="status_transitions", foreign_keys=[member_id])

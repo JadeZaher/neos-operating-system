@@ -11,11 +11,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
-
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import (
@@ -27,7 +24,7 @@ from neos_agent.db.models import (
     TestReport,
 )
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, escape_like, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -120,67 +117,8 @@ async def create_form(request: Request):
 
 @proposals_bp.post("/")
 async def create_proposal(request: Request):
-    """POST /dashboard/proposals -- create proposal from form data."""
-    form = request.form
-    ecosystem_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if ecosystem_id is None:
-        content = await render(
-            "dashboard/proposals/form.html",
-            request=request,
-            proposal=None,
-            error="Invalid or unauthorized ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        async with request.app.ctx.db() as session:
-            proposal = Proposal(
-                id=uuid.uuid4(),
-                ecosystem_id=ecosystem_id,
-                proposal_id=form.get("proposal_id", ""),
-                type=form.get("type", "operational"),
-                decision_type=form.get("decision_type"),
-                title=form.get("title", ""),
-                version="1.0",
-                status="draft",
-                proposer=form.get("proposer"),
-                affected_domain=form.get("affected_domain"),
-                urgency=form.get("urgency", "standard"),
-                proposed_change=form.get("proposed_change"),
-                rationale=form.get("rationale"),
-                created_date=date.today(),
-            )
-
-            # Parse advice/consent deadlines if provided
-            advice_deadline = form.get("advice_deadline")
-            if advice_deadline:
-                try:
-                    proposal.advice_deadline = date.fromisoformat(advice_deadline)
-                except ValueError:
-                    pass
-
-            consent_deadline = form.get("consent_deadline")
-            if consent_deadline:
-                try:
-                    proposal.consent_deadline = date.fromisoformat(consent_deadline)
-                except ValueError:
-                    pass
-
-            proposal.test_duration = form.get("test_duration")
-
-            session.add(proposal)
-            await session.commit()
-            proposal_id = proposal.id
-    except Exception:
-        logger.exception("Failed to create proposal")
-        content = await render(
-            "dashboard/proposals/form.html",
-            request=request,
-            proposal=None,
-            error="Failed to create proposal. Please check your input and try again.",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/proposals/{proposal_id}")
+    """POST /dashboard/proposals -- retired (410): writes happen in the app."""
+    return retired_write(request, "/proposals/new")
 
 
 # ---------------------------------------------------------------------------
@@ -269,68 +207,8 @@ async def advice_tab(request: Request, proposal_id: uuid.UUID):
 
 @proposals_bp.post("/<proposal_id:uuid>/advice")
 async def submit_advice(request: Request, proposal_id: uuid.UUID):
-    """POST /dashboard/proposals/{proposal_id}/advice -- submit advice entry."""
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            proposal = await get_scoped_entity(session, Proposal, proposal_id, request)
-            if proposal is None:
-                return html(
-                    await render(
-                        "dashboard/proposals/detail.html",
-                        request=request,
-                        proposal=None,
-                        error="Proposal not found.",
-                    ),
-                    status=404,
-                )
-
-            # Ensure an advice log exists for this proposal
-            log_result = await session.execute(
-                select(AdviceLog)
-                .where(AdviceLog.proposal_id == proposal_id)
-                .order_by(AdviceLog.created_at.desc())
-                .limit(1)
-            )
-            advice_log = log_result.scalar_one_or_none()
-
-            if advice_log is None:
-                advice_log = AdviceLog(
-                    id=uuid.uuid4(),
-                    proposal_id=proposal_id,
-                    advice_window_start=date.today(),
-                    advice_window_end=proposal.advice_deadline,
-                    urgency=proposal.urgency,
-                )
-                session.add(advice_log)
-                await session.flush()
-
-            # Create the advice entry
-            entry = AdviceEntry(
-                id=uuid.uuid4(),
-                advice_log_id=advice_log.id,
-                advisor=form.get("advisor", ""),
-                role=form.get("role"),
-                ethos=form.get("ethos"),
-                date=date.today(),
-                advice_text=form.get("advice_text", ""),
-                integration_status="pending",
-            )
-            session.add(entry)
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to submit advice entry")
-        return html(
-            await render(
-                "dashboard/proposals/detail.html",
-                request=request,
-                proposal=None,
-                error="Failed to submit advice.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/proposals/{proposal_id}")
+    """POST /dashboard/proposals/{proposal_id}/advice -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/proposals/{proposal_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -380,70 +258,8 @@ async def consent_tab(request: Request, proposal_id: uuid.UUID):
 
 @proposals_bp.post("/<proposal_id:uuid>/consent")
 async def record_consent(request: Request, proposal_id: uuid.UUID):
-    """POST /dashboard/proposals/{proposal_id}/consent -- record consent position."""
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            proposal = await get_scoped_entity(session, Proposal, proposal_id, request)
-            if proposal is None:
-                return html(
-                    await render(
-                        "dashboard/proposals/detail.html",
-                        request=request,
-                        proposal=None,
-                        error="Proposal not found.",
-                    ),
-                    status=404,
-                )
-
-            # Ensure a consent record exists
-            record_result = await session.execute(
-                select(ConsentRecord)
-                .where(ConsentRecord.proposal_id == proposal_id)
-                .order_by(ConsentRecord.created_at.desc())
-                .limit(1)
-            )
-            consent_record = record_result.scalar_one_or_none()
-
-            if consent_record is None:
-                consent_record = ConsentRecord(
-                    id=uuid.uuid4(),
-                    proposal_id=proposal_id,
-                    consent_mode=form.get("consent_mode", "consent"),
-                    facilitator=form.get("facilitator"),
-                    date=date.today(),
-                    quorum_required=form.get("quorum_required"),
-                    quorum_met=False,
-                    outcome="pending",
-                )
-                session.add(consent_record)
-                await session.flush()
-
-            # Record participant position
-            participant = ConsentParticipant(
-                id=uuid.uuid4(),
-                consent_record_id=consent_record.id,
-                name=form.get("name", ""),
-                role=form.get("role"),
-                ethos=form.get("ethos"),
-                position=form.get("position", ""),
-                reason=form.get("reason"),
-            )
-            session.add(participant)
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to record consent position")
-        return html(
-            await render(
-                "dashboard/proposals/detail.html",
-                request=request,
-                proposal=None,
-                error="Failed to record consent position.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/proposals/{proposal_id}")
+    """POST /dashboard/proposals/{proposal_id}/consent -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/proposals/{proposal_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -484,56 +300,5 @@ async def test_tab(request: Request, proposal_id: uuid.UUID):
 
 @proposals_bp.post("/<proposal_id:uuid>/phase")
 async def phase_transition(request: Request, proposal_id: uuid.UUID):
-    """POST /dashboard/proposals/{proposal_id}/phase -- ACT phase transition.
-
-    Requires form field: new_phase (draft, advice, consent, test, ratified, archived).
-    """
-    form = request.form
-    new_phase = form.get("new_phase")
-
-    if not new_phase:
-        return html(
-            await render(
-                "dashboard/proposals/detail.html",
-                request=request,
-                proposal=None,
-                error="new_phase is required for phase transition.",
-            ),
-            status=400,
-        )
-
-    try:
-        async with request.app.ctx.db() as session:
-            proposal = await get_scoped_entity(session, Proposal, proposal_id, request)
-            if proposal is None:
-                return html(
-                    await render(
-                        "dashboard/proposals/detail.html",
-                        request=request,
-                        proposal=None,
-                        error="Proposal not found.",
-                    ),
-                    status=404,
-                )
-
-            old_phase = proposal.status
-            proposal.status = new_phase
-            await session.commit()
-
-            logger.info(
-                "Proposal %s phase: %s -> %s",
-                proposal_id, old_phase, new_phase,
-            )
-    except Exception:
-        logger.exception("Failed to transition proposal phase")
-        return html(
-            await render(
-                "dashboard/proposals/detail.html",
-                request=request,
-                proposal=None,
-                error="Failed to update proposal phase.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/proposals/{proposal_id}")
+    """POST /dashboard/proposals/{proposal_id}/phase -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/proposals/{proposal_id}")

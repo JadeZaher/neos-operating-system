@@ -2,9 +2,9 @@
 
 Blueprint: safeguards_api_bp, url_prefix="/api/v1/safeguards"
 
-AI-powered capture risk detection, governance health metrics,
-and audit trail management.
-Returns JSON responses only.
+Governance health audits: a member starts a draft, fills in the indicators, and
+publishes it; the score comes from published audits only. AI analysis is optional
+and never blocks. See api/AGENTS.md "Audits".
 """
 
 from __future__ import annotations
@@ -19,11 +19,22 @@ from sanic import Blueprint, json
 from sanic.request import Request
 from sqlalchemy import func, select
 
-from neos_agent.db.models import GovernanceHealthAudit
+from neos_agent.db.models import GovernanceHealthAudit, Member
+from neos_agent.api import policy
+from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
+from neos_agent.api.errors import ApiError, get_scoped_or_404
+from neos_agent.api.guards import authenticated, caller_in
 from neos_agent.api.helpers import require_auth, get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_filter, apply_ecosystem_name_filter, build_search_filter
-from neos_agent.api.schemas.safeguards import AuditCreateRequest, AuditDetail, AuditListItem, HealthSummary
+from neos_agent.api.schemas.safeguards import AuditCreateRequest, AuditDetail, AuditListItem, AuditUpdateRequest, HealthSummary
 
 logger = logging.getLogger(__name__)
+
+# Published-audit rules: an indicator's status is worth these points; the score is their mean.
+INDICATOR_STATUS_POINTS = {"healthy": 100, "warning": 50, "critical": 0}
+AUDIT_PUBLISHED = "completed"
+AUDIT_DRAFT = "draft"
+NEXT_AUDIT_AFTER_DAYS = 90
+AUDIT_FINISH_DENIED = "Only the member who is recording this audit can edit or publish it"
 
 
 # ---------------------------------------------------------------------------
@@ -100,8 +111,15 @@ def _str_list(value) -> list | None:
     return None
 
 
-def _audit_to_detail(a: GovernanceHealthAudit) -> dict:
+def audit_score(indicator_scores: list[dict] | None) -> int | None:
+    """Mean of the indicators' status points; None when no indicator has a known status."""
+    points = [INDICATOR_STATUS_POINTS[s["status"]] for s in indicator_scores or [] if s.get("status") in INDICATOR_STATUS_POINTS]
+    return round(sum(points) / len(points)) if points else None
+
+
+def _audit_to_detail(a: GovernanceHealthAudit, caller: Member | None = None) -> dict:
     return AuditDetail(
+        caller_can_edit=a.status == AUDIT_DRAFT and policy.can_finish_audit(caller, a),
         id=a.id,
         audit_id=a.audit_id,
         ecosystem_id=a.ecosystem_id,
@@ -148,15 +166,12 @@ async def health_summary(request: Request):
         base_stmt = select(GovernanceHealthAudit).order_by(
             GovernanceHealthAudit.audit_date.desc()
         )
-        if eco_ids:
-            base_stmt = apply_ecosystem_filter(base_stmt, GovernanceHealthAudit, eco_ids)
+        base_stmt = restrict_to_ecosystems(base_stmt, GovernanceHealthAudit, eco_ids)
 
-        # Fetch recent audits (up to 10)
-        recent_stmt = base_stmt.limit(10)
-        recent_result = await session.execute(recent_stmt)
-        recent_audits = recent_result.scalars().all()
-
-        latest_audit = recent_audits[0] if recent_audits else None
+        # Recent audits include drafts so an auditor can find and finish theirs; the score reads published ones only.
+        recent_audits = (await session.execute(base_stmt.limit(10))).scalars().all()
+        published_stmt = base_stmt.where(GovernanceHealthAudit.status == AUDIT_PUBLISHED).limit(1)
+        latest_audit = (await session.execute(published_stmt)).scalar_one_or_none()
 
     # Extract indicator scores from latest audit if available
     latest_indicators = getattr(latest_audit, 'indicator_scores', None) if latest_audit else None
@@ -194,8 +209,7 @@ async def list_audits(request: Request):
         stmt = select(GovernanceHealthAudit).order_by(
             GovernanceHealthAudit.audit_date.desc()
         )
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, GovernanceHealthAudit, eco_ids)
+        stmt = restrict_to_ecosystems(stmt, GovernanceHealthAudit, eco_ids)
         stmt = apply_ecosystem_name_filter(stmt, GovernanceHealthAudit, request)
 
         status = request.args.get("status")
@@ -258,64 +272,103 @@ async def get_audit(request: Request, audit_id: uuid.UUID):
         stmt = select(GovernanceHealthAudit).where(
             GovernanceHealthAudit.id == audit_id
         )
-        if eco_ids:
-            stmt = apply_ecosystem_filter(stmt, GovernanceHealthAudit, eco_ids)
+        stmt = restrict_to_ecosystems(stmt, GovernanceHealthAudit, eco_ids)
 
         result = await session.execute(stmt)
         audit = result.scalar_one_or_none()
+        if audit is None:
+            return json({"error": "Audit not found"}, status=404)
+        caller = await caller_in(session, request, audit.ecosystem_id)
 
-    if audit is None:
-        return json({"error": "Audit not found"}, status=404)
+    return json(_audit_to_detail(audit, caller))
 
-    return json(_audit_to_detail(audit))
+
+async def _audit_to_edit(session, request: Request, audit_id: uuid.UUID) -> tuple[GovernanceHealthAudit, Member]:
+    """A draft audit the caller is recording; 404 outside their ecosystems, 403 for anyone else, 409 once published."""
+    audit = await get_scoped_or_404(session, request, GovernanceHealthAudit, audit_id, label="Audit")
+    caller = await caller_in(session, request, audit.ecosystem_id)
+    if not policy.can_finish_audit(caller, audit):
+        raise ApiError(403, AUDIT_FINISH_DENIED)
+    if audit.status != AUDIT_DRAFT:
+        raise ApiError(409, "This audit is already published")
+    return audit, caller
+
+
+def _apply_audit_fields(audit: GovernanceHealthAudit, fields: dict) -> None:
+    """Copy the sent fields onto a draft; indicator rows are stored as plain dicts."""
+    for name, value in fields.items():
+        if name == "indicator_scores":
+            value = [row if isinstance(row, dict) else row.model_dump() for row in value]
+        setattr(audit, name, value)
 
 
 @safeguards_api_bp.post("/audits")
+@authenticated
 async def request_audit(request: Request):
-    """POST /api/v1/safeguards/audits -- request a new governance health audit.
+    """POST /api/v1/safeguards/audits -- start a draft audit; the caller is the auditor.
 
-    Accepts JSON: AuditCreateRequest
-    Creates a pending audit record. The AI agent fills in results asynchronously.
-    Returns JSON: AuditDetail with 201 status.
+    Accepts AuditCreateRequest (scope, period and any indicators already known).
+    The draft stays out of the health score until its auditor publishes it.
     """
-    member, err = require_auth(request)
-    if err:
-        return err
-
-    body = request.json or {}
     try:
-        create_req = AuditCreateRequest(**body)
+        create_req = AuditCreateRequest(**(request.json or {}))
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
-
-    eco_ids = get_ecosystem_ids(request)
-    if eco_ids and create_req.ecosystem_id not in eco_ids:
-        return json({"error": "Access denied: ecosystem not in scope"}, status=403)
-
-    short_id = uuid.uuid4().hex[:8].upper()
-    audit_id_str = f"AUDIT-{short_id}"
+        raise ApiError(400, f"Invalid request: {e}") from e
 
     async with request.app.ctx.db() as session:
+        auditor = await caller_in(session, request, create_req.ecosystem_id)
+        if not policy.is_active_member_in(auditor, create_req.ecosystem_id):
+            raise ApiError(403, "Only active members of this ecosystem can record an audit")
+
         audit = GovernanceHealthAudit(
             id=uuid.uuid4(),
             ecosystem_id=create_req.ecosystem_id,
-            audit_id=audit_id_str,
+            audit_id=f"AUDIT-{uuid.uuid4().hex[:8].upper()}",
             audit_date=_dt.date.today(),
-            auditor=create_req.auditor,
+            auditor=auditor.display_name,
+            auditor_ids=[str(auditor.id)],
+            trigger_type="human",
             capture_risk_indicators={},
-            overall_health_score=None,
-            findings="Audit requested. AI analysis pending.",
-            recommendations={},
-            status="draft",
+            status=AUDIT_DRAFT,
         )
+        _apply_audit_fields(audit, create_req.model_dump(exclude_none=True, exclude={"ecosystem_id"}))
         session.add(audit)
         await session.commit()
+        await session.refresh(audit)
+        return json(_audit_to_detail(audit, auditor), status=201)
 
-        # Reload for response
-        stmt = select(GovernanceHealthAudit).where(
-            GovernanceHealthAudit.id == audit.id
-        )
-        result = await session.execute(stmt)
-        audit = result.scalar_one()
 
-    return json(_audit_to_detail(audit), status=201)
+@safeguards_api_bp.put("/audits/<audit_id:uuid>")
+@authenticated
+async def update_audit(request: Request, audit_id: uuid.UUID):
+    """PUT /api/v1/safeguards/audits/:id -- edit a draft (its auditor only)."""
+    try:
+        update_req = AuditUpdateRequest(**(request.json or {}))
+    except Exception as e:
+        raise ApiError(400, f"Invalid request: {e}") from e
+
+    async with request.app.ctx.db() as session:
+        audit, caller = await _audit_to_edit(session, request, audit_id)
+        _apply_audit_fields(audit, update_req.model_dump(exclude_none=True))
+        await session.commit()
+        await session.refresh(audit)
+        return json(_audit_to_detail(audit, caller))
+
+
+@safeguards_api_bp.post("/audits/<audit_id:uuid>/publish")
+@authenticated
+async def publish_audit(request: Request, audit_id: uuid.UUID):
+    """POST /api/v1/safeguards/audits/:id/publish -- finish a draft: it needs indicator statuses, then sets the score."""
+    async with request.app.ctx.db() as session:
+        audit, caller = await _audit_to_edit(session, request, audit_id)
+        score = audit_score(_scores_to_list(audit.indicator_scores))
+        if score is None:
+            raise ApiError(400, "Rate at least one indicator (healthy, warning or critical) before publishing")
+        audit.overall_health_score = score
+        audit.overall_health = _health_score_to_label(score)
+        audit.status = AUDIT_PUBLISHED
+        audit.audit_date = _dt.date.today()
+        audit.next_audit_due = _dt.date.today() + _dt.timedelta(days=NEXT_AUDIT_AFTER_DAYS)
+        await session.commit()
+        await session.refresh(audit)
+        return json(_audit_to_detail(audit, caller))

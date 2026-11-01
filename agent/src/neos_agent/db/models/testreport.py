@@ -50,6 +50,10 @@ class TestReport(TimestampMixin, Base):
     agreement_registry_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     success_criteria_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reviewer_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # The member who filed the report (the caller); NULL on legacy rows.
+    reporter_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
 
     proposal: Mapped[Proposal] = relationship(back_populates="test_reports")
     success_criteria: Mapped[list[TestSuccessCriterion]] = relationship(back_populates="test_report")

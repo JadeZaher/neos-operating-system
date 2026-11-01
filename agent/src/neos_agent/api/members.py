@@ -37,7 +37,15 @@ from neos_agent.db.course_models import (
 from neos_agent.api.errors import ApiError, get_scoped_or_404
 from neos_agent.api.guards import authenticated, caller_in
 from neos_agent.api.helpers import require_admin, get_ecosystem_ids, apply_ecosystem_name_filter, parse_pagination, serialize_shared_ecosystem_ids, build_search_filter
-from neos_agent.api.policy import can_assign_role, has_role_at_least, is_steward
+from neos_agent.api.policy import (
+    MEMBER_PROFILES,
+    assignable_roles,
+    can_assign_role,
+    can_choose_own_profile,
+    can_grant_profile,
+    has_role_at_least,
+    is_steward,
+)
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.members import (
     MemberCreateRequest,
@@ -46,6 +54,8 @@ from neos_agent.api.schemas.members import (
     MemberListItem,
     MemberProfileResponse,
     MemberUpdateRequest,
+    ProfileGrantRequest,
+    RoleGrantSchema,
     RoleUpdateRequest,
     OnboardingChecklistItem,
     OnboardingSnapshot,
@@ -168,6 +178,68 @@ def _member_to_profile(
     ).model_dump(mode="json")
 
 
+ROLE_GRANT_DENIED = "You can give only roles below your own, and only an owner can make someone an owner"
+PROFILE_GRANT_ONLY = ("Co-creator and builder profiles carry administration rights, so you cannot choose them "
+                      "yourself: an owner of the ecosystem grants them")
+PROFILE_GRANT_DENIED = ("Only someone who could make this member an admin (an owner, or the founder before there "
+                        "is one) can change their profile, and never their own")
+ROLE_GRANT_TRIGGER = "role_grant"
+PROFILE_GRANT_TRIGGER = "profile_grant"
+_ROLE_PREFIX = "role:"
+_PROFILE_PREFIX = "profile:"
+# Recorded grants shown as the member's role history: trigger -> (kind, status prefix).
+_GRANT_KINDS = {ROLE_GRANT_TRIGGER: ("role", _ROLE_PREFIX), PROFILE_GRANT_TRIGGER: ("profile", _PROFILE_PREFIX)}
+_STATUS_LENGTH = 50  # member_status_transitions.from_status / to_status
+
+
+async def _ecosystem_has_owner(session, ecosystem_id: uuid.UUID) -> bool:
+    """Whether any member row in the ecosystem is an owner (ends the founder bootstrap)."""
+    return bool(await session.scalar(
+        select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id, Member.role == "owner")
+    ))
+
+
+async def _bootstrap_context(session, ecosystem_id: uuid.UUID) -> dict:
+    """policy kwargs: whether the ecosystem has an owner and, while it has none, its founder (the oldest member row)."""
+    if await _ecosystem_has_owner(session, ecosystem_id):
+        return {"ecosystem_has_owner": True, "founder_id": None}
+    founder_id = await session.scalar(
+        select(Member.id).where(Member.ecosystem_id == ecosystem_id)
+        .order_by(Member.created_at.asc(), Member.id.asc()).limit(1)
+    )
+    return {"ecosystem_has_owner": False, "founder_id": founder_id}
+
+
+def _grant_record(member: Member, actor: Member, trigger: str, old: str | None, new: str | None) -> MemberStatusTransition:
+    """A recorded role or profile grant; the granter is stored by member id and named when read."""
+    prefix = _GRANT_KINDS[trigger][1]
+    return MemberStatusTransition(
+        id=uuid.uuid4(), member_id=member.id, date=_dt.date.today(), trigger=trigger, actor_member_id=actor.id,
+        from_status=f"{prefix}{old or ''}"[:_STATUS_LENGTH], to_status=f"{prefix}{new or ''}"[:_STATUS_LENGTH],
+    )
+
+
+async def _role_history(session, member_id: uuid.UUID) -> list[dict]:
+    """Recorded role and profile grants for a member, newest first, each naming the granter as they are called now."""
+    rows = (await session.execute(
+        select(MemberStatusTransition)
+        .where(MemberStatusTransition.member_id == member_id, MemberStatusTransition.trigger.in_(list(_GRANT_KINDS)))
+        .order_by(MemberStatusTransition.created_at.desc())
+    )).scalars().all()
+    actor_ids = {row.actor_member_id for row in rows if row.actor_member_id is not None}
+    names = dict((await session.execute(
+        select(Member.id, Member.display_name).where(Member.id.in_(actor_ids))
+    )).all()) if actor_ids else {}
+    history = []
+    for row in rows:
+        kind, prefix = _GRANT_KINDS[row.trigger]
+        history.append(RoleGrantSchema(
+            kind=kind, from_role=row.from_status.removeprefix(prefix), to_role=row.to_status.removeprefix(prefix),
+            date=row.date, granted_by=names.get(row.actor_member_id),
+        ).model_dump(mode="json"))
+    return history
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -280,6 +352,15 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
         tags_stmt = select(UserTag).where(UserTag.member_id == member_id)
         tags = (await session.execute(tags_stmt)).scalars().all()
 
+        caller = await caller_in(session, request, m.ecosystem_id)
+        bootstrap = await _bootstrap_context(session, m.ecosystem_id)
+        grantable = assignable_roles(caller, m, **bootstrap)
+        grantable_profiles = (
+            [profile for profile in MEMBER_PROFILES if profile != m.profile]
+            if can_grant_profile(caller, m, **bootstrap) else []
+        )
+        role_history = await _role_history(session, m.id)
+
     # Build quiz summary
     completed_ids = {r.quiz_id for r in quiz_results}
     in_progress_ids = {p.quiz_id for p in quiz_progress_rows} - completed_ids
@@ -360,16 +441,19 @@ async def get_member_profile(request: Request, member_id: uuid.UUID):
         for t in tags
     ]
 
-    return json(
-        _member_to_profile(
-            m,
-            ob=m.onboarding,
-            user=m.user,
-            quiz_summary=quiz_summary,
-            badges=badges_list,
-            tags=tags_list,
-        )
+    payload = _member_to_profile(
+        m,
+        ob=m.onboarding,
+        user=m.user,
+        quiz_summary=quiz_summary,
+        badges=badges_list,
+        tags=tags_list,
     )
+    payload["caller_assignable_roles"] = grantable
+    payload["caller_grantable_profiles"] = grantable_profiles
+    payload["caller_is_self"] = caller is not None and caller.id == m.id
+    payload["role_history"] = role_history
+    return json(payload)
 
 
 @members_api_bp.post("/")
@@ -390,6 +474,8 @@ async def create_member(request: Request):
 
     if create_req.ecosystem_id not in get_ecosystem_ids(request):
         raise ApiError(403, "Access denied: ecosystem not in scope")
+    if not can_choose_own_profile(None, create_req.profile):  # the new row is the caller's own
+        raise ApiError(403, PROFILE_GRANT_ONLY)
 
     short_id = uuid.uuid4().hex[:8].upper()
     member_id_str = f"MEM-{short_id}"
@@ -450,6 +536,8 @@ async def update_member(request: Request, member_id: uuid.UUID):
             )
 
         update_data = update_req.model_dump(exclude_none=True)
+        if "profile" in update_data and not can_choose_own_profile(m, update_data["profile"]):
+            raise ApiError(403, PROFILE_GRANT_ONLY)
         if "shared_ecosystem_ids" in update_data:
             update_data["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(
                 update_req.shared_ecosystem_ids
@@ -474,10 +562,11 @@ async def update_member(request: Request, member_id: uuid.UUID):
 @members_api_bp.put("/<member_id:uuid>/role")
 @authenticated
 async def update_member_role(request: Request, member_id: uuid.UUID):
-    """PUT /api/v1/members/:id/role -- Set a member's per-ecosystem role tier.
+    """PUT /api/v1/members/:id/role -- Set a member's per-ecosystem role tier (owner decision).
 
-    owner -> any grant; admin -> only 'user'/'mod' targets and grants;
-    self-demotion allowed; profile-admin bootstrap until owners designated.
+    Only roles below your own rank, to members below it; only an owner makes an owner;
+    you may step yourself down; the founder bootstraps while the ecosystem has no owner.
+    Every change is recorded as a MemberStatusTransition (trigger "role_grant", the granter's member id).
     """
     body = request.json or {}
     try:
@@ -495,14 +584,46 @@ async def update_member_role(request: Request, member_id: uuid.UUID):
         )
 
         caller = await caller_in(session, request, m.ecosystem_id)
-        if not can_assign_role(caller, m, role_req.role):
-            raise ApiError(403, "Ecosystem role 'admin' or higher required for this role change")
+        if not can_assign_role(caller, m, role_req.role, **await _bootstrap_context(session, m.ecosystem_id)):
+            raise ApiError(403, ROLE_GRANT_DENIED)
 
         old_role = m.role
-        m.role = role_req.role
+        if old_role != role_req.role:
+            m.role = role_req.role
+            session.add(_grant_record(m, caller, ROLE_GRANT_TRIGGER, old_role, role_req.role))
         await session.commit()
         await session.refresh(m)
         logger.info("Member %s role: %s -> %s (by user %s)", member_id, old_role, role_req.role, getattr(user, "id", None))
+
+    return json(_member_to_detail(m, user=m.user))
+
+
+@members_api_bp.put("/<member_id:uuid>/profile-grant")
+@authenticated
+async def grant_member_profile(request: Request, member_id: uuid.UUID):
+    """PUT /api/v1/members/:id/profile-grant -- Set another member's profile, including co_creator/builder.
+
+    Those two confer administration, so members never choose them (PUT /members/:id refuses):
+    policy.can_grant_profile (whoever may make the member an admin; never yourself). Recorded
+    like a role grant (trigger "profile_grant"); a no-op writes nothing.
+    """
+    try:
+        grant_req = ProfileGrantRequest(**(request.json or {}))
+    except Exception as e:
+        raise ApiError(400, f"Invalid request: {e}") from e
+
+    async with request.app.ctx.db() as session:
+        m = await get_scoped_or_404(
+            session, request, Member, member_id, options=(selectinload(Member.user),), label="Member",
+        )
+        caller = await caller_in(session, request, m.ecosystem_id)
+        if not can_grant_profile(caller, m, **await _bootstrap_context(session, m.ecosystem_id)):
+            raise ApiError(403, PROFILE_GRANT_DENIED)
+        if m.profile != grant_req.profile:
+            session.add(_grant_record(m, caller, PROFILE_GRANT_TRIGGER, m.profile, grant_req.profile))
+            m.profile = grant_req.profile
+        await session.commit()
+        await session.refresh(m)
 
     return json(_member_to_detail(m, user=m.user))
 
@@ -528,7 +649,8 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
             label="Member",
         )
 
-        if not is_steward(await caller_in(session, request, m.ecosystem_id)):
+        caller = await caller_in(session, request, m.ecosystem_id)
+        if not is_steward(caller):
             raise ApiError(403, "Ecosystem role 'mod' or higher required")
 
         old_status = m.current_status
@@ -541,6 +663,7 @@ async def member_status_transition(request: Request, member_id: uuid.UUID):
             date=_dt.date.today(),
             trigger=req.trigger,
             notes=req.notes,
+            actor_member_id=caller.id,
         )
         session.add(transition)
         m.current_status = req.status

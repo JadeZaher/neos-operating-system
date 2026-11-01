@@ -27,6 +27,7 @@ class CeremonyState(BaseModel):
     consent_date: _dt.date | None = None
     facilitator: str | None = None
     uaf_version_consented: str | None = None
+    caller_can_record: bool = False  # the member themselves or a steward of their ecosystem
 
 
 class SectionConsentRequest(BaseModel):

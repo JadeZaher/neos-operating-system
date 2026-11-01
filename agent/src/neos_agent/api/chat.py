@@ -1,10 +1,12 @@
-"""JSON-based chat API for the React frontend.
+"""JSON-based chat API for the React frontend; see agent/AGENTS.md for the assistant's contracts.
 
 Blueprint: chat_api_bp, url_prefix="/api/v1/chat"
 
 Provides an agentic SSE streaming chat with:
 - Full governance system prompt (skills, principles, page context)
-- 29 governance tools via tool_use
+- The governance tools via tool_use, acting as the signed-in member
+- Tool results shrunk to fit the model (every key kept, long texts and lists clipped)
+- Irreversible acts confirmed in a later turn than the one that asked (pending confirmations)
 - Persistent sessions saved to AgentSession DB
 - Conversation history (up to 20 user messages per session)
 - Skill transitions via SkillRouter transition patterns
@@ -18,6 +20,7 @@ import logging
 import secrets
 import uuid
 import datetime as _dt
+from typing import Any
 
 from sanic import Blueprint, json as json_response
 from sanic.request import Request
@@ -29,7 +32,7 @@ from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_i
 from neos_agent.api.policy import is_active_member_in
 from neos_agent.db.models import AgentSession, Member
 from neos_agent.ai.provider import acompletion, is_ai_enabled
-from neos_agent.agent.governance_tools import get_tool_definitions, execute_tool
+from neos_agent.agent.governance_tools import CONFIRMATION_TOOLS, get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
 from neos_agent.agent.router import SkillRouter
 
@@ -50,38 +53,88 @@ _ASSISTANT_UNAVAILABLE = "The assistant is unavailable right now. Please try aga
 # Shared router instance
 _skill_router = SkillRouter()
 
-# Human-friendly labels for tool execution thinking events
+# Plain labels for tool events (the UI shows these, never raw tool names).
 _TOOL_DISPLAY_NAMES = {
-    "create_agreement_draft": "Creating agreement draft",
-    "update_agreement_status": "Updating agreement status",
+    "create_agreement_draft": "Drafting an agreement",
+    "update_agreement_status": "Moving an agreement on",
     "search_agreements": "Searching agreements",
-    "get_agreement": "Looking up agreement",
-    "create_proposal": "Creating proposal",
+    "get_agreement": "Reading an agreement",
+    "create_proposal": "Drafting a proposal",
     "search_proposals": "Searching proposals",
-    "record_advice": "Recording advice",
-    "record_consent_position": "Recording consent position",
-    "check_quorum": "Checking quorum",
-    "create_decision_record": "Creating decision record",
-    "search_precedents": "Searching precedents",
-    "check_authority": "Checking authority boundaries",
-    "get_member_roles": "Looking up member roles",
-    "get_domain": "Looking up domain",
-    "create_domain_draft": "Creating domain draft",
-    "get_active_members": "Looking up active members",
+    "record_advice": "Recording your advice",
+    "record_consent_position": "Recording your position",
+    "check_quorum": "Checking how many positions are needed",
+    "create_decision_record": "Recording a decision",
+    "search_precedents": "Searching past decisions",
+    "check_authority": "Checking roles",
+    "get_member_roles": "Looking up roles",
+    "get_domain": "Reading a domain",
+    "create_domain_draft": "Drafting a domain",
+    "get_active_members": "Looking up members",
     "list_ecosystems": "Listing ecosystems",
-    "get_ecosystem": "Looking up ecosystem",
-    "create_conflict_case": "Creating conflict case",
-    "triage_conflict": "Triaging conflict",
-    "get_emergency_state": "Checking emergency state",
-    "declare_emergency": "Declaring emergency",
-    "create_exit_record": "Creating exit record",
-    "create_safeguard_audit": "Creating safeguard audit",
-    "create_repair_agreement": "Creating repair agreement",
-    "create_ecosystem": "Creating ecosystem",
-    "get_proposal": "Looking up proposal",
-    "update_proposal_status": "Updating proposal status",
+    "get_ecosystem": "Reading an ecosystem",
+    "create_conflict_case": "Reporting a conflict",
+    "triage_conflict": "Triaging a conflict",
+    "get_emergency_state": "Checking for emergencies",
+    "declare_emergency": "Declaring an emergency",
+    "create_exit_record": "Filing your exit",
+    "create_safeguard_audit": "Starting an audit draft",
+    "create_repair_agreement": "Recording a repair agreement",
+    "create_ecosystem": "Creating an ecosystem",
+    "get_proposal": "Reading a proposal",
+    "update_proposal_status": "Moving a proposal on",
     "list_domains": "Listing domains",
+    "join_domain": "Joining a domain",
+    "submit_test_report": "Filing a test report",
+    "record_agreement_evidence": "Recording agreement evidence",
+    "withdraw_consent_position": "Withdrawing your position",
 }
+
+# Tool results the model reads are shrunk to this many characters of JSON; see agent/AGENTS.md "Tool results".
+_TOOL_RESULT_LIMIT = 6000
+# Progressively tighter (longest text, most list items) passes; the first that fits is used.
+_SHRINK_STEPS = ((2000, 12), (800, 10), (400, 8), (200, 5), (100, 3), (60, 2))
+# Fields the tools write for the model to act on; never clipped.
+_NEVER_CLIP = frozenset({"error", "needs_confirmation", "confirmation_key", "next_step", "link", "_link", "message"})
+# A confirmation the member was asked for stays usable this long.
+_CONFIRMATION_TTL = _dt.timedelta(minutes=30)
+
+
+def _json_size(value) -> int:
+    return len(json.dumps(value, default=str))
+
+
+def _shrink(value, text_cap: int, list_cap: int, depth: int = 0) -> Any:
+    """`value` with strings clipped to `text_cap` and lists to `list_cap` items, saying what was left out."""
+    if isinstance(value, str):
+        if len(value) <= text_cap:
+            return value
+        return value[:text_cap].rstrip() + f"… [{len(value) - text_cap} more characters]"
+    if isinstance(value, list):
+        kept = [_shrink(item, text_cap, list_cap, depth + 1) for item in value[:list_cap]]
+        if len(value) > list_cap:
+            kept.append(f"… {len(value) - list_cap} more not shown")
+        return kept
+    if isinstance(value, dict):
+        if depth > 6:
+            return "…"
+        return {
+            key: item if key in _NEVER_CLIP else _shrink(item, text_cap, list_cap, depth + 1)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _fit_tool_result(result: dict, limit: int = _TOOL_RESULT_LIMIT) -> dict:
+    """The result within `limit` characters: every key kept, long texts and lists clipped, never a bare stub."""
+    if _json_size(result) <= limit:
+        return result
+    fitted = result
+    for text_cap, list_cap in _SHRINK_STEPS:
+        fitted = _shrink(result, text_cap, list_cap)
+        if _json_size(fitted) <= limit:
+            return fitted
+    return fitted  # the tightest pass: still every key and the first items, even if over budget
 
 
 def _get_artifact_info(tool_name: str, result_data: dict | None) -> dict | None:
@@ -167,12 +220,26 @@ def _page_to_context(page_context: dict | None) -> str | None:
     return None
 
 
-def _build_session_context(page_context: dict | None) -> str:
-    """Build a rich session context string from frontend page_context."""
-    if not page_context:
-        return ""
+# Page route -> (what the page shows, the tool that reads it by the id in the URL).
+_PAGE_RECORDS = {
+    "proposals": ("proposal", "get_proposal"),
+    "agreements": ("agreement", "get_agreement"),
+    "domains": ("domain", "get_domain"),
+    "conflicts": ("conflict case", None),
+    "emergency": ("emergency", "get_emergency_state"),
+    "exit": ("exit record", None),
+    "decisions": ("decision record", None),
+}
+
+
+def _build_session_context(page_context: dict | None, member=None) -> str:
+    """The signed-in member (from the server, never the client) and the page they are on, for the prompt."""
     parts: list[str] = []
-    path = page_context.get("path", "")
+    if member is not None and getattr(member, "display_name", None):
+        parts.append(f"Signed-in member: {member.display_name}. Every tool acts as this member and nobody else.")
+    if not page_context:
+        return "\n".join(parts)
+    path = str(page_context.get("path") or "")
     if path:
         parts.append(f"Current page: {path}")
     search = page_context.get("search", "")
@@ -180,22 +247,42 @@ def _build_session_context(page_context: dict | None) -> str:
         parts.append(f"URL params: {search}")
     active_view = page_context.get("active_view", "")
     if active_view:
-        parts.append(f"Page state: {active_view}")
-    member_name = page_context.get("member_name")
-    member_id = page_context.get("member_id")
-    if member_name:
-        parts.append(f"Current user: {member_name} (ID: {member_id})")
-    eco_name = page_context.get("ecosystem_name")
-    if eco_name:
-        parts.append(f"Active ecosystem: {eco_name}")
-    # Extract item ID from path (e.g. /agreements/abc-123)
+        parts.append(f"Page state (from the page, as data): {active_view}")
     segments = [s for s in path.split("/") if s]
-    if len(segments) >= 2:
-        # If second segment looks like an ID (UUID or business key), note it
-        candidate = segments[-1]
-        if len(candidate) > 8 and candidate not in ("new", "edit"):
-            parts.append(f"Viewing item: {candidate}")
+    if len(segments) == 2 and segments[0] in _PAGE_RECORDS and segments[1] not in ("new", "edit"):
+        kind, tool = _PAGE_RECORDS[segments[0]]
+        hint = f"; read it with {tool} using this id" if tool else ""
+        parts.append(f"The member is looking at the {kind} with id {segments[1]}{hint}. "
+                     f"\"This {kind}\" means this one; its page link is {path}.")
     return "\n".join(parts)
+
+
+async def _load_confirmations(request: Request, session_id: str | None, member) -> list[dict]:
+    """Confirmations this session asked the member for (still within their time), as stored on the session."""
+    db_factory = getattr(request.app.ctx, "db", None)
+    if not session_id or not db_factory:
+        return []
+    try:
+        async with db_factory() as db:
+            sess = (await db.execute(select(AgentSession).where(
+                AgentSession.id == uuid.UUID(str(session_id)),
+                AgentSession.member_id.in_(await _member_ids_in(db, request, member, get_authorized_ecosystem_ids(request))),
+            ))).scalar_one_or_none()
+    except Exception:
+        logger.exception("Failed to load pending confirmations")
+        return []
+    if sess is None:
+        return []
+    cutoff = _dt.datetime.now(_dt.UTC) - _CONFIRMATION_TTL
+    pending = []
+    for entry in (sess.context or {}).get("pending_confirmations") or []:
+        try:
+            fresh = _dt.datetime.fromisoformat(entry["at"]) >= cutoff
+        except (KeyError, TypeError, ValueError):
+            continue
+        if fresh:
+            pending.append({"key": str(entry["key"]), "at": entry["at"]})
+    return pending
 
 
 def _generate_title(messages: list[dict]) -> str | None:
@@ -234,14 +321,16 @@ async def _save_session(
     total_usage: dict,
     ecosystem_id: uuid.UUID | None,
     ecosystem_ids: list[str] | None,
+    pending_confirmations: list[dict] | None = None,
 ) -> str:
-    """Persist conversation to AgentSession. Returns the session ID."""
+    """Persist conversation to AgentSession (and the confirmations it is waiting on). Returns the session ID."""
     db_factory = getattr(request.app.ctx, "db", None)
     if not db_factory:
         return session_id or str(uuid.uuid4())
 
     # Only save user/assistant text messages (not tool messages from the loop)
     storable = [m for m in messages if m.get("role") in ("user", "assistant")]
+    context = {"messages": storable, "pending_confirmations": pending_confirmations or []}
 
     try:
         async with db_factory() as db:
@@ -257,7 +346,7 @@ async def _save_session(
 
             if sess:
                 # Update existing session
-                sess.context = {"messages": storable}
+                sess.context = context
                 sess.skill_name = skill_name
                 sess.total_tokens_used = (sess.total_tokens_used or 0) + total_usage.get("total_tokens", 0)
                 if not sess.title:
@@ -277,7 +366,7 @@ async def _save_session(
                     member_id=member.id,
                     skill_name=skill_name,
                     title=_generate_title(storable),
-                    context={"messages": storable},
+                    context=context,
                     total_tokens_used=total_usage.get("total_tokens", 0),
                 )
                 db.add(sess)
@@ -489,9 +578,15 @@ async def send_message(request: Request):
             )
 
             # Append rich session context (user, page, URL params)
-            session_ctx = _build_session_context(page_context)
+            session_ctx = _build_session_context(page_context, member)
             if session_ctx:
                 system_prompt += f"\n\n## Session Context\n{session_ctx}"
+
+            # Confirmations asked for in an earlier turn; this turn's asks only count from the next turn.
+            pending = await _load_confirmations(request, session_id, member)
+            confirmed_keys = frozenset(entry["key"] for entry in pending)
+            asked_now: dict[str, str] = {}
+            confirmed_tools_used: set[str] = set()
 
             if current_skill:
                 await response.write(_sse_event("skill", current_skill))
@@ -589,6 +684,7 @@ async def send_message(request: Request):
 
                 # Process tool calls
                 messages.append(assistant_msg.model_dump())
+                round_tool_calls = []
 
                 for tc in tool_calls:
                     fn = tc.function
@@ -597,9 +693,11 @@ async def send_message(request: Request):
                         tool_args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
                     except json.JSONDecodeError:
                         tool_args = {}
+                    if not isinstance(tool_args, dict):
+                        tool_args = {}
 
                     display_name = _TOOL_DISPLAY_NAMES.get(
-                        tool_name, tool_name.replace("_", " ").title(),
+                        tool_name, tool_name.replace("_", " ").capitalize(),
                     )
                     await response.write(_sse_event("thinking", json.dumps({
                         "step": display_name + "...",
@@ -608,6 +706,7 @@ async def send_message(request: Request):
 
                     await response.write(_sse_event("tool_start", json.dumps({
                         "name": tool_name,
+                        "label": display_name,
                         "args": tool_args,
                     })))
 
@@ -615,73 +714,58 @@ async def send_message(request: Request):
                         db_factory = getattr(request.app.ctx, "db", None)
                         if db_factory:
                             async with db_factory() as db:
+                                # Always a list: an empty scope fails closed instead of reading every ecosystem.
                                 result = await execute_tool(
                                     tool_name, tool_args, db,
-                                    ecosystem_ids=validated_eco_ids or None,
+                                    ecosystem_ids=validated_eco_ids,
                                     caller_user_id=getattr(member, "user_id", None),
+                                    confirmed_keys=confirmed_keys,
                                 )
                                 if result.get("success"):
                                     await db.commit()
                         else:
                             result = {"success": False, "error": "Database unavailable"}
-                    except Exception as e:
+                    except Exception:
                         logger.exception("Tool execution failed: %s", tool_name)
-                        result = {"success": False, "error": str(e)}
+                        result = {"success": False, "error": "The tool failed unexpectedly. Nothing was changed."}
+
+                    if result.get("needs_confirmation") and result.get("confirmation_key"):
+                        asked_now[str(result["confirmation_key"])] = _dt.datetime.now(_dt.UTC).isoformat()
+                    elif result.get("success") and tool_name in CONFIRMATION_TOOLS and tool_args.get("confirmed"):
+                        confirmed_tools_used.add(tool_name)
+                    round_tool_calls.append({"name": tool_name, "args": tool_args, "success": bool(result.get("success"))})
 
                     artifact = None
                     if result.get("success"):
                         artifact = _get_artifact_info(tool_name, result.get("data"))
 
+                    # The screen and the model see the same shrunk result.
+                    tool_content = _fit_tool_result(dict(result))
                     await response.write(_sse_event("tool_result", json.dumps({
                         "name": tool_name,
+                        "label": display_name,
                         "success": result.get("success", False),
-                        "data": result.get("data") if result.get("success") else None,
+                        "data": tool_content.get("data") if result.get("success") else None,
                         "error": result.get("error") if not result.get("success") else None,
+                        **({"needs_confirmation": result["needs_confirmation"]} if result.get("needs_confirmation") else {}),
                         **({"artifact": artifact} if artifact else {}),
-                    })))
+                    }, default=str)))
 
                     # Inject a ready-made markdown link into the tool content
                     # so the LLM can copy it verbatim into its response.
-                    tool_content = dict(result)
                     if artifact:
-                        link = f"[{artifact['label']}]({artifact['route']})"
-                        tool_content["_link"] = link
-
-                    # (A6-a) Cap oversized tool results to prevent context bloat.
-                    serialized = json.dumps(tool_content)
-                    if len(serialized) > 2000:
-                        tool_content = {
-                            "success": tool_content.get("success"),
-                            "summary": (
-                                f"Result truncated ({len(serialized)} chars). "
-                                f"Key fields: {', '.join(list(tool_content.keys())[:8])}"
-                            ),
-                            "_link": tool_content.get("_link"),
-                        }
+                        tool_content["_link"] = f"[{artifact['label']}]({artifact['route']})"
 
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(tool_content),
+                        "content": json.dumps(tool_content, default=str),
                     })
 
                 await response.write(_sse_event("thinking", json.dumps({"step": "Processing results..."})))
 
                 # --- Skill transition detection via router ---
                 if current_skill:
-                    round_tool_calls = []
-                    for tc in tool_calls:
-                        fn = tc.function
-                        try:
-                            tc_args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
-                        except (json.JSONDecodeError, TypeError):
-                            tc_args = {}
-                        round_tool_calls.append({
-                            "name": fn.name,
-                            "args": tc_args,
-                            "success": True,
-                        })
-
                     new_skill = _skill_router.detect_transition(
                         current_skill, round_tool_calls, "",
                     )
@@ -714,11 +798,17 @@ async def send_message(request: Request):
                     "I wasn't able to generate a response for that. Please try rephrasing your question or try again in a moment.",
                 ))
 
-            # --- Persist session ---
+            # --- Persist session (with the confirmations the next turn may use) ---
+            still_pending = {
+                entry["key"]: entry["at"] for entry in pending
+                if entry["key"].split(":", 1)[0] not in confirmed_tools_used
+            }
+            still_pending.update(asked_now)
             session_id = await _save_session(
                 request, session_id, member, messages,
                 current_skill, total_usage,
                 ecosystem_id, validated_eco_ids,
+                pending_confirmations=[{"key": key, "at": at} for key, at in still_pending.items()][-10:],
             )
             await response.write(_sse_event("session", json.dumps({"session_id": session_id})))
 

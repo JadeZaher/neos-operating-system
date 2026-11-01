@@ -9,6 +9,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 MemberRole = Literal["user", "mod", "admin", "owner"]
+# policy.MEMBER_PROFILES; co_creator and builder confer administration and are granted, never self-chosen.
+MemberProfile = Literal["co_creator", "builder", "collaborator", "townhall"]
 
 
 class MemberListItem(BaseModel):
@@ -48,6 +50,15 @@ class MemberDetail(MemberListItem):
     onboarding: OnboardingSnapshot | None = None
 
 
+class RoleGrantSchema(BaseModel):
+    """One recorded role or profile change (a MemberStatusTransition, trigger "role_grant" / "profile_grant")."""
+    kind: Literal["role", "profile"] = "role"
+    from_role: str
+    to_role: str
+    date: _dt.date
+    granted_by: str | None = None  # the granter's current display name (stored by member id)
+
+
 class MemberProfileResponse(MemberDetail):
     user_id: uuid.UUID
     username: str | None = None
@@ -56,6 +67,12 @@ class MemberProfileResponse(MemberDetail):
     quiz_summary: dict
     badges: list
     tags: list
+    # Roles the signed-in caller may give this member now (policy.assignable_roles); empty = no picker.
+    caller_assignable_roles: list[MemberRole] = []
+    # Profiles the caller may give this member (policy.can_grant_profile); empty = no picker.
+    caller_grantable_profiles: list[MemberProfile] = []
+    caller_is_self: bool = False
+    role_history: list[RoleGrantSchema] = []
 
 
 class MemberCreateRequest(BaseModel):
@@ -92,6 +109,10 @@ class StatusTransitionRequest(BaseModel):
 
 class RoleUpdateRequest(BaseModel):
     role: MemberRole
+
+
+class ProfileGrantRequest(BaseModel):
+    profile: MemberProfile
 
 
 class OnboardingChecklistItem(BaseModel):

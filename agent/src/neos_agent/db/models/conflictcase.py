@@ -38,7 +38,10 @@ from ._base import Base, GUID, TimestampMixin
 class ConflictCase(TimestampMixin, Base):
     """A reported conflict or harm requiring governance process."""
     __tablename__ = "conflict_cases"
-    __table_args__ = (Index("ix_conflict_cases_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_conflict_cases_ecosystem_id", "ecosystem_id"),
+        Index("ix_conflict_cases_reporter_id", "reporter_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)

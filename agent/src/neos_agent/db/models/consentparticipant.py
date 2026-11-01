@@ -43,5 +43,9 @@ class ConsentParticipant(TimestampMixin, Base):
     position: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     round: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The member who holds this position (one row per member per record); NULL on legacy rows.
+    member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
 
     consent_record: Mapped[ConsentRecord] = relationship(back_populates="participants")

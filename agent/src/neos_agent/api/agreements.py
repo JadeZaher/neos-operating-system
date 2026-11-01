@@ -28,6 +28,7 @@ from neos_agent.db.models import (
     Domain,
     Member,
     MemberAlignmentEvent,
+    Proposal,
     ReviewRecord,
 )
 
@@ -40,7 +41,7 @@ from .agreement_vocabulary import (
 from .errors import ApiError, get_scoped_or_404
 from .guards import authenticated, caller_in, reachable_ecosystem_ids
 from .helpers import get_ecosystem_ids, get_authorized_ecosystem_ids, apply_ecosystem_name_filter, build_search_filter, parse_pagination, serialize_shared_ecosystem_ids
-from .policy import can_conduct_agreement_ceremony, is_active_member_in
+from .policy import can_conduct_agreement_ceremony, can_register_agreement, is_active_member_in
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.services.agreement_consent import (
     agreement_consent_summary,
@@ -56,6 +57,7 @@ from neos_agent.services.act_gates import (
     agreement_gate_status,
     apply_agreement_move,
     normalize_act_policy,
+    resolve_proposal_policy,
 )
 from neos_agent.services.fingerprint import generate_fingerprint
 from .schemas import (
@@ -232,6 +234,8 @@ async def _agreement_detail_payload(db, agreement: Agreement, caller: Member | N
         outcome.attach(payload)
     payload["caller_role"] = caller.role if caller else None
     payload["caller_can_conduct"] = can_conduct_agreement_ceremony(caller, agreement)
+    # "Propose a change": an in-force agreement changes only through a ratified amending proposal.
+    payload["caller_can_propose_change"] = caller is not None and agreement.status in IN_FORCE_STATUSES
     if caller is None:
         return payload
     consent = await db.scalar(select(AgreementMemberConsent).where(
@@ -318,6 +322,14 @@ def _regenerate_fingerprint(agreement: Agreement) -> None:
 
 
 CEREMONY_DENIED = "Only an active ecosystem steward (admin or owner) may conduct this ceremony"
+REGISTER_DENIED = "Only an active ecosystem steward can register a ratified proposal as an agreement"
+# Agreements in force: proposals may be governed by or amend them.
+IN_FORCE_STATUSES = ("active", "under_review")
+# Fields members attest to: only a change to these is a new version (consent is bound to the version).
+VERSIONED_FIELDS = ("title", "text")
+# Proposal type -> agreement type for a newly registered agreement.
+_AGREEMENT_TYPE_FOR_PROPOSAL = {"policy": "policy", "operational": "operational", "resource": "resource",
+                                "structural": "organizational"}
 
 
 async def transition_agreement(db, agreement: Agreement, *, to: str | None = None, caller: Member | None,
@@ -548,10 +560,14 @@ async def update_agreement(request: Request, agreement_id: uuid.UUID):
             update_data["prerequisite_domain_ids"] = [
                 str(domain_id) for domain_id in update_req.prerequisite_domain_ids or []
             ]
+        text_changed = any(
+            field in update_data and update_data[field] != getattr(agreement, field) for field in VERSIONED_FIELDS
+        )
         for field, value in update_data.items():
             setattr(agreement, field, value)
 
-        _bump_version(agreement)
+        if text_changed:
+            _bump_version(agreement)
         await synchronize_agreement_requirements(db, agreement)
         _regenerate_fingerprint(agreement)
 
@@ -647,6 +663,139 @@ async def record_ceremony_evidence(request: Request, agreement_id: uuid.UUID):
         return json(await _agreement_detail_payload(db, agreement, actor, outcome), status=201)
 
 
+CONSENT_NOT_OPEN = "Agreement consent opens during the consent ceremony"
+CONSENT_OPEN_STATUSES = ("consent", "test", "active", "under_review")
+
+
+async def record_member_consent(db, agreement: Agreement, actor: Member, attestation: str) -> AgreementMemberConsent:
+    """Attest `actor` to the current version: the consent row, its alignment-ledger credit, membership activation.
+
+    Shared by REST and MCP so both write the ledger; `actor` is the caller's row, already row-locked
+    by REST. The caller then runs the cascade (transition_agreement) and commits.
+    """
+    if agreement.status not in CONSENT_OPEN_STATUSES:
+        raise TransitionRefused(409, CONSENT_NOT_OPEN)
+    consent = await db.scalar(select(AgreementMemberConsent).where(
+        AgreementMemberConsent.agreement_id == agreement.id,
+        AgreementMemberConsent.member_id == actor.id,
+        AgreementMemberConsent.agreement_version == agreement.version,
+    ).with_for_update())
+    now = _utcnow()
+    if consent is None:
+        consent = AgreementMemberConsent(
+            id=uuid.uuid4(), agreement_id=agreement.id, member_id=actor.id,
+            agreement_version=agreement.version, attestation=attestation,
+            attested_at=now,
+        )
+        db.add(consent)
+        await db.flush()
+    else:
+        consent.attestation = attestation
+        consent.attested_at = now
+        if consent.withdrawn_at is not None:
+            consent.revision += 1
+        consent.withdrawn_at = None
+        consent.withdrawal_reason = None
+
+    previous_delta = await db.scalar(
+        select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
+            MemberAlignmentEvent.agreement_consent_id == consent.id
+        )
+    )
+    delta = max(0, agreement.alignment_points - int(previous_delta or 0))
+    if delta:
+        db.add(MemberAlignmentEvent(
+            id=uuid.uuid4(), member_id=actor.id, ecosystem_id=agreement.ecosystem_id,
+            agreement_consent_id=consent.id, event_kind=f"state:{consent.revision}",
+            delta=delta, recorded_at=now,
+        ))
+        actor.agreement_alignment_score += delta
+    actor.last_governance_activity_date = now.date()
+    if actor.current_status == "pending_consent":
+        pending = await missing_agreement_consents(
+            db, actor.id, agreement.ecosystem_id, "ecosystem"
+        )
+        if not pending:
+            actor.current_status = "active"
+            actor.onboarding_status = "complete"
+    return consent
+
+
+async def register_ratified_proposal(db, proposal: Proposal, *, caller: Member | None) -> Agreement:
+    """A steward turns a ratified proposal into registry text: amend `amends_agreement_id`, else a new agreement.
+
+    Amending writes an AmendmentRecord and a new version (members re-attest, consent is per version).
+    The text is the one captured at ratification (`ratified_text`). Row-locks the proposal (and the
+    amended agreement) so concurrent requests register once. Links the proposal to the agreement;
+    the caller commits. See api/AGENTS.md "Ratified is not registered".
+    """
+    if not can_register_agreement(caller, proposal):
+        raise ApiError(403, REGISTER_DENIED)
+    await db.refresh(proposal, with_for_update=True)  # a concurrent register waits here, then sees the link
+    if proposal.status != "ratified":
+        raise ApiError(409, "Only a ratified proposal can be registered as an agreement")
+    if proposal.registered_agreement_id is not None:
+        raise ApiError(409, "This proposal is already registered", {"agreement_id": str(proposal.registered_agreement_id)})
+    text = (proposal.ratified_text or "").strip()
+    if not text:
+        raise ApiError(409, "No text was captured when this proposal was ratified, so there is nothing to register")
+
+    if proposal.amends_agreement_id is not None:
+        agreement = await db.scalar(
+            select(Agreement).where(Agreement.id == proposal.amends_agreement_id).with_for_update()
+        )
+        if agreement is None or agreement.ecosystem_id != proposal.ecosystem_id:
+            raise ApiError(409, "The agreement this proposal amends no longer exists")
+        if agreement.status not in IN_FORCE_STATUSES:
+            raise ApiError(409, f"The agreement this proposal amends is no longer in force ({agreement.status})")
+        db.add(_snapshot_agreement(
+            agreement, change_reason=f"Amended by ratified proposal {proposal.proposal_id}",
+            changed_by=caller.display_name,
+        ))
+        previous_version, previous_text = agreement.version, agreement.text
+        agreement.text = text
+        _bump_version(agreement)
+        _regenerate_fingerprint(agreement)
+        db.add(AmendmentRecord(
+            id=uuid.uuid4(), ecosystem_id=agreement.ecosystem_id,
+            amendment_id=f"AMD-{uuid.uuid4().hex[:8].upper()}", parent_agreement_id=agreement.id,
+            parent_agreement_version=previous_version, amendment_type="proposal",
+            proposed_by=proposal.proposer, date=_dt.date.today(),
+            changes={"proposal_id": proposal.proposal_id, "text": {"from": previous_text, "to": text}},
+            rationale=proposal.rationale, act_level_used="act-process",
+            new_agreement_version=agreement.version, status="ratified",
+        ))
+        await synchronize_agreement_requirements(db, agreement)
+    else:
+        policy, _source = await resolve_proposal_policy(db, proposal)
+        agreement = Agreement(
+            id=uuid.uuid4(), ecosystem_id=proposal.ecosystem_id, shared_ecosystem_ids=proposal.shared_ecosystem_ids,
+            agreement_id=f"AGR-{uuid.uuid4().hex[:8].upper()}",
+            type=_AGREEMENT_TYPE_FOR_PROPOSAL.get(proposal.type, "policy"), title=proposal.title,
+            version="1.0", status="active", proposer=proposal.proposer, domain=proposal.affected_domain,
+            text=text, hierarchy_level="domain", created_date=_dt.date.today(),
+            ratification_date=_dt.date.today(), requires_explicit_consent=True, prerequisite_scopes=[],
+            prerequisite_domain_ids=[], alignment_points=5, act_policy=policy,
+        )
+        _regenerate_fingerprint(agreement)
+        db.add(agreement)
+        await db.flush()
+        db.add(_snapshot_agreement(
+            agreement, change_reason=f"Registered from ratified proposal {proposal.proposal_id}",
+            changed_by=caller.display_name,
+        ))
+        await synchronize_agreement_requirements(db, agreement)
+    db.add(AgreementCeremony(
+        id=uuid.uuid4(), agreement_id=agreement.id, stage=agreement.status,
+        completed_by_member_id=caller.id, outcome="registered",
+        evidence=f"Registered from ratified proposal {proposal.proposal_id} (decision DEC-{proposal.proposal_id})",
+        completed_at=_utcnow(),
+    ))
+    proposal.registered_agreement_id = agreement.id
+    await db.flush()
+    return agreement
+
+
 async def _locked_caller(db, request: Request, agreement: Agreement) -> Member | None:
     """The caller's row in the agreement's ecosystem, row-locked: consent changes their alignment score."""
     caller = await caller_in(db, request, agreement.ecosystem_id)
@@ -669,56 +818,14 @@ async def attest_agreement_consent(request: Request, agreement_id: uuid.UUID):
             db, request, Agreement, agreement_id, options=_detail_options(), label="Agreement",
             ecosystem_ids=await _consent_gate_scope(db, request),
         )
-        if agreement.status not in {"consent", "test", "active", "under_review"}:
-            raise ApiError(409, "Agreement consent opens during the consent ceremony")
+        if agreement.status not in CONSENT_OPEN_STATUSES:
+            raise ApiError(409, CONSENT_NOT_OPEN)
 
         actor = await _locked_caller(db, request, agreement)
         if actor is None:
             raise ApiError(403, "Only an ecosystem member may attest agreement consent")
 
-        consent = await db.scalar(select(AgreementMemberConsent).where(
-            AgreementMemberConsent.agreement_id == agreement.id,
-            AgreementMemberConsent.member_id == actor.id,
-            AgreementMemberConsent.agreement_version == agreement.version,
-        ).with_for_update())
-        now = _utcnow()
-        if consent is None:
-            consent = AgreementMemberConsent(
-                id=uuid.uuid4(), agreement_id=agreement.id, member_id=actor.id,
-                agreement_version=agreement.version, attestation=consent_request.attestation,
-                attested_at=now,
-            )
-            db.add(consent)
-            await db.flush()
-        else:
-            consent.attestation = consent_request.attestation
-            consent.attested_at = now
-            if consent.withdrawn_at is not None:
-                consent.revision += 1
-            consent.withdrawn_at = None
-            consent.withdrawal_reason = None
-
-        previous_delta = await db.scalar(
-            select(func.coalesce(func.sum(MemberAlignmentEvent.delta), 0)).where(
-                MemberAlignmentEvent.agreement_consent_id == consent.id
-            )
-        )
-        delta = max(0, agreement.alignment_points - int(previous_delta or 0))
-        if delta:
-            db.add(MemberAlignmentEvent(
-                id=uuid.uuid4(), member_id=actor.id, ecosystem_id=agreement.ecosystem_id,
-                agreement_consent_id=consent.id, event_kind=f"state:{consent.revision}",
-                delta=delta, recorded_at=now,
-            ))
-            actor.agreement_alignment_score += delta
-        actor.last_governance_activity_date = now.date()
-        if actor.current_status == "pending_consent":
-            pending = await missing_agreement_consents(
-                db, actor.id, agreement.ecosystem_id, "ecosystem"
-            )
-            if not pending:
-                actor.current_status = "active"
-                actor.onboarding_status = "complete"
+        await record_member_consent(db, agreement, actor, consent_request.attestation)
 
         # A completed consent ceremony advances the agreement automatically
         # (and mints the commitment artifact if the test gate is already met).

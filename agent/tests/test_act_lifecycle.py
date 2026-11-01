@@ -9,7 +9,6 @@ newcomer and a shared agreement of their own.
 from __future__ import annotations
 
 import uuid
-from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -20,10 +19,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from neos_agent.api.agreements import CEREMONY_DENIED, agreements_api_bp
+from neos_agent.api.policy import can_confirm_ratification
 from neos_agent.api.errors import register_api_errors
 from neos_agent.db.models import Agreement, Base, ConsentParticipant, ConsentRecord, Ecosystem, Member, Proposal, User
 from neos_agent.services import act_gates
-from neos_agent.services.act_gates import AGREEMENT_LIFECYCLE, PROPOSAL_LIFECYCLE, STEWARD_MOVE_DENIED
+from neos_agent.services.act_gates import (
+    AGREEMENT_LIFECYCLE,
+    NEEDS_ANOTHER_STEWARD,
+    PROPOSAL_LIFECYCLE,
+    STEWARD_MOVE_DENIED,
+)
 from neos_agent.services.agreement_consent import synchronize_agreement_requirements
 
 from .test_uxqa_p1_governance import _call, _create_proposal, env  # noqa: F401 — env is the shared fixture
@@ -38,6 +43,10 @@ from .test_uxqa_p1_governance import _call, _create_proposal, env  # noqa: F401 
     (PROPOSAL_LIFECYCLE, "created", "advice", True),  # legacy chat drafts open like drafts
     (PROPOSAL_LIFECYCLE, "advice", "test", False),  # no stage is skipped by hand
     (PROPOSAL_LIFECYCLE, "consent", "withdrawn", True),
+    (PROPOSAL_LIFECYCLE, "ratified", "withdrawn", False),  # terminal: a decided proposal stays decided
+    (PROPOSAL_LIFECYCLE, "withdrawn", "withdrawn", False),
+    (PROPOSAL_LIFECYCLE, "consent", "advice", True),  # send back for revision
+    (PROPOSAL_LIFECYCLE, "test", "advice", True),
     (AGREEMENT_LIFECYCLE, "consent", "active", False),  # activation needs the test ceremony
     (AGREEMENT_LIFECYCLE, "under_review", "active", True),
     (AGREEMENT_LIFECYCLE, "advice", "withdrawn", False),  # agreements sunset instead
@@ -47,7 +56,7 @@ def test_manual_moves_follow_the_table(lifecycle, current, target, allowed):
 
 
 # ---------------------------------------------------------------------------
-# The transition hook and the owner's pending decisions
+# The transition hook and the owner's decisions (live since 2026-10-31)
 # ---------------------------------------------------------------------------
 
 
@@ -64,43 +73,87 @@ async def test_on_transition_sees_each_applied_move_once(env, monkeypatch):
     assert (await _call(env.app, "post", "ben", f"{url}/status", json={"status": "advice"})).status == 403
     assert (await _call(env.app, "post", "ada", f"{url}/status", json={"status": "advice"})).status == 200
     assert (await _call(env.app, "post", "ben", f"{url}/advice", json={"content": "Add a rota"})).status == 201
+    assert (await _call(env.app, "post", "ada", f"{url}/status", json={"status": "consent"})).status == 200
 
-    assert seen == [("draft", "advice", False, "Ada"), ("advice", "consent", True, "Ben")]
-
-
-def _owner_decided_lifecycle():
-    """The owner's decisions as the one-line table edits the comments in act_gates.py describe."""
-    edits = {
-        ("advice", "consent"): {"automatic": False},
-        ("test", "ratified"): {"automatic": False, "steward_only": True},
-    }
-    moves = tuple(replace(move, **edits.get((move.source, move.target), {})) for move in PROPOSAL_LIFECYCLE.moves)
-    return replace(PROPOSAL_LIFECYCLE, moves=moves)
+    assert seen == [("draft", "advice", False, "Ada"), ("advice", "consent", False, "Ada")]
 
 
-async def test_owner_decisions_are_table_edits(env, monkeypatch):
-    monkeypatch.setattr(act_gates, "PROPOSAL_LIFECYCLE", _owner_decided_lifecycle())
+def test_owner_decisions_are_live_in_the_table():
+    """Flipping either owner decision back (automatic advice close, self-certifying ratification) goes red here."""
+    advice_close = PROPOSAL_LIFECYCLE.manual_move("advice", "consent")
+    ratification = PROPOSAL_LIFECYCLE.manual_move("test", "ratified")
+    assert (advice_close.automatic, advice_close.gate) == (False, "advice")
+    assert (ratification.automatic, ratification.steward_only, ratification.gate) == (False, True, "test")
+    assert PROPOSAL_LIFECYCLE.automatic_move("advice") is None
+    assert PROPOSAL_LIFECYCLE.automatic_move("test") is None
+
+    # ...and the confirming steward is never the author (no self-certified ratification).
+    home = uuid.UUID(int=0xE1)
+    author_steward, other_steward = (Member(id=uuid.uuid4(), ecosystem_id=home, role=role, current_status="active")
+                                     for role in ("mod", "admin"))
+    own = Proposal(ecosystem_id=home, proposer_member_id=author_steward.id)
+    legacy = Proposal(ecosystem_id=home, proposer_member_id=None)  # no author link: steward-managed
+    assert can_confirm_ratification(author_steward, own) is False
+    assert can_confirm_ratification(other_steward, own) is True
+    assert can_confirm_ratification(author_steward, legacy) is True
+
+
+async def test_owner_decisions_proposer_closes_advice_and_a_steward_confirms_ratification(env):
     proposal = await _create_proposal(env.app)
     url = f"/api/v1/proposals/{proposal['id']}"
     await _call(env.app, "post", "ada", f"{url}/status", json={"status": "advice"})
 
-    # Advice stays open until the proposer closes it.
+    # Advice stays open until the proposer closes it; the detail offers her the move once the gate is met.
     advice = await _call(env.app, "post", "ben", f"{url}/advice", json={"content": "Add a rota"})
     assert advice.json["auto_transitions"] == []
+    as_proposer = (await _call(env.app, "get", "ada", url)).json
+    assert (as_proposer["status"], _next(as_proposer, "consent")) == ("advice", {"ready": True, "gate": "advice", "blocked": None})
+    assert _next((await _call(env.app, "get", "ben", url)).json, "consent") is None  # not his to close
     closed = await _call(env.app, "post", "ada", f"{url}/status", json={"status": "consent"})
-    assert closed.json["status"] == "consent"
+    assert (closed.json["status"], closed.json["auto_transitions"]) == ("consent", [])
 
-    consent = await _call(env.app, "post", "ben", f"{url}/consent", json={"member_name": "Ben", "position": "consent"})
+    consent = await _call(env.app, "post", "ben", f"{url}/consent", json={"position": "consent"})
     assert consent.json["auto_transitions"] == ["consent->test"]
     report = await _call(env.app, "post", "ben", f"{url}/test", json={"outcome": "passed", "observations": "Ran a week"})
-    assert report.json["auto_transitions"] == []
+    assert report.json["auto_transitions"] == []  # a report is evidence, never self-certifying
 
-    # Ratification waits for a steward, and a manual ratification mints the decision artifact.
+    # The author is offered no ratify button and is refused; a steward sees the reports and confirms.
+    as_author = (await _call(env.app, "get", "ada", url)).json
+    assert _next(as_author, "ratified") == {"ready": True, "gate": "test", "blocked": "needs_another_steward"}
     by_author = await _call(env.app, "post", "ada", f"{url}/status", json={"status": "ratified"})
     assert (by_author.status, by_author.json["error"]) == (403, STEWARD_MOVE_DENIED)
+    as_steward = (await _call(env.app, "get", "mo", url)).json
+    assert _next(as_steward, "ratified") == {"ready": True, "gate": "test", "blocked": None}
+    assert [r["reporter_name"] for r in as_steward["test_reports"]] == ["Ben"]
     by_steward = await _call(env.app, "post", "mo", f"{url}/status", json={"status": "ratified"})
     assert by_steward.json["status"] == "ratified"
     assert by_steward.json["decision_record_id"]
+
+
+def _next(detail: dict, target: str) -> dict | None:
+    """The caller's offered manual move into `target` (ready, gate, blocked), or None when not offered."""
+    move = next((m for m in detail["allowed_next"] if m["to"] == target), None)
+    return None if move is None else {key: move[key] for key in ("ready", "gate", "blocked")}
+
+
+async def test_a_steward_who_wrote_the_proposal_cannot_confirm_its_ratification(env):
+    proposal = await _create_proposal(env.app, who="mo")  # Mo is a steward and the author
+    url = f"/api/v1/proposals/{proposal['id']}"
+    for who, path, body in (
+        ("mo", "/status", {"status": "advice"}),
+        ("ben", "/advice", {"content": "Add a rota"}),
+        ("mo", "/status", {"status": "consent"}),
+        ("ben", "/consent", {"position": "consent"}),
+        ("sol", "/test", {"outcome": "passed", "observations": "Ran a week"}),
+    ):
+        assert (await _call(env.app, "post", who, f"{url}{path}", json=body)).status in (200, 201)
+
+    as_author = (await _call(env.app, "get", "mo", url)).json
+    assert _next(as_author, "ratified")["blocked"] == "needs_another_steward"  # the page names who decides
+    refused = await _call(env.app, "post", "mo", f"{url}/status", json={"status": "ratified"})
+    assert (refused.status, refused.json["code"], refused.json["error"]) == (403, "NEEDS_ANOTHER_STEWARD", NEEDS_ANOTHER_STEWARD)
+    confirmed = await _call(env.app, "post", "ari", f"{url}/status", json={"status": "ratified"})
+    assert confirmed.json["status"] == "ratified", confirmed.text
 
 
 async def test_a_legacy_objection_spelling_blocks_the_consent_gate(env):
@@ -108,6 +161,7 @@ async def test_a_legacy_objection_spelling_blocks_the_consent_gate(env):
     url = f"/api/v1/proposals/{proposal['id']}"
     await _call(env.app, "post", "ada", f"{url}/status", json={"status": "advice"})
     await _call(env.app, "post", "ben", f"{url}/advice", json={"content": "Add a rota"})
+    await _call(env.app, "post", "ada", f"{url}/status", json={"status": "consent"})
     # A chat row stored before positions were normalized (migration o7c3e9a5d2f8 rewrites the lowercase ones).
     async with env.db() as session:
         record = ConsentRecord(id=uuid.uuid4(), proposal_id=uuid.UUID(proposal["id"]), consent_mode="consent")
@@ -117,7 +171,7 @@ async def test_a_legacy_objection_spelling_blocks_the_consent_gate(env):
                                        position=" Objection", reason="Too noisy at night"))
         await session.commit()
 
-    consent = await _call(env.app, "post", "sol", f"{url}/consent", json={"member_name": "Sol", "position": "consent"})
+    consent = await _call(env.app, "post", "sol", f"{url}/consent", json={"position": "consent"})
     assert consent.status == 201, consent.text
     assert (consent.json["gates"]["consent"]["open_objections"], consent.json["auto_transitions"]) == (1, [])
     async with env.db() as session:

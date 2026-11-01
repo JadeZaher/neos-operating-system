@@ -64,4 +64,6 @@ class Member(TimestampMixin, Base):
     ecosystem: Mapped[Ecosystem] = relationship(back_populates="members")
     user: Mapped[User] = relationship(back_populates="members")
     onboarding: Mapped[Optional[MemberOnboarding]] = relationship(back_populates="member", foreign_keys="MemberOnboarding.member_id")
-    status_transitions: Mapped[list[MemberStatusTransition]] = relationship(back_populates="member")
+    status_transitions: Mapped[list[MemberStatusTransition]] = relationship(
+        back_populates="member", foreign_keys="MemberStatusTransition.member_id"
+    )

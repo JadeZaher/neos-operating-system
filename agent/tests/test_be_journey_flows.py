@@ -231,7 +231,7 @@ async def test_exit_detail_and_status_are_scoped_to_the_callers_authorized_ecosy
     _, detail = await journey.app.asgi_client.get(f"/api/v1/exit/{exit_id}", headers=_as(who))
     assert detail.status == status, detail.text
     _, transition = await journey.app.asgi_client.post(
-        f"/api/v1/exit/{exit_id}/status", headers=_as(who), json={"new_status": "completed"},
+        f"/api/v1/exit/{exit_id}/status", headers=_as(who), json={"new_status": "cancelled"},  # the leaver's own move
     )
     assert transition.status == status, transition.text
     if status == 404:

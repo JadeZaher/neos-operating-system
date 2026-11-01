@@ -65,10 +65,7 @@ TRANSITION_PATTERNS: list[TransitionPattern] = [
         "act-consent-phase", "update_agreement_status", "test",
         "Consent achieved, entering test", "act-test-phase",
     ),
-    TransitionPattern(
-        "act-consent-phase", "update_agreement_status", "active",
-        "Consent achieved, adopted directly", None,
-    ),
+    # No consent -> active pattern: every agreement passes through test (services/act_gates AGREEMENT_LIFECYCLE).
     TransitionPattern(
         "act-test-phase", "update_agreement_status", "active",
         "Test complete, adopted", None,

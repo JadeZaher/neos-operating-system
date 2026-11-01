@@ -32,6 +32,7 @@ class ProposalListItem(BaseModel):
 class AdviceEntrySchema(BaseModel):
     id: uuid.UUID
     advisor: str
+    member_id: uuid.UUID | None = None
     role: str | None = None
     ethos: str | None = None
     advice_type: str | None = None
@@ -52,7 +53,8 @@ class AdviceLogSchema(BaseModel):
 
 class ConsentParticipantSchema(BaseModel):
     id: uuid.UUID
-    member_name: str
+    member_name: str  # display name of the member holding the position (server-set)
+    member_id: uuid.UUID | None = None
     position: str | None = None
     objection_text: str | None = None
     integration_attempted: bool | None = None
@@ -94,6 +96,8 @@ class TestReportSchema(BaseModel):
     next_action: str | None = None
     success_criteria_summary: str | None = None
     success_criteria: list[TestSuccessCriterionSchema] = []
+    reporter_member_id: uuid.UUID | None = None
+    reporter_name: str | None = None
 
 
 class ActPolicySchema(BaseModel):
@@ -120,6 +124,10 @@ class ProposalDetail(ProposalListItem):
     gates: dict | None = None
     governing_agreement_id: uuid.UUID | None = None
     governing_agreement: dict | None = None
+    amends_agreement_id: uuid.UUID | None = None
+    amends_agreement: dict | None = None
+    registered_agreement_id: uuid.UUID | None = None
+    registered_agreement: dict | None = None
     advice_logs: list[AdviceLogSchema] = []
     consent_records: list[ConsentRecordSchema] = []
     test_reports: list[TestReportSchema] = []
@@ -127,6 +135,9 @@ class ProposalDetail(ProposalListItem):
     caller_can_conduct: bool = False  # may participate (advice/consent/test)
     caller_can_manage: bool = False  # may edit and make manual status moves
     caller_is_proposer: bool = False
+    caller_can_register: bool = False  # a steward may register this ratified proposal as an agreement
+    caller_position: dict | None = None  # the caller's current position in the latest consent record
+    allowed_next: list[dict] = []  # manual moves the caller may request now (act_gates.proposal_next_moves)
 
 
 class ProposalCreateRequest(BaseModel):
@@ -143,6 +154,7 @@ class ProposalCreateRequest(BaseModel):
     advice_deadline: _dt.date | None = None
     act_policy: ActPolicySchema | None = None
     governing_agreement_id: uuid.UUID | None = None
+    amends_agreement_id: uuid.UUID | None = None
 
 
 class ProposalUpdateRequest(BaseModel):
@@ -156,6 +168,8 @@ class ProposalUpdateRequest(BaseModel):
     consent_deadline: _dt.date | None = None
     act_policy: ActPolicySchema | None = None
     governing_agreement_id: uuid.UUID | None = None
+    amends_agreement_id: uuid.UUID | None = None
+    decision_type: str | None = None
 
 
 class AdviceEntryCreateRequest(BaseModel):
@@ -169,9 +183,14 @@ class AdviceEntryCreateRequest(BaseModel):
 
 
 class ConsentPositionRequest(BaseModel):
-    member_name: str
+    """The caller's position; the participant is always the caller (a sent member_name is ignored)."""
     position: str
     objection_text: str | None = None
+
+
+class StatusTransitionRequest(BaseModel):
+    status: str
+    note: str | None = None  # required when sending a proposal back for revision
 
 
 class TestCriterionInput(BaseModel):

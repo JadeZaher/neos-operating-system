@@ -88,17 +88,35 @@ def can_conduct_agreement_ceremony(member: Member | None, agreement: Agreement) 
     )
 
 
-def can_assign_role(caller: Member | None, target: Member, new_role: str) -> bool:
-    """Set `target`'s tier: owner or profile admin any; self-demotion; admin only below admin."""
+def can_bootstrap_roles(caller: Member | None, *, ecosystem_has_owner: bool, founder_id: uuid.UUID | None) -> bool:
+    """Grant any tier before an owner exists: only the ecosystem's founder, holding a profile-admin profile."""
+    return (
+        not ecosystem_has_owner
+        and is_profile_admin(caller)
+        and founder_id is not None
+        and caller.id == founder_id
+    )
+
+
+def can_assign_role(caller: Member | None, target: Member, new_role: str, *,
+                    ecosystem_has_owner: bool = True, founder_id: uuid.UUID | None = None) -> bool:
+    """Set `target`'s tier (owner decision): only below your own rank, and only an owner grants owner.
+
+    You may step yourself down. The founder bootstraps while the ecosystem has no owner (api/AGENTS.md "Role grants").
+    """
     if new_role not in ROLE_RANK or not _same_ecosystem(caller, target):
         return False
-    if is_profile_admin(caller) or role_rank(caller) == ROLE_RANK["owner"]:
+    if can_bootstrap_roles(caller, ecosystem_has_owner=ecosystem_has_owner, founder_id=founder_id):
         return True
-    if caller.id == target.id and ROLE_RANK[new_role] <= role_rank(caller):
-        return True
-    if role_rank(caller) == ROLE_RANK["admin"]:
-        return role_rank(target) < ROLE_RANK["admin"] and ROLE_RANK[new_role] < ROLE_RANK["admin"]
-    return False
+    own_rank = role_rank(caller)
+    if caller.id == target.id:
+        return ROLE_RANK[new_role] < own_rank
+    if role_rank(target) >= own_rank:
+        return False
+    if new_role == "owner":
+        return own_rank == ROLE_RANK["owner"]
+    return ROLE_RANK[new_role] < own_rank
+
 
 # BE-Groups
 
@@ -132,3 +150,169 @@ def can_record_decision(member: Member | None, ecosystem_id: uuid.UUID | None) -
 def can_declare_emergency(member: Member | None, ecosystem_id: uuid.UUID | None) -> bool:
     """Declare an emergency in `ecosystem_id`: any active member there (owner decision; a co-signer comes later)."""
     return is_active_member_in(member, ecosystem_id)
+
+
+# G-Care
+
+# Owner defaults, one line each: who triages conflicts, and whether named parties can read the case.
+CONFLICT_TRIAGE_MIN_ROLE = "mod"
+CONFLICT_PARTIES_CAN_VIEW = True
+
+
+def conflict_party_ids(case) -> set[str]:
+    """Member ids named as parties; free-text labels never authorize (display names are user-editable)."""
+    stored = case.parties
+    ids = stored.get("member_ids") if isinstance(stored, dict) else None
+    return {str(item).lower() for item in ids or [] if isinstance(item, str)}
+
+
+def is_conflict_party(member: Member | None, case) -> bool:
+    """True when the member's id is among the case's party member ids."""
+    return member is not None and str(member.id).lower() in conflict_party_ids(case)
+
+
+def _active_in_case_ecosystem(member: Member | None, case) -> bool:
+    return _same_ecosystem(member, case) and member.current_status == "active"
+
+
+def can_triage_conflict(member: Member | None, case) -> bool:
+    """Triage, move or repair a case: an active steward there or its facilitator, never a named party."""
+    if not _active_in_case_ecosystem(member, case) or is_conflict_party(member, case):
+        return False
+    return has_role_at_least(member, CONFLICT_TRIAGE_MIN_ROLE) or member.id == case.facilitator_id
+
+
+def can_view_conflict(member: Member | None, case) -> bool:
+    """Read a case: its reporter, facilitator, named parties and triage stewards; everyone else sees nothing."""
+    if not _active_in_case_ecosystem(member, case):
+        return False
+    if member.id in (case.reporter_id, case.facilitator_id):
+        return True
+    if CONFLICT_PARTIES_CAN_VIEW and is_conflict_party(member, case):
+        return True
+    return can_triage_conflict(member, case)
+
+
+def can_finish_audit(member: Member | None, audit) -> bool:
+    """Edit or publish a draft audit: the member recorded as its auditor (a human; the assistant may only draft)."""
+    return (
+        _active_in_case_ecosystem(member, audit)
+        and str(member.id) in (audit.auditor_ids or [])
+    )
+
+
+# G-Safety
+
+# Owner decision: any active member declares, a second active member co-signs; see api/AGENTS.md "Emergency and exit".
+def emergency_actor_ids(emergency) -> set:
+    """Member ids that declared, co-signed or ended the emergency (excluded from its review)."""
+    actors = {emergency.declared_by_member_id, emergency.co_signer_member_id}
+    for entry in emergency.actions_log if isinstance(emergency.actions_log, list) else []:
+        if isinstance(entry, dict) and entry.get("action") == "half_open_transition" and entry.get("actor_member_id"):
+            actors.add(str(entry["actor_member_id"]))
+    return {str(actor) for actor in actors if actor is not None}
+
+
+def can_cosign_emergency(member: Member | None, emergency) -> bool:
+    """Co-sign a pending declaration: an active member there who is not the declarer."""
+    return (
+        can_declare_emergency(member, emergency.ecosystem_id)
+        and member.id != emergency.declared_by_member_id
+    )
+
+
+def can_withdraw_emergency(member: Member | None, emergency) -> bool:
+    """Withdraw a declaration still waiting for a co-signer: its declarer or a steward there."""
+    return is_active_member_in(member, emergency.ecosystem_id) and (
+        member.id == emergency.declared_by_member_id or is_steward(member)
+    )
+
+
+def can_end_emergency(member: Member | None, emergency) -> bool:
+    """End emergency authority early (Recovery starts): the declarer, the co-signer or a steward there."""
+    return is_active_member_in(member, emergency.ecosystem_id) and (
+        member.id in (emergency.declared_by_member_id, emergency.co_signer_member_id) or is_steward(member)
+    )
+
+
+def can_review_emergency(member: Member | None, emergency) -> bool:
+    """Record the post-emergency review: an active member there who did not declare, co-sign or end it."""
+    return (
+        is_active_member_in(member, emergency.ecosystem_id)
+        and str(member.id) not in emergency_actor_ids(emergency)
+    )
+
+
+def can_complete_recovery(member: Member | None, emergency) -> bool:
+    """Close Recovery once the review is complete: an active steward there."""
+    return is_active_member_in(member, emergency.ecosystem_id) and is_steward(member)
+
+
+def is_exit_leaver(member: Member | None, record) -> bool:
+    """True when the member row is the one leaving."""
+    return member is not None and member.id == record.member_id
+
+
+def can_steward_exit(member: Member | None, record) -> bool:
+    """Start the handoff or confirm the departure: an active steward there who is not the leaver."""
+    return (
+        is_active_member_in(member, record.ecosystem_id)
+        and is_steward(member)
+        and not is_exit_leaver(member, record)
+    )
+
+
+# G-ACT
+
+def can_register_agreement(member: Member | None, proposal: Proposal) -> bool:
+    """Register a ratified proposal as an agreement (new or amended): an active steward of its ecosystem."""
+    return is_active_member_in(member, proposal.ecosystem_id) and is_steward(member)
+
+
+def can_record_onboarding_consent(caller: Member | None, member: Member) -> bool:
+    """Record onboarding section consent for `member`: the member themselves or a steward of their ecosystem."""
+    return _same_ecosystem(caller, member) and (caller.id == member.id or is_steward(caller))
+
+
+def assignable_roles(caller: Member | None, target: Member, *, ecosystem_has_owner: bool = True,
+                     founder_id: uuid.UUID | None = None) -> list[str]:
+    """Every tier `caller` may give `target` now, lowest first (the member page's role picker)."""
+    return [role for role in ROLE_RANK
+            if role != target.role and can_assign_role(caller, target, role, ecosystem_has_owner=ecosystem_has_owner,
+                                                       founder_id=founder_id)]
+
+
+def is_legacy_proposer_named(member: Member | None, proposal: Proposal) -> bool:
+    """An unlinked (legacy) proposal whose proposer text is the member's name: a refusal signal only, never a grant."""
+    if member is None or proposal.proposer_member_id is not None:
+        return False
+    name, proposer = (member.display_name or "").strip().lower(), (proposal.proposer or "").strip().lower()
+    return bool(name) and name == proposer
+
+
+def can_confirm_ratification(member: Member | None, proposal: Proposal) -> bool:
+    """Confirm Test -> Ratified (owner decision): a steward of its ecosystem who did not write it; never self-certified."""
+    return (
+        is_steward_in(member, proposal.ecosystem_id)
+        and not is_proposal_author(member, proposal)
+        and not is_legacy_proposer_named(member, proposal)
+    )
+
+
+# Profiles that confer administration (PROFILE_ADMINS) are granted, never chosen; see api/AGENTS.md "Role grants".
+MEMBER_PROFILES = ("co_creator", "builder", "collaborator", "townhall")
+
+
+def can_choose_own_profile(member: Member | None, new_profile: str | None) -> bool:
+    """Self-service profile edit: any profile that confers no authority, or the one you already hold."""
+    return new_profile not in PROFILE_ADMINS or (member is not None and member.profile == new_profile)
+
+
+def can_grant_profile(caller: Member | None, target: Member, *, ecosystem_has_owner: bool = True,
+                      founder_id: uuid.UUID | None = None) -> bool:
+    """Set another member's profile (it may confer administration): never your own; whoever may make them an admin."""
+    return (
+        caller is not None
+        and caller.id != target.id
+        and can_assign_role(caller, target, "admin", ecosystem_has_owner=ecosystem_has_owner, founder_id=founder_id)
+    )

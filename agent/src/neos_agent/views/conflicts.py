@@ -2,24 +2,24 @@
 
 Blueprint: conflicts_bp, url_prefix="/dashboard/conflicts"
 
-Handles escalation triage, conflict case management, NVC dialogue tracking,
-harm circles, and repair agreements. Supports AI-guided facilitation.
+Read-only: a case shows only to the people `policy.can_view_conflict` allows (404 otherwise);
+writes are retired (410). See api/AGENTS.md "Legacy dashboard (views/)".
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
 
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, or_
 
+from neos_agent.api import policy
+from neos_agent.api.guards import caller_in
 from neos_agent.db.models import ConflictCase, RepairAgreementRecord
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, escape_like, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,8 @@ conflicts_bp = Blueprint("conflicts", url_prefix="/dashboard/conflicts")
 # ---------------------------------------------------------------------------
 
 def _apply_filters(stmt, request: Request, eco_ids=None):
-    """Apply optional query-param filters to a ConflictCase select statement."""
-    if eco_ids:
-        stmt = stmt.where(ConflictCase.ecosystem_id.in_(eco_ids))
+    """Apply optional query-param filters to a ConflictCase select statement; an empty scope matches nothing."""
+    stmt = stmt.where(ConflictCase.ecosystem_id.in_(eco_ids or []))
 
     status = request.args.get("status")
     if status:
@@ -63,26 +62,30 @@ def _apply_filters(stmt, request: Request, eco_ids=None):
     return stmt
 
 
+async def _visible_page(session, request: Request) -> tuple[list, int, int, int]:
+    """The filtered cases the caller may read (same rule as the API), one page of them, and the total."""
+    offset, limit = parse_pagination(request)
+    stmt = _apply_filters(
+        select(ConflictCase).order_by(ConflictCase.created_at.desc()), request,
+        eco_ids=get_selected_ecosystem_ids(request),
+    )
+    cases = (await session.execute(stmt)).scalars().all()
+    callers = {eco_id: await caller_in(session, request, eco_id) for eco_id in {c.ecosystem_id for c in cases}}
+    visible = [case for case in cases if policy.can_view_conflict(callers[case.ecosystem_id], case)]
+    return visible[offset:offset + limit], len(visible), offset, limit
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @conflicts_bp.get("/")
 async def list_conflicts(request: Request):
-    """GET /dashboard/conflicts -- list conflict cases with filtering."""
-    eco_ids = get_selected_ecosystem_ids(request)
+    """GET /dashboard/conflicts -- the cases the caller may read, filtered."""
     offset, limit = parse_pagination(request)
     try:
         async with request.app.ctx.db() as session:
-            stmt = select(ConflictCase).order_by(ConflictCase.created_at.desc())
-            stmt = _apply_filters(stmt, request, eco_ids=eco_ids)
-
-            count_stmt = select(func.count()).select_from(stmt.subquery())
-            total = await session.scalar(count_stmt) or 0
-
-            stmt = stmt.offset(offset).limit(limit)
-            result = await session.execute(stmt)
-            conflicts = result.scalars().all()
+            conflicts, total, offset, limit = await _visible_page(session, request)
     except Exception:
         logger.exception("Failed to load conflicts list")
         conflicts = []
@@ -115,49 +118,8 @@ async def create_form(request: Request):
 
 @conflicts_bp.post("/")
 async def create_conflict(request: Request):
-    """POST /dashboard/conflicts -- create conflict case from triage form."""
-    form = request.form
-    eco_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if eco_id is None:
-        content = await render(
-            "dashboard/conflicts/form.html",
-            request=request,
-            conflict=None,
-            active_page="conflicts",
-            error="Invalid or unauthorised ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        case_id = f"CONF-{uuid.uuid4().hex[:8].upper()}"
-        async with request.app.ctx.db() as session:
-            conflict = ConflictCase(
-                id=uuid.uuid4(),
-                ecosystem_id=eco_id,
-                case_id=case_id,
-                title=form.get("triage_notes", "")[:100] or "Untitled conflict",
-                status="open",
-                severity=form.get("severity", "medium"),
-                scope=form.get("scope", "interpersonal"),
-                tier=int(form.get("tier", 1)),
-                safety_flag=form.get("safety_flag") == "on",
-                parties=[],
-                triage_notes=form.get("triage_notes"),
-            )
-            session.add(conflict)
-            await session.commit()
-            new_id = conflict.id
-    except Exception:
-        logger.exception("Failed to create conflict case")
-        content = await render(
-            "dashboard/conflicts/form.html",
-            request=request,
-            conflict=None,
-            error="Failed to create conflict case.",
-            active_page="conflicts",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/conflicts/{new_id}")
+    """POST /dashboard/conflicts -- retired (410): writes happen in the app."""
+    return retired_write(request, "/conflicts/new")
 
 
 @conflicts_bp.get("/<conflict_uuid:uuid>")
@@ -166,6 +128,10 @@ async def detail(request: Request, conflict_uuid: uuid.UUID):
     try:
         async with request.app.ctx.db() as session:
             conflict = await get_scoped_entity(session, ConflictCase, conflict_uuid, request)
+            if conflict is not None and not policy.can_view_conflict(
+                await caller_in(session, request, conflict.ecosystem_id), conflict,
+            ):
+                conflict = None  # not a reader: indistinguishable from a missing case
             if conflict is None:
                 content = await render(
                     "dashboard/conflicts/detail.html",
@@ -214,81 +180,17 @@ async def detail(request: Request, conflict_uuid: uuid.UUID):
 
 @conflicts_bp.post("/<conflict_uuid:uuid>/status")
 async def status_transition(request: Request, conflict_uuid: uuid.UUID):
-    """POST /dashboard/conflicts/{id}/status -- transition conflict status."""
-    form = request.form
-    new_status = form.get("new_status")
-
-    if not new_status:
-        return html(
-            await render(
-                "dashboard/conflicts/detail.html",
-                request=request,
-                conflict=None,
-                error="new_status is required.",
-                active_page="conflicts",
-            ),
-            status=400,
-        )
-
-    try:
-        async with request.app.ctx.db() as session:
-            conflict = await get_scoped_entity(session, ConflictCase, conflict_uuid, request)
-            if conflict is None:
-                return html(
-                    await render(
-                        "dashboard/conflicts/detail.html",
-                        request=request,
-                        conflict=None,
-                        error="Conflict case not found.",
-                        active_page="conflicts",
-                    ),
-                    status=404,
-                )
-
-            old_status = conflict.status
-            conflict.status = new_status
-
-            if new_status == "resolved":
-                conflict.resolution_summary = form.get("resolution_summary", "")
-                conflict.resolved_date = datetime.utcnow().date()
-
-            await session.commit()
-            logger.info(
-                "Conflict %s status: %s -> %s",
-                conflict_uuid, old_status, new_status,
-            )
-    except Exception:
-        logger.exception("Failed to transition conflict status")
-        return html(
-            await render(
-                "dashboard/conflicts/detail.html",
-                request=request,
-                conflict=None,
-                error="Failed to update status.",
-                active_page="conflicts",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/conflicts/{conflict_uuid}")
+    """POST /dashboard/conflicts/{id}/status -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/conflicts/{conflict_uuid}")
 
 
 @conflicts_bp.get("/filter")
 async def filter_conflicts(request: Request):
-    """GET /dashboard/conflicts/filter -- htmx filtered conflict list fragment."""
-    eco_ids = get_selected_ecosystem_ids(request)
+    """GET /dashboard/conflicts/filter -- htmx fragment of the cases the caller may read."""
     offset, limit = parse_pagination(request)
     try:
         async with request.app.ctx.db() as session:
-            stmt = select(ConflictCase).order_by(ConflictCase.created_at.desc())
-            stmt = _apply_filters(stmt, request, eco_ids=eco_ids)
-
-            count_stmt = select(func.count()).select_from(stmt.subquery())
-            total = await session.scalar(count_stmt) or 0
-
-            stmt = stmt.offset(offset).limit(limit)
-            result = await session.execute(stmt)
-            conflicts = result.scalars().all()
+            conflicts, total, offset, limit = await _visible_page(session, request)
     except Exception:
         logger.exception("Failed to filter conflicts")
         conflicts = []

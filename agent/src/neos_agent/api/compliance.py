@@ -189,7 +189,8 @@ async def generate_compliance(request: Request):
             }
             flagged_issues = {
                 "issues": [
-                    f"Open conflict: {c.case_id} — {c.title}" for c in open_conflicts
+                    # Case id only: a harm report's title is visible to its parties and triage stewards only.
+                    f"Open conflict case: {c.case_id}" for c in open_conflicts
                 ]
             }
 

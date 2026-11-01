@@ -10,15 +10,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
-
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
 from sqlalchemy import select, func
 
 from neos_agent.db.models import GovernanceHealthAudit
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -158,49 +155,5 @@ async def audit_detail(request: Request, audit_id: uuid.UUID):
 
 @safeguards_bp.post("/audits")
 async def request_audit(request: Request):
-    """POST /dashboard/safeguards/audits -- request a new governance health audit.
-
-    Creates a pending audit record. The AI agent fills in the results
-    asynchronously via the chat/tool interface.
-    """
-    form = request.form
-    eco_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if eco_id is None:
-        content = await render(
-            "dashboard/safeguards/dashboard.html",
-            request=request,
-            active_page="safeguards",
-            error="Invalid or unauthorised ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        async with request.app.ctx.db() as session:
-            audit_id = f"AUDIT-{uuid.uuid4().hex[:8].upper()}"
-            audit = GovernanceHealthAudit(
-                id=uuid.uuid4(),
-                ecosystem_id=eco_id,
-                audit_id=audit_id,
-                audit_date=date.today(),
-                auditor=form.get("auditor", "AI Governance Agent"),
-                capture_risk_indicators={},
-                overall_health_score=None,
-                findings="Audit requested. AI analysis pending.",
-                recommendations={},
-                status="draft",
-            )
-            session.add(audit)
-            await session.commit()
-            new_id = audit.id
-    except Exception:
-        logger.exception("Failed to create audit")
-        content = await render(
-            "dashboard/safeguards/dashboard.html",
-            request=request,
-            latest_audit=None,
-            recent_audits=[],
-            error="Failed to create audit.",
-            active_page="safeguards",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/safeguards/audits/{new_id}")
+    """POST /dashboard/safeguards/audits -- retired (410): writes happen in the app."""
+    return retired_write(request, "/safeguards/audits")

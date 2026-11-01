@@ -45,5 +45,9 @@ class AdviceEntry(TimestampMixin, Base):
     proposer_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     integration_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # The advising member (the caller); NULL on legacy rows.
+    member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
+    )
 
     advice_log: Mapped[AdviceLog] = relationship(back_populates="entries")

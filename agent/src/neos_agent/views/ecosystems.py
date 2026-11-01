@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
-
 from sanic import Blueprint, html
 from sanic.request import Request
 from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Ecosystem, Member
-from neos_agent.views._rendering import render, parse_pagination, escape_like
+from neos_agent.views._rendering import render, parse_pagination, escape_like, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +33,6 @@ def _require_auth(request: Request):
     if not member:
         return redirect("/auth/login")
     return None
-
-
-def _sanitize_url(url: str) -> str:
-    """Ensure URL starts with http:// or https://."""
-    if url and not url.startswith(("http://", "https://")):
-        return "https://" + url
-    return url
 
 
 def _get_filters(request: Request) -> dict:
@@ -228,67 +219,8 @@ async def create_form(request: Request):
 
 @ecosystems_bp.post("/")
 async def create_ecosystem(request: Request):
-    """POST /ecosystems -- create ecosystem from form data (auth required)."""
-    denied = _require_auth(request)
-    if denied:
-        return denied
-
-    form = request.form
-
-    name = form.get("name", "").strip()
-    if not name:
-        content = await render(
-            "ecosystems/form.html",
-            request=request,
-            ecosystem=None,
-            error="Ecosystem name is required.",
-            active_page="ecosystems",
-        )
-        return html(content, status=400)
-
-    try:
-        founded = None
-        founded_str = form.get("founded_date")
-        if founded_str:
-            founded = date.fromisoformat(founded_str)
-
-        tags_raw = form.get("tags", "")
-        tags = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
-
-        website = form.get("website", "").strip() or None
-        if website:
-            website = _sanitize_url(website)
-
-        async with request.app.ctx.db() as session:
-            ecosystem = Ecosystem(
-                id=uuid.uuid4(),
-                name=name,
-                description=form.get("description", "").strip() or None,
-                status="active",
-                location=form.get("location", "").strip() or None,
-                website=website,
-                logo_url=form.get("logo_url", "").strip() or None,
-                founded_date=founded,
-                tags=tags or None,
-                contact_email=form.get("contact_email", "").strip() or None,
-                governance_summary=form.get("governance_summary", "").strip() or None,
-                visibility=form.get("visibility", "public"),
-            )
-            session.add(ecosystem)
-            await session.commit()
-            ecosystem_id = ecosystem.id
-    except Exception:
-        logger.exception("Failed to create ecosystem")
-        content = await render(
-            "ecosystems/form.html",
-            request=request,
-            ecosystem=None,
-            error="Failed to create ecosystem. Please check your input and try again.",
-            active_page="ecosystems",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/ecosystems/{ecosystem_id}")
+    """POST /ecosystems -- retired (410): writes happen in the app."""
+    return retired_write(request, "/ecosystems/new")
 
 
 @ecosystems_bp.get("/<ecosystem_id:uuid>/edit")
@@ -355,100 +287,12 @@ async def edit_form(request: Request, ecosystem_id: uuid.UUID):
 
 @ecosystems_bp.put("/<ecosystem_id:uuid>")
 async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
-    """PUT /ecosystems/{id} -- update ecosystem (auth required)."""
-    denied = _require_auth(request)
-    if denied:
-        return denied
-
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            ecosystem = await session.get(Ecosystem, ecosystem_id)
-            if ecosystem is None:
-                return html(
-                    await render(
-                        "ecosystems/detail.html",
-                        request=request,
-                        ecosystem=None,
-                        error="Ecosystem not found.",
-                        active_page="ecosystems",
-                    ),
-                    status=404,
-                )
-
-            # Verify the user is a member of this ecosystem
-            member = request.ctx.member
-            if not member:
-                return redirect("/auth/login")
-
-            from neos_agent.db.models import Member as MemberModel
-            member_check = await session.execute(
-                select(MemberModel).where(
-                    MemberModel.did == member.did,
-                    MemberModel.ecosystem_id == ecosystem_id,
-                    MemberModel.current_status == "active",
-                )
-            )
-            if member_check.scalar_one_or_none() is None:
-                content = await render(
-                    "ecosystems/form.html",
-                    request=request,
-                    ecosystem=None,
-                    error="You do not have permission to edit this ecosystem.",
-                    active_page="ecosystems",
-                )
-                return html(content, status=403)
-
-            if form.get("name"):
-                ecosystem.name = form.get("name").strip()
-            if form.get("description") is not None:
-                ecosystem.description = form.get("description").strip() or None
-            if form.get("location") is not None:
-                ecosystem.location = form.get("location").strip() or None
-            if form.get("website") is not None:
-                website = form.get("website").strip() or None
-                if website:
-                    website = _sanitize_url(website)
-                ecosystem.website = website
-            if form.get("logo_url") is not None:
-                ecosystem.logo_url = form.get("logo_url").strip() or None
-            if form.get("contact_email") is not None:
-                ecosystem.contact_email = form.get("contact_email").strip() or None
-            if form.get("governance_summary") is not None:
-                ecosystem.governance_summary = form.get("governance_summary").strip() or None
-            if form.get("visibility"):
-                ecosystem.visibility = form.get("visibility")
-            if form.get("status"):
-                ecosystem.status = form.get("status")
-
-            founded_str = form.get("founded_date")
-            if founded_str:
-                ecosystem.founded_date = date.fromisoformat(founded_str)
-
-            tags_raw = form.get("tags")
-            if tags_raw is not None:
-                tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-                ecosystem.tags = tags or None
-
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to update ecosystem")
-        return html(
-            await render(
-                "ecosystems/form.html",
-                request=request,
-                ecosystem=None,
-                error="Failed to update ecosystem.",
-                active_page="ecosystems",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/ecosystems/{ecosystem_id}")
+    """PUT /ecosystems/{id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/ecosystems/{ecosystem_id}/edit")
 
 
 # POST handler for HTML form method override (browsers only send GET/POST)
 @ecosystems_bp.post("/<ecosystem_id:uuid>")
 async def update_ecosystem_post(request: Request, ecosystem_id: uuid.UUID):
-    """POST /ecosystems/{id} -- delegates to PUT handler for HTML form compatibility."""
-    return await update_ecosystem(request, ecosystem_id)
+    """POST /ecosystems/{id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/ecosystems/{ecosystem_id}/edit")

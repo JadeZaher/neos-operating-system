@@ -75,24 +75,19 @@ def test_transition_consent_to_test(router: SkillRouter):
 
 
 # ---------------------------------------------------------------------------
-# test_transition_consent_to_adopted
+# test_router_only_routes_moves_the_agreement_table_has
 # ---------------------------------------------------------------------------
 
 
-def test_transition_consent_to_adopted(router: SkillRouter):
-    """After update_agreement_status(active) in consent -> None (process complete)."""
-    result = router.detect_transition(
-        current_skill="act-consent-phase",
-        tool_calls=[
-            {
-                "name": "update_agreement_status",
-                "args": {"new_status": "active"},
-                "success": True,
-            }
-        ],
-        agent_response="",
-    )
-    assert result is None
+def test_router_only_routes_moves_the_agreement_table_has():
+    """Every update_agreement_status pattern names a move AGREEMENT_LIFECYCLE allows from that skill's stage."""
+    from neos_agent.services.act_gates import AGREEMENT_LIFECYCLE
+
+    stage_of = {"act-advice-phase": "advice", "act-consent-phase": "consent", "act-test-phase": "test"}
+    for pattern in TRANSITION_PATTERNS:
+        if pattern.trigger_tool == "update_agreement_status" and pattern.trigger_status:
+            stage = stage_of[pattern.source_skill]
+            assert AGREEMENT_LIFECYCLE.manual_move(stage, pattern.trigger_status) is not None, pattern
 
 
 # ---------------------------------------------------------------------------

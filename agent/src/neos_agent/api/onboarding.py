@@ -25,13 +25,16 @@ from neos_agent.db.models import (
     MemberOnboarding,
 )
 from neos_agent.api.errors import ApiError, get_scoped_or_404
-from neos_agent.api.guards import authenticated
+from neos_agent.api.guards import authenticated, caller_in
+from neos_agent.api.policy import can_record_onboarding_consent
 from neos_agent.api.helpers import get_ecosystem_ids, parse_pagination
 from neos_agent.auth.ecosystem_scope import restrict_to_ecosystems
 from neos_agent.api.schemas.onboarding import CeremonyState, OnboardingListItem, SectionConsentRequest
 
 logger = logging.getLogger(__name__)
 
+
+ONBOARDING_CONSENT_DENIED = "Only the member themselves or a steward of their ecosystem can record this consent"
 
 # The 6 UAF consent sections used to calculate completion_percentage
 _CONSENT_SECTIONS = [
@@ -144,7 +147,8 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
     """
     async with request.app.ctx.db() as session:
         # A member opens from any authorized ecosystem, matching the list's owner-only rule.
-        await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
+        target = await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
+        can_record = can_record_onboarding_consent(await caller_in(session, request, target.ecosystem_id), target)
 
         stmt = select(MemberOnboarding).where(
             MemberOnboarding.member_id == member_id
@@ -169,6 +173,7 @@ async def get_ceremony_state(request: Request, member_id: uuid.UUID):
         consent_date=ob.consent_date,
         facilitator=ob.facilitator,
         uaf_version_consented=ob.uaf_version_consented,
+        caller_can_record=can_record,
     )
     return json(state.model_dump(mode="json"))
 
@@ -186,13 +191,16 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
     try:
         req = SectionConsentRequest(**body)
     except Exception as e:
-        return json({"error": f"Invalid request: {e}"}, status=400)
+        raise ApiError(400, f"Invalid request: {e}") from None
 
     if req.section not in _CONSENT_SECTIONS:
         raise ApiError(400, f"Invalid section: '{req.section}'", {"valid_sections": _CONSENT_SECTIONS})
 
     async with request.app.ctx.db() as session:
-        await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
+        target = await get_scoped_or_404(session, request, Member, member_id, label="Member", include_shared=False)
+        # Only the member themselves, or a steward of their ecosystem facilitating, records their consent.
+        if not can_record_onboarding_consent(await caller_in(session, request, target.ecosystem_id), target):
+            raise ApiError(403, ONBOARDING_CONSENT_DENIED)
 
         stmt = select(MemberOnboarding).where(
             MemberOnboarding.member_id == member_id
@@ -245,5 +253,6 @@ async def submit_section_consent(request: Request, member_id: uuid.UUID):
         consent_date=ob.consent_date,
         facilitator=ob.facilitator,
         uaf_version_consented=ob.uaf_version_consented,
+        caller_can_record=True,
     )
     return json(state.model_dump(mode="json"))

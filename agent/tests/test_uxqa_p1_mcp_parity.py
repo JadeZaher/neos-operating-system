@@ -8,6 +8,8 @@ The parity table is documented in src/neos_agent/api/AGENTS.md "ACT parity".
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 pytest.importorskip("mcp.server.fastmcp")
@@ -18,7 +20,7 @@ from neos_agent import mcp_server  # noqa: E402
 from neos_agent.agent.governance_tools import execute_tool  # noqa: E402
 from neos_agent.api.agreements import CEREMONY_DENIED  # noqa: E402
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED  # noqa: E402
-from neos_agent.db.models import Agreement, Proposal, User  # noqa: E402
+from neos_agent.db.models import AdviceEntry, Agreement, Proposal, User  # noqa: E402
 
 from .test_uxqa_p1_governance import (  # noqa: E402,F401 — env is the shared fixture
     ECO,
@@ -60,12 +62,21 @@ async def test_mcp_tools_apply_authorship_rules(env, monkeypatch):
 
     acting["who"] = PEOPLE["ben"]
     advised = await mcp_server.record_proposal_advice(created["id"], "Add a sign-out sheet", ctx=None)
-    assert advised["auto_transitions"] == ["advice->consent"]
-    with pytest.raises(ValueError, match=MANAGE_DENIED):
+    assert advised["auto_transitions"] == []  # the proposer closes advice (owner decision)
+    async with env.db() as session:
+        [entry] = (await session.execute(select(AdviceEntry))).scalars().all()
+    assert entry.member_id == PEOPLE["ben"].member_id  # standing is matched by id, never by name
+    with pytest.raises(ValueError, match=MANAGE_DENIED):  # a refusal comes before any question
         await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None)
 
+    # Withdrawing cannot be undone: without confirm=true nothing changes and the agent is told what would.
     acting["who"] = PEOPLE["mo"]
-    assert (await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None))["status"] == "withdrawn"
+    asked = await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None)
+    assert (asked["status"], "ends it for good" in asked["needs_confirmation"]) == ("advice", True)
+    async with env.db() as session:
+        assert (await session.get(Proposal, uuid.UUID(created["id"]))).status == "advice"
+    done = await mcp_server.transition_proposal(created["id"], "withdrawn", ctx=None, confirm=True)
+    assert (done["status"], "needs_confirmation" in done) == ("withdrawn", False)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +119,8 @@ class Surfaces:
     async def mcp(self, who, action, proposal, **args):
         self.acting["who"] = PEOPLE[who]
         calls = {
-            "move": lambda: mcp_server.transition_proposal(proposal["id"], args.get("status", ""), ctx=None),
+            # A confirmed owner, as the chat adapter below; the confirm step is covered in the test above.
+            "move": lambda: mcp_server.transition_proposal(proposal["id"], args.get("status", ""), ctx=None, confirm=True),
             "advise": lambda: mcp_server.record_proposal_advice(proposal["id"], args.get("text", ""), ctx=None),
             "position": lambda: mcp_server.submit_proposal_consent(
                 proposal["id"], args.get("position", ""), ctx=None, objection_text=args.get("reason")),
@@ -123,7 +135,9 @@ class Surfaces:
 
     async def chat(self, who, action, proposal, **args):
         tool, tool_args = {
-            "move": ("update_proposal_status", {"proposal_id": proposal["id"], "new_status": args.get("status")}),
+            # A confirmed member: the chat's two-turn confirmation is covered in test_g_agent_assistant.py.
+            "move": ("update_proposal_status", {"proposal_id": proposal["id"], "new_status": args.get("status"),
+                                                "confirmed": True}),
             "advise": ("record_advice", {"proposal_id": proposal["id"], "advice_text": args.get("text")}),
             "position": ("record_consent_position", {"proposal_id": proposal["id"],
                                                      "position": args.get("position"), "reason": args.get("reason")}),
@@ -146,7 +160,9 @@ ACT_SCRIPT = [
     ("ada", "move", {"status": "advice"}, ("ok", []), "advice"),
     ("ada", "move", {"status": "consent"}, ("refused", GATE_UNMET), "advice"),
     ("ada", "advise", {"text": "I agree with myself"}, ("refused", SELF_ADVICE_DENIED), "advice"),
-    ("ben", "advise", {"text": "Add a sign-out sheet"}, ("ok", ["advice->consent"]), "consent"),
+    ("ben", "advise", {"text": "Add a sign-out sheet"}, ("ok", []), "advice"),  # the proposer closes advice
+    ("ben", "move", {"status": "consent"}, ("refused", MANAGE_DENIED), "advice"),
+    ("ada", "move", {"status": "consent"}, ("ok", []), "consent"),
     ("mo", "position", {"position": "objection", "reason": "Too noisy at night"}, ("ok", []), "consent"),
     ("sol", "position", {"position": "consent"}, ("ok", []), "consent"),  # the open objection blocks
     ("ben", "move", {"status": "withdrawn"}, ("refused", MANAGE_DENIED), "consent"),

@@ -35,7 +35,13 @@ from typing import Awaitable, Callable, Mapping
 from sqlalchemy import func, select
 
 from neos_agent.api.errors import ApiError
-from neos_agent.api.policy import can_manage_proposal, is_steward_in
+from neos_agent.api.policy import (
+    can_confirm_ratification,
+    can_manage_proposal,
+    can_participate,
+    is_proposal_author,
+    is_steward_in,
+)
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
@@ -83,7 +89,9 @@ def _utcnow() -> _dt.datetime:
 class Move:
     """One status change: `gate` must be met first; the engine takes `automatic` moves by itself.
 
-    `steward_only` narrows who may make it by hand from the manage rule to stewards.
+    `steward_only` narrows who may make it by hand to a steward who is not the author
+    (`policy.can_confirm_ratification`);
+    `note_required` refuses it without a written reason (sending a proposal back).
     """
 
     source: str
@@ -91,16 +99,18 @@ class Move:
     gate: str | None = None
     automatic: bool = False
     steward_only: bool = False
+    note_required: bool = False
 
 
 # State machine as data: every allowed move, its gate and whether it is automatic.
 @dataclass(frozen=True)
 class Lifecycle:
-    """A record type's status graph; `withdrawn` is reachable from any status by a manual move."""
+    """A record type's status graph; `withdrawn` is reachable by hand from any status not in `terminal`."""
 
     moves: tuple[Move, ...]
     aliases: Mapping[str, str] = field(default_factory=dict)
     withdrawn: str | None = None
+    terminal: frozenset[str] = frozenset()
 
     def canonical(self, status: str) -> str:
         """The table's name for a stored status (legacy aliases resolved)."""
@@ -110,14 +120,14 @@ class Lifecycle:
         """The move a caller may request from `current` to `target`, or None."""
         source = self.canonical(current)
         if self.withdrawn is not None and target == self.withdrawn:
-            return Move(source, target)
+            return None if source in self.terminal else Move(source, target)
         return next((move for move in self.moves if (move.source, move.target) == (source, target)), None)
 
     def manual_targets(self, current: str) -> list[str]:
         """Every status a caller may request from `current`, sorted."""
         source = self.canonical(current)
         targets = {move.target for move in self.moves if move.source == source}
-        if self.withdrawn is not None:
+        if self.withdrawn is not None and source not in self.terminal:
             targets.add(self.withdrawn)
         return sorted(targets)
 
@@ -130,14 +140,15 @@ class Lifecycle:
 PROPOSAL_LIFECYCLE = Lifecycle(
     moves=(
         Move("draft", "advice"),  # opening the process is always deliberate
-        # Owner decision, not yet live: drop automatic=True (the proposer closes advice; deadline backstop later).
-        Move("advice", "consent", gate="advice", automatic=True),
+        Move("advice", "consent", gate="advice"),  # owner decision 2026-10-31: the proposer closes advice
         Move("consent", "test", gate="consent", automatic=True),
-        # Owner decision, not yet live: automatic=True -> steward_only=True (a steward confirms ratification).
-        Move("test", "ratified", gate="test", automatic=True),
+        Move("consent", "advice", note_required=True),  # send back for revision
+        Move("test", "advice", note_required=True),  # send back for revision
+        Move("test", "ratified", gate="test", steward_only=True),  # owner decision 2026-10-31: a steward confirms
     ),
     aliases={"created": "draft"},  # legacy chat-assistant drafts
     withdrawn="withdrawn",
+    terminal=frozenset({"ratified", "withdrawn"}),
 )
 
 # Kept separate from proposals: agreements add review and sunset after activation.
@@ -191,6 +202,11 @@ class TransitionRefused(ApiError):
 
 MANAGE_DENIED = "Only the proposer or an ecosystem steward can change this proposal"
 STEWARD_MOVE_DENIED = "Only an ecosystem steward can confirm this move"
+NEEDS_ANOTHER_STEWARD = (
+    "Another steward needs to confirm this: you wrote the proposal, and ratification is never self-certified. "
+    "If you are the only steward, give another member the moderator role first."
+)
+NOTE_REQUIRED = "Say what will change: sending a proposal back for revision needs a note"
 
 
 @dataclass(frozen=True)
@@ -261,21 +277,65 @@ async def _advance(session, record, lifecycle: Lifecycle, *, evaluate: GateEvalu
     return outcome
 
 
-async def _enter_proposal_stage(session, proposal: Proposal, target: str, **_context) -> str | None:
-    """Set the status; entering ratified mints the decision artifact (idempotent)."""
+def _bump_minor(version: str | None) -> str:
+    """'1.0' -> '1.1'; anything unparseable gains a '.1'."""
+    major, _, minor = (version or "1.0").partition(".")
+    return f"{major}.{int(minor) + 1}" if minor.isdigit() else f"{version or '1'}.1"
+
+
+async def created_after_newest(session, model, proposal_id) -> dict:
+    """`created_at` strictly after the proposal's newest `model` row, else {} (server default).
+
+    "Latest round/record" is ordered by created_at, which SQLite stores to the second; this keeps
+    it unambiguous without mixing the Python clock into server timestamps.
+    """
+    newest = await session.scalar(select(func.max(model.created_at)).where(model.proposal_id == proposal_id))
+    return {} if newest is None else {"created_at": newest + _dt.timedelta(microseconds=1)}
+
+
+async def _open_revision(session, proposal: Proposal, source: str, *, actor: Member | None, note: str | None) -> None:
+    """Send-back side effects: a minor version, a fresh advice round carrying the note, a fresh consent record."""
+    proposal.version = _bump_minor(proposal.version)
+    who = actor.display_name if actor is not None else "the proposer"
+    # proposer_modifications marks a revision round: the advice gate counts rounds from the latest one.
+    session.add(AdviceLog(
+        id=uuid.uuid4(), proposal_id=proposal.id, advice_window_start=_dt.date.today(),
+        advice_window_end=proposal.advice_deadline, urgency=proposal.urgency,
+        summary=f"Sent back from {source} for revision by {who} (v{proposal.version})",
+        proposer_modifications=note, **await created_after_newest(session, AdviceLog, proposal.id),
+    ))
+    # A new record keeps earlier positions as history; the gate reads only the latest record.
+    session.add(ConsentRecord(
+        id=uuid.uuid4(), proposal_id=proposal.id, consent_mode=consent_mode(proposal),
+        date=_dt.date.today(), quorum_met=False, outcome="pending",
+        **await created_after_newest(session, ConsentRecord, proposal.id),
+    ))
+    await session.flush()
+
+
+async def _enter_proposal_stage(session, proposal: Proposal, target: str, *, actor: Member | None = None,
+                                evidence: str | None = None, **_context) -> str | None:
+    """Set the status; a send-back opens a revision; entering ratified captures the text and mints the decision artifact."""
+    source = PROPOSAL_LIFECYCLE.canonical(proposal.status)
     proposal.status = target
+    if target == "advice" and source in {"consent", "test"}:
+        await _open_revision(session, proposal, source, actor=actor, note=evidence)
+        return None
     if target != "ratified":
         return None
+    # The text the steward confirmed; registering copies this, never the live proposed_change.
+    proposal.ratified_text = (proposal.proposed_change or "").strip() or None
     record = await record_proposal_decision(session, proposal)
     return str(record.id) if record else None
 
 
 async def transition_proposal(session, proposal: Proposal, *, to: str | None = None,
-                              caller: Member | None) -> ActOutcome:
-    """Make the requested move (manage rule, table, gate), then every automatic move whose gate is met.
+                              caller: Member | None, note: str | None = None) -> ActOutcome:
+    """Make the requested move (manage rule, table, steward, note, gate), then every automatic move whose gate is met.
 
     `caller` is the acting member's row in the proposal's ecosystem, always resolved
-    from the authenticated identity and never from a request field. The caller commits.
+    from the authenticated identity and never from a request field. `note` is the
+    reason a send-back requires. The caller commits.
     """
     moved, minted = None, None
     if to is not None:
@@ -288,8 +348,13 @@ async def transition_proposal(session, proposal: Proposal, *, to: str | None = N
                 f"Invalid transition from '{proposal.status}' to '{to}'",
                 {"allowed": PROPOSAL_LIFECYCLE.manual_targets(proposal.status)},
             )
-        if move.steward_only and not is_steward_in(caller, proposal.ecosystem_id):
+        if move.steward_only and not can_confirm_ratification(caller, proposal):
+            if is_steward_in(caller, proposal.ecosystem_id):  # a steward who wrote it
+                raise TransitionRefused(403, NEEDS_ANOTHER_STEWARD, {"code": "NEEDS_ANOTHER_STEWARD"})
             raise TransitionRefused(403, STEWARD_MOVE_DENIED)
+        note = (note or "").strip() or None
+        if move.note_required and note is None:
+            raise TransitionRefused(400, NOTE_REQUIRED)
         if move.gate is not None:
             gates = await proposal_gate_status(session, proposal)
             if not gates[move.gate]["met"]:
@@ -299,7 +364,8 @@ async def transition_proposal(session, proposal: Proposal, *, to: str | None = N
                     {"gates": gates},
                 )
         moved = f"{proposal.status}->{to}"
-        minted = await _apply(session, proposal, move, enter=_enter_proposal_stage, actor=caller, automatic=False)
+        minted = await _apply(session, proposal, move, enter=_enter_proposal_stage, actor=caller,
+                              automatic=False, evidence=note)
     outcome = await _advance(
         session, proposal, PROPOSAL_LIFECYCLE,
         evaluate=proposal_gate_status, enter=_enter_proposal_stage, actor=caller,
@@ -348,29 +414,42 @@ async def resolve_proposal_policy(session, proposal: Proposal) -> tuple[dict, st
 # Proposal gates
 # ---------------------------------------------------------------------------
 
+# Owner default: a proposal with no declared or inherited quorum needs one position.
+DEFAULT_PROPOSAL_QUORUM = 1
+
+
+def consent_mode(proposal: Proposal) -> str:
+    """'consensus' when the proposal declares it, else 'consent' (legacy types fall back to consent)."""
+    return "consensus" if (proposal.decision_type or "").strip().lower() == "consensus" else "consent"
+
+
+def consent_quorum_required(policy: dict) -> int:
+    """Positions a proposal's consent gate needs: the declared (or inherited) quorum, else the engine default."""
+    return policy["consent_quorum"] or DEFAULT_PROPOSAL_QUORUM
+
+
+async def _advice_rounds_since_revision(session, proposal: Proposal) -> int:
+    """Rounds with at least one entry, counted from the latest revision round (a send-back restarts the count)."""
+    rows = (await session.execute(
+        select(AdviceLog.id, AdviceLog.proposer_modifications, func.count(AdviceEntry.id))
+        .outerjoin(AdviceEntry, AdviceEntry.advice_log_id == AdviceLog.id)
+        .where(AdviceLog.proposal_id == proposal.id)
+        .group_by(AdviceLog.id, AdviceLog.proposer_modifications, AdviceLog.created_at)
+        .order_by(AdviceLog.created_at)
+    )).all()
+    start = max((index for index, row in enumerate(rows) if row[1]), default=0)
+    return sum(1 for row in rows[start:] if row[2] > 0)
+
+
 async def proposal_gate_status(session, proposal: Proposal) -> dict:
     """Evaluate the declared ACT gates for a proposal against live records."""
     policy, policy_source = await resolve_proposal_policy(session, proposal)
 
-    # --- Advice gate: one AdviceLog = one completed advice round -----------
-    rounds = int(await session.scalar(
-        select(func.count(AdviceLog.id)).where(AdviceLog.proposal_id == proposal.id)
-    ) or 0)
-    latest_log = (await session.execute(
-        select(AdviceLog)
-        .where(AdviceLog.proposal_id == proposal.id)
-        .order_by(AdviceLog.created_at.desc())
-        .limit(1)
-    )).scalar_one_or_none()
-    latest_entries = 0
-    if latest_log is not None:
-        latest_entries = int(await session.scalar(
-            select(func.count(AdviceEntry.id)).where(AdviceEntry.advice_log_id == latest_log.id)
-        ) or 0)
+    # --- Advice gate: rounds that carry advice, since the latest revision ---
+    effective_rounds = await _advice_rounds_since_revision(session, proposal)
     min_rounds = policy["min_advice_rounds"]
-    # A freshly opened empty round does not count until it carries an entry.
-    effective_rounds = rounds if latest_entries > 0 or latest_log is None else rounds - 1
     advice_met = min_rounds == 0 or effective_rounds >= min_rounds
+    deadline = proposal.advice_deadline
 
     # --- Consent gate: latest consent record positions ----------------------
     latest_consent = (await session.execute(
@@ -387,11 +466,15 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
     # Classified through consent_position, so a legacy spelling ("Objection") blocks like "object".
     active_positions = [p for p in participants if consent_position(p.position) not in _WITHDRAWN_POSITIONS]
     objections = [p for p in active_positions if consent_position(p.position) in _BLOCKING_POSITIONS]
-    quorum = policy["consent_quorum"] or 1
+    mode = consent_mode(proposal)
+    # Consensus: everyone who takes part consents; a stand-aside (only on legacy rows) holds it open.
+    stand_asides = [p for p in active_positions if consent_position(p.position) == "stand_aside"]
+    quorum = consent_quorum_required(policy)
     consent_met = (not policy["consent_required"]) or (
         latest_consent is not None
         and len(active_positions) >= quorum
         and not objections
+        and not (mode == "consensus" and stand_asides)
     )
 
     # --- Test gate: declared cases must each show met evidence --------------
@@ -423,12 +506,18 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
             "met": advice_met,
             "rounds": effective_rounds,
             "required_rounds": min_rounds,
+            # Backstop, never a move: the proposer is prompted to close advice once it passes.
+            "deadline": deadline.isoformat() if deadline else None,
+            "deadline_passed": bool(deadline and deadline < _dt.date.today()),
         },
         "consent": {
             "met": consent_met,
             "required": policy["consent_required"],
+            "mode": mode,
             "positions": len(active_positions),
             "quorum": quorum if policy["consent_required"] else None,
+            # "proposal" / "agreement" when declared there (the policy's source), else "default".
+            "quorum_source": policy_source if policy["consent_quorum"] else "default",
             "open_objections": len(objections),
         },
         "test": {
@@ -441,6 +530,145 @@ async def proposal_gate_status(session, proposal: Proposal) -> dict:
     }
     gates["complete"] = advice_met and consent_met and test_met
     return gates
+
+
+# ---------------------------------------------------------------------------
+# Consent positions and the caller's next moves
+# ---------------------------------------------------------------------------
+
+CONSENT_POSITIONS = ("consent", "stand_aside", "object")
+CONSENT_CLOSED = "Consent positions can only be recorded while the proposal is in consent"
+POSITION_UNKNOWN = "Choose consent, stand aside or object"
+OBJECTION_REASON_REQUIRED = "Say what your objection is, so the proposer can work with it"
+STAND_ASIDE_IN_CONSENSUS = "This proposal decides by consensus: consent or object (standing aside is not available)"
+NO_POSITION_TO_WITHDRAW = "You have no position in this consent round to withdraw"
+PARTICIPATE_DENIED = "Only a member of this proposal's ecosystem can record or withdraw a consent position"
+
+
+async def _latest_consent_record(session, proposal: Proposal) -> ConsentRecord | None:
+    return (await session.execute(
+        select(ConsentRecord)
+        .where(ConsentRecord.proposal_id == proposal.id)
+        .order_by(ConsentRecord.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+
+
+async def _members_rows(session, record: ConsentRecord, member: Member) -> list[ConsentParticipant]:
+    """The member's rows in `record`, oldest first: matched ONLY by member_id, never by display name.
+
+    Display names are self-editable, so a NULL-member legacy row (one migration p8d4f1b6e3a9 could
+    not attribute) is read-only history: it counts in the gate as stored and nobody can change it.
+    """
+    return list((await session.execute(
+        select(ConsentParticipant)
+        .where(ConsentParticipant.consent_record_id == record.id, ConsentParticipant.member_id == member.id)
+        .order_by(ConsentParticipant.created_at)
+    )).scalars().all())
+
+
+async def current_position(session, proposal: Proposal, member: Member | None) -> ConsentParticipant | None:
+    """`member`'s row in the latest consent record (the one the gate reads), or None."""
+    if member is None:
+        return None
+    record = await _latest_consent_record(session, proposal)
+    rows = await _members_rows(session, record, member) if record is not None else []
+    active = [row for row in rows if consent_position(row.position) not in _WITHDRAWN_POSITIONS]
+    return (active or rows or [None])[-1]
+
+
+def _require_open_consent(proposal: Proposal, member: Member | None) -> None:
+    if not can_participate(member, proposal):
+        raise TransitionRefused(403, PARTICIPATE_DENIED)
+    if PROPOSAL_LIFECYCLE.canonical(proposal.status) != "consent":
+        raise TransitionRefused(409, CONSENT_CLOSED)
+
+
+async def record_consent_position(session, proposal: Proposal, *, member: Member | None, position: str,
+                                  reason: str | None = None) -> tuple[ConsentRecord, ActOutcome]:
+    """Set `member`'s one position in the latest consent record (a change replaces it), then cascade.
+
+    `member` is the authenticated caller's row in the proposal's ecosystem (`can_participate`,
+    403 otherwise). Legacy duplicates the member owns are withdrawn, so one position counts. The caller commits.
+    """
+    _require_open_consent(proposal, member)
+    position = consent_position(position)
+    reason = (reason or "").strip() or None
+    if position not in CONSENT_POSITIONS:
+        raise TransitionRefused(400, POSITION_UNKNOWN)
+    if position == "object" and reason is None:
+        raise TransitionRefused(400, OBJECTION_REASON_REQUIRED)
+    if position == "stand_aside" and consent_mode(proposal) == "consensus":
+        raise TransitionRefused(400, STAND_ASIDE_IN_CONSENSUS)
+
+    record = await _latest_consent_record(session, proposal)
+    if record is None:
+        record = ConsentRecord(
+            id=uuid.uuid4(), proposal_id=proposal.id, consent_mode=consent_mode(proposal),
+            date=_dt.date.today(), quorum_met=False, outcome="pending",
+        )
+        session.add(record)
+        await session.flush()
+    rows = await _members_rows(session, record, member)
+    if not rows:
+        session.add(ConsentParticipant(
+            id=uuid.uuid4(), consent_record_id=record.id, member_id=member.id,
+            name=member.display_name, position=position, reason=reason, round=1,
+        ))
+    else:
+        *older, kept = rows
+        kept.name, kept.position, kept.reason = member.display_name, position, reason
+        for row in older:  # pre-dedupe duplicates (backfilled to this member) stay as withdrawn history
+            row.position = "withdrawn"
+    await session.flush()
+    return record, await _settle_consent(session, proposal, record, member)
+
+
+async def withdraw_consent_position(session, proposal: Proposal, *, member: Member | None) -> tuple[ConsentRecord, ActOutcome]:
+    """Withdraw `member`'s own position (an objection's author lifts it); the row stays as history."""
+    _require_open_consent(proposal, member)
+    record = await _latest_consent_record(session, proposal)
+    rows = await _members_rows(session, record, member) if record is not None else []
+    active = [row for row in rows if consent_position(row.position) not in _WITHDRAWN_POSITIONS]
+    if not active:
+        raise TransitionRefused(404, NO_POSITION_TO_WITHDRAW)
+    for row in active:
+        row.position = "withdrawn"
+    await session.flush()
+    return record, await _settle_consent(session, proposal, record, member)
+
+
+async def _settle_consent(session, proposal: Proposal, record: ConsentRecord, member: Member) -> ActOutcome:
+    """Run the cascade, then keep the record's stored quorum flag in step with the gate."""
+    outcome = await transition_proposal(session, proposal, caller=member)
+    if outcome.status == "consent":
+        record.quorum_met = outcome.gates["consent"]["positions"] >= (outcome.gates["consent"]["quorum"] or 0)
+    else:
+        record.quorum_met, record.outcome = True, "consented"
+    return outcome
+
+
+def proposal_next_moves(proposal: Proposal, gates: dict, caller: Member | None) -> list[dict]:
+    """The manual moves `caller` may request now, each with whether its gate is met (the UI's buttons)."""
+    if not can_manage_proposal(caller, proposal):
+        return []
+    moves = []
+    for target in PROPOSAL_LIFECYCLE.manual_targets(proposal.status):
+        move = PROPOSAL_LIFECYCLE.manual_move(proposal.status, target)
+        blocked = None
+        if move.steward_only and not can_confirm_ratification(caller, proposal):
+            if not is_proposal_author(caller, proposal):
+                continue
+            blocked = "needs_another_steward"  # the author sees who decides instead of a button
+        moves.append({
+            "to": target,
+            "ready": move.gate is None or bool(gates[move.gate]["met"]),
+            "gate": move.gate,
+            "note_required": move.note_required,
+            "steward_only": move.steward_only,
+            "blocked": blocked,
+        })
+    return moves
 
 
 async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecord | None:
@@ -497,8 +725,8 @@ async def record_proposal_decision(session, proposal: Proposal) -> DecisionRecor
             f"(min advice rounds: {policy['min_advice_rounds']}, consent required: "
             f"{policy['consent_required']}, test cases: {len(policy['test_cases'])}). "
             f"{advice_rounds} advice round(s), {len(participants)} consent position(s), "
-            f"{report_count} test report(s). Status advanced automatically as each "
-            f"gate's conditions were met."
+            f"{report_count} test report(s). The proposer closed advice, consent "
+            f"advanced when its gate was met, and a steward confirmed ratification."
         ),
         source_skill="act-process",
         artifact_type="proposal",
@@ -559,8 +787,9 @@ async def agreement_gate_status(session, agreement: Agreement) -> dict:
     summary = await agreement_consent_summary(session, agreement)
     consent_required = policy["consent_required"]
     quorum = policy["consent_quorum"]
+    # One quorum meaning: N members must take part. Undeclared, an agreement needs every participating member.
     consent_met = (not consent_required) or (
-        summary["complete"] and (quorum is None or summary["consented"] >= quorum)
+        summary["complete"] if quorum is None else summary["consented"] >= quorum
     )
 
     declared_cases: list[str] = policy["test_cases"]
@@ -583,6 +812,7 @@ async def agreement_gate_status(session, agreement: Agreement) -> dict:
             "consented": summary["consented"],
             "outstanding": summary["outstanding"],
             "quorum": quorum,
+            "quorum_source": "agreement" if quorum else "all_members",
         },
         "test": {
             "met": test_met,

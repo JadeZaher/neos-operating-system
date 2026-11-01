@@ -11,16 +11,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
-
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Domain, DomainElement, DomainMetric
 from neos_agent.messaging.queries import get_entity_discussions
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, escape_like, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -114,60 +111,8 @@ async def create_form(request: Request):
 
 @domains_bp.post("/")
 async def create_domain(request: Request):
-    """POST /dashboard/domains -- create domain from form data."""
-    form = request.form
-    eco_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if eco_id is None:
-        content = await render(
-            "dashboard/domains/form.html",
-            request=request,
-            domain=None,
-            error="Invalid or unauthorized ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        async with request.app.ctx.db() as session:
-            domain = Domain(
-                id=uuid.uuid4(),
-                ecosystem_id=eco_id,
-                domain_id=form.get("domain_id", ""),
-                version=form.get("version", "1.0"),
-                status="active",
-                purpose=form.get("purpose"),
-                current_steward=form.get("current_steward"),
-                created_by=form.get("created_by"),
-            )
-
-            # Link steward by member UUID if provided
-            steward_id = form.get("steward_id")
-            if steward_id:
-                try:
-                    domain.steward_id = uuid.UUID(steward_id)
-                except ValueError:
-                    pass
-
-            # Link parent domain if provided
-            parent_id = form.get("parent_domain_id")
-            if parent_id:
-                try:
-                    domain.parent_domain_id = uuid.UUID(parent_id)
-                except ValueError:
-                    pass
-
-            session.add(domain)
-            await session.commit()
-            domain_id = domain.id
-    except Exception:
-        logger.exception("Failed to create domain")
-        content = await render(
-            "dashboard/domains/form.html",
-            request=request,
-            domain=None,
-            error="Failed to create domain. Please check your input and try again.",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/domains/{domain_id}")
+    """POST /dashboard/domains -- retired (410): writes happen in the app."""
+    return retired_write(request, "/domains/new")
 
 
 @domains_bp.get("/<domain_id:uuid>")
@@ -261,64 +206,11 @@ async def edit_form(request: Request, domain_id: uuid.UUID):
 
 @domains_bp.put("/<domain_id:uuid>")
 async def update_domain(request: Request, domain_id: uuid.UUID):
-    """PUT /dashboard/domains/{domain_id} -- update domain."""
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            domain = await get_scoped_entity(session, Domain, domain_id, request)
-            if domain is None:
-                return html(
-                    await render(
-                        "dashboard/domains/detail.html",
-                        request=request,
-                        domain=None,
-                        error="Domain not found.",
-                    ),
-                    status=404,
-                )
-
-            if form.get("purpose"):
-                domain.purpose = form.get("purpose")
-            if form.get("current_steward"):
-                domain.current_steward = form.get("current_steward")
-            if form.get("status"):
-                domain.status = form.get("status")
-            if form.get("version"):
-                domain.version = form.get("version")
-            if form.get("created_by"):
-                domain.created_by = form.get("created_by")
-
-            steward_id = form.get("steward_id")
-            if steward_id:
-                try:
-                    domain.steward_id = uuid.UUID(steward_id)
-                except ValueError:
-                    pass
-
-            parent_id = form.get("parent_domain_id")
-            if parent_id:
-                try:
-                    domain.parent_domain_id = uuid.UUID(parent_id)
-                except ValueError:
-                    pass
-
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to update domain")
-        return html(
-            await render(
-                "dashboard/domains/form.html",
-                request=request,
-                domain=None,
-                error="Failed to update domain.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/domains/{domain_id}")
+    """PUT /dashboard/domains/{domain_id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/domains/{domain_id}/edit")
 
 
 @domains_bp.post("/<domain_id:uuid>")
 async def update_domain_post(request: Request, domain_id: uuid.UUID):
-    """POST /dashboard/domains/{id} — delegates to PUT for HTML form compat."""
-    return await update_domain(request, domain_id)
+    """POST /dashboard/domains/{id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/domains/{domain_id}/edit")

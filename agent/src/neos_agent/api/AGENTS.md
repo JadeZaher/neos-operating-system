@@ -66,8 +66,9 @@ Participation and management are separate:
 Advice integrity: blank advice is rejected with 400, because a blank entry would
 still count toward the advice gate. The author cannot advise their own proposal
 (409 `SELF_ADVICE_DENIED`, REST, MCP and chat), so they cannot advance it to
-consent alone. The advisor name always comes from the caller's member row, never from
-the request body.
+consent alone. Advice is taken only in the advice stage (409 `ADVICE_CLOSED`).
+The advisor name always comes from the caller's member row, never from
+the request body; the row also records `member_id`.
 
 The migration `n6a1d4f8b2c5` backfilled the link only where the proposer text
 matched exactly one member's display name in the same ecosystem. Always
@@ -116,29 +117,35 @@ for identity: `participant`, `declared_by`, `recorder`, `auditor`,
 |---|---|---|
 | `create_proposal` | a member row in the scoped ecosystem | author (`proposer_member_id`); `proposer` is display text |
 | `record_advice` | not the author (`is_proposal_author`) | advisor |
-| `record_consent_position` | `can_participate` | participant; `objection` stored as `object`; the gate cascades as in REST |
-| `update_proposal_status` | `transition_proposal` (manage rule, table, gate) | actor |
+| `record_consent_position` | `can_participate`, then `act_gates.record_consent_position` (one position per member, as REST) | participant |
+| `update_proposal_status` | `transition_proposal` (manage rule, table, steward-only, `note` for send-backs, gate); withdraw and ratify need confirmation | actor |
 | `create_agreement_draft` | `is_active_member_in` (REST: authorized ids) | proposer text defaults to the caller |
-| `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate) | conductor; the version never changes |
+| `update_agreement_status` | `agreements.transition_agreement` (ceremony steward, table, `evidence`, gate); active, sunset and archived need confirmation | conductor; the version never changes |
 | `create_decision_record` | `can_record_decision` (steward; no REST route, decisions are minted by ACT) | recorder |
-| `declare_emergency` | `can_declare_emergency` (any active member, owner decision) | declarer |
-| `create_exit_record` | `is_active_member_in`; only one's own exit (`EXIT_SELF_ONLY`) | the leaving member |
-| `create_conflict_case`, `triage_conflict`, `create_repair_agreement`, `create_safeguard_audit` | `is_active_member_in` the record's ecosystem (as REST) | reporter / auditor |
+| `declare_emergency` | `emergency.declare` (`can_declare_emergency`; pending until a co-signer); needs confirmation | declarer |
+| `create_exit_record` | `is_active_member_in`; only one's own exit (`EXIT_SELF_ONLY`); one open exit; needs confirmation | the leaving member |
+| `create_conflict_case`, `create_safeguard_audit` | `is_active_member_in` (as REST); parties resolved to member ids; the audit is a human-owned draft | reporter / auditor (`auditor_ids`) |
+| `triage_conflict`, `create_repair_agreement` | `can_triage_conflict` (a hidden case is not found); `CONFLICT_MOVES` | triager |
+| `join_domain` | active member; `missing_agreement_consents` (as `POST /domains/:id/participation`) | participant |
+| `submit_test_report` | `can_participate`, test stage; declared case names only | reporter (`reporter_member_id`) |
+| `withdraw_consent_position` | `act_gates.withdraw_consent_position` | the position's owner |
+| `record_agreement_evidence` | `is_active_member_in`, matching stage (as `POST /agreements/:id/ceremonies`) | `completed_by_member_id` |
 | `create_domain_draft` | `is_steward_in` (REST `require_ecosystem_role` mod) | `created_by` |
 | `create_ecosystem` | signed in (as REST) | founder joins as an active `co_creator` and stewards a core domain |
 
-Proposal tools accept the page's UUID as well as the `PROP-` key.
+Every lookup takes the page's UUID, the business key or the exact title, and
+results carry names, links, the engine's gates and a next step. Irreversible
+acts need the member's yes in a later chat turn. Details: `agent/AGENTS.md`.
 
 `update_agreement_status` used to keep its own table (`consent -> active`),
 skip the gates and evidence, and bump the version on advice, consent and
 active. The bump silently voided every member's consent, which is bound to
 `agreement.version`; it now calls the REST/MCP engine, so a ceremony records
 its `AgreementCeremony`, snapshots an `AgreementVersion`, and activation mints
-the commitment artifact. Deliberately unchanged here, for the governance wave
-(`uxqa/governance/review-core.md`): REST consent positions are not
-de-duplicated; an objection cannot be lifted; one passed test report ratifies. REST `POST /emergency/declare` still has no
-membership check (`emergency.py`, another lane); `can_declare_emergency` is
-the predicate to adopt there, and the co-signer joins it.
+the commitment artifact. Since G-ACT (see "ACT integrity (G-ACT)"), REST and
+MCP keep one consent position per member, an objection's author can lift it,
+and ratification needs a steward; chat `record_consent_position` calls the
+same `act_gates.record_consent_position` (G-Agent).
 
 ## ACT parity
 
@@ -151,11 +158,14 @@ same moves and leave the same status.
 | open draft -> advice | `POST /proposals/:id/status` | `transition_proposal` | `update_proposal_status` |
 | forward move with unmet gate | 409 + `gates` | `ValueError` with gates | refusal text |
 | advice | `POST /advice` (author refused) | `record_proposal_advice` | `record_advice` |
-| consent position | `POST /consent` (caller, body name ignored) | `submit_proposal_consent` | `record_consent_position` |
-| test report | `POST /test` | `submit_test_report` | none yet |
-| withdraw | manage rule | manage rule | manage rule |
+| consent position | `POST /consent` (caller, body name ignored, one per member) | `submit_proposal_consent` (same engine call) | `record_consent_position` (same engine call) |
+| close advice | `POST /status consent` (manage rule) | `transition_proposal` | `update_proposal_status` |
+| test report | `POST /test` (test stage, reporter recorded) | `submit_test_report` | `submit_test_report` |
+| ratify | `POST /status ratified` (steward only) | `transition_proposal` | `update_proposal_status` |
+| send back | `POST /status advice` + `note` | needs `note` (hand-off) | `update_proposal_status` + `note` |
+| withdraw | manage rule, non-terminal only | manage rule | manage rule |
 | agreement ceremony | `POST /agreements/:id/status` | `transition_agreement` | `update_agreement_status` (with `evidence`) |
-| agreement round / evidence | `POST /agreements/:id/ceremonies` | `record_agreement_ceremony` | none yet |
+| agreement round / evidence | `POST /agreements/:id/ceremonies` | `record_agreement_ceremony` | `record_agreement_evidence` |
 
 The agreement script also refuses short evidence, an unmet advice gate and a
 skipped stage on every surface, and checks that no surface changes the
@@ -413,3 +423,240 @@ Drift found while unifying, deliberately not changed in wave 0:
   Wave 2: add the membership status per ecosystem so the client applies the
   server's active-only rule exactly.
 
+
+## Conflict care and audits (G-Care)
+
+Owner defaults, each one constant in `policy.py` under "# G-Care":
+`CONFLICT_TRIAGE_MIN_ROLE` ("mod": who triages), `CONFLICT_PARTIES_CAN_VIEW`
+(True: named parties read the case). Audits default to a human auditor.
+
+- **Reporter.** `POST /conflicts` records the caller (`caller_in`, active member of the ecosystem, else 403); a body `reporter_id` is ignored.
+- **Who reads a case** (`policy.can_view_conflict`): reporter, facilitator, members named in `parties` (by member id only, `is_conflict_party`; labels never authorize), and triage stewards. Everyone else gets 404, in the list too (filtered in Python after the ecosystem scope; case volume is small).
+- **Who triages or moves a case** (`can_triage_conflict`): an active steward of the ecosystem or the case facilitator, never a named party. The reporter may correct title/description/domain or withdraw (status closed). Any other change is 403.
+- **Lifecycle** (`CONFLICT_MOVES` in `conflicts.py`): reported -> triaged -> in_progress -> resolved -> closed (resolved can reopen to in_progress). A move the table lacks is 409 with `allowed`. A status outside the table (a stray older writer) reads as stage "Needs a steward to review", never "Closed", and `allowed_moves` lets triage put it at any stage (`UNKNOWN_STATUS_MOVES`); the assistant should use `allowed_moves` too. Resolving needs a summary (400) and stamps `resolved_date`. A facilitator must be an active member who is not a party.
+- **Stage text.** `conflict_stage` gives `stage`, `next_step` and `decided_by`; the UI shows these instead of a promised response time. Detail adds `caller_can_triage` and `allowed_next`.
+- **Repair.** Triage authority records repair. Check-ins default to +30/60/90 days; `next_checkin_date` and `next_checkin_overdue` are computed. `status: fulfilled` needs `confirmed_by_parties: true` (400 otherwise) and the server sets `completed_date`.
+- **Audits.** `POST /safeguards/audits` starts a draft with the caller as auditor (`auditor_ids` holds their member id; no AI placeholder text). Only that auditor edits (`PUT /audits/:id`) or publishes (`POST /audits/:id/publish`, 403 for others, 409 once published). Publishing needs at least one rated indicator and sets the score as the mean of `INDICATOR_STATUS_POINTS`; status becomes `completed`. `GET /safeguards` reads its score from published audits only. An assistant may draft but not publish. AI analysis is optional and never a state a draft waits in.
+- Compliance summaries name an open case by id only, never its title.
+- Revision `r6c1e8a4f2d7` schedules check-ins for old unscheduled repairs (from the migration date when the 30-day one is already past), maps the legacy statuses `open` -> `reported` and `in_mediation`/`escalated` -> `in_progress`, clears the old placeholder text on draft audits, and adds the reporter index. It adds no columns (alembic/AGENTS.md "r6c1e8a4f2d7").
+
+## Emergency and exit (G-Safety)
+
+Owner decision (2026-10-31): any ACTIVE member of the ecosystem may declare an
+emergency, but it opens only when a second active member co-signs. The
+transition functions in `emergency.py` (`declare`, `cosign`, `withdraw`,
+`end_authority`, `record_review`, `complete_recovery_for`, `begin_recovery`,
+`expire_if_stale`) are the one implementation: REST calls them, the cron
+calls `begin_recovery`/`expire_if_stale`, and the assistant should call
+`declare`/`cosign` too (it still opens directly; hand-off to G-Agent). Each
+raises `ApiError`; none commits. Rules live in `policy.py` under `# G-Safety`.
+
+| State | Move | Who (policy) |
+|---|---|---|
+| (none) -> `pending` | `POST /declare {ecosystem_id, reason, auto_revert_days}` | `can_declare_emergency`: active member; declarer = caller |
+| `pending` -> `open` | `POST /:id/cosign` | `can_cosign_emergency`: another active member; the timer starts here |
+| `pending` -> `withdrawn` | `POST /:id/withdraw`; cron after `COSIGN_WINDOW_HOURS` (48) | declarer or steward |
+| `open` -> `half_open` | `POST /:id/resolve`; cron when `auto_revert_at` passes | declarer, co-signer or steward (`can_end_emergency`) |
+| `half_open` (review) | `POST /:id/review {outcome: scheduled\|complete, summary}` writes `post_review_status` | `can_review_emergency`: active, and not the declarer, co-signer or whoever ended it |
+| `half_open` -> `closed` | `POST /:id/complete-recovery` (409 + `next_step` until the review is complete) | `can_complete_recovery`: active steward |
+
+Bounds are module constants, sent to the client as `GET /emergency` `limits`:
+`DEFAULT_AUTHORITY_DAYS` 7, `MAX_AUTHORITY_DAYS` 30 (the skill's default
+maximum; 400 above it), `REVIEW_SCHEDULE_DAYS` 14, `RECOVERY_WINDOW_DAYS` 30.
+
+Why it is shaped this way:
+
+- One live emergency per ecosystem (`ACTIVE_STATES` = pending, open,
+  half_open), enforced by the database: the partial unique index
+  `uq_emergency_states_one_live`. `declare` locks the live rows it can see,
+  but two first declarations see none, so the index decides: the loser's
+  insert (in a savepoint, so an assistant turn keeps its other work) fails and
+  becomes 409 `JUST_DECLARED`. `cosign` also refuses (409 with `emergency_id`)
+  while another emergency is live, for a database without the index. A pending declaration past its co-sign window is dead at once
+  (`live_condition`, `describe` reports `withdrawn`), before the cron flips the
+  row, so a stale declaration never blocks a new one; `declare` flips it.
+- `auto_revert_at` only ever means "authority ends". Recovery dates derive from
+  `half_open_entered_at` (`review_schedule_by` +14 d, `review_due_at` +30 d), so
+  the page never shows a ratification deadline under the authority label.
+- Recovery does not auto-close (owner default). Past `review_due_at` the
+  payload says `review_overdue` and the next step starts "Review overdue."; the
+  client shows it to stewards. The cron never touches `half_open` rows.
+- The review excludes emergency actors (post-emergency-review step 1);
+  `policy.emergency_actor_ids` reads the declarer, co-signer and the
+  `actor_member_id` of the `half_open_transition` log entry.
+- Detail and the banner feed carry `phase` (pending, open, recovery, closed,
+  withdrawn), the dates above, a plain `next_step` and caller flags
+  (`caller_can_cosign`, `_withdraw`, `_end`, `_review`, `_complete_recovery`,
+  `caller_is_steward`). `GET /emergency` lists the live emergency per SELECTED
+  ecosystem (`active`, `current` = the first) and `caller_can_declare_in`;
+  `GET /emergency/active` lists live ones across EVERY authorized ecosystem,
+  for the all-member banner.
+- The legacy `/dashboard/emergency/declare` and `/:id/resolve` views answer
+  410 and change nothing: they skipped the co-signer and jumped open -> closed
+  (every legacy write is retired the same way: "Legacy dashboard (views/)").
+- Revision `q2a7c5e9d1b3` widens the state CHECK, adds the live index after
+  retiring duplicate live rows (alembic/AGENTS.md "q2a7c5e9d1b3"), and adds
+  `declared_by_member_id`, `co_signer_member_id`, `co_signed_by`,
+  `co_signed_at`, `authority_days` (batch rebuild on SQLite).
+
+Exit (`exit.py`): only the leaver files (`member_id` is the caller; another
+id is 403 `EXIT_SELF_ONLY`; one open exit at a time, 409 with `exit_id`) and
+only the leaver cancels. A steward who is not the leaver starts the handoff
+(`declared` -> `unwinding`, and becomes `coordinator_id`) and confirms the
+departure (`completed`), which sets the member `exited` with a
+`MemberStatusTransition`, so they drop out of the agreement-consent
+participating set. A move loads the exit row `FOR UPDATE`, so two stewards
+confirming at once run one after the other: the second re-reads `completed`
+and gets 409, and only one `MemberStatusTransition` is written. `EXIT_MOVES` is the table; free-text statuses are 400, so
+the old client "export" that wrote `export_requested` into the status cannot.
+The handoff ends by `target_completion_date` (30 days, 7 urgent; the skill's
+maximum). Payloads carry `member_name`, `reason` (`departure_notice`),
+`next_step`, `caller_is_leaver` and `allowed_next`. The leaver can still open
+their own record after leaving (no scope there any more).
+
+`GET /exit/:id/portable-record` (leaver only: 403 in scope, else 404) returns
+the person's own record across all memberships: memberships, proposals
+authored, advice given, consent positions, test reports filed, agreements
+consented. It sets `data_export_requested`/`data_export_completed` and never
+the status. Rows are matched on their member-id columns only
+(`consent_participants.member_id`, `advice_entries.member_id`,
+`test_reports.reporter_member_id`). Rows without an id are never matched by
+display name: names are editable, so after a rename a name match would hand
+the leaver a namesake's rows. Unlinked rows under the member's current name
+are left out and counted in `omitted`. Legacy consent rows whose name was
+unique when `p8d4f1b6e3a9` ran were linked by that revision (a frozen match a
+later rename cannot move); legacy advice rows were not, so they stay omitted
+until a revision backfills `advice_entries.member_id` the same way.
+
+## ACT integrity (G-ACT)
+
+Owner decisions live since 2026-10-31; the table and engine rules are in
+`services/AGENTS.md` "ACT lifecycle" and "One gate vocabulary". What the API
+adds on top:
+
+| Route | Rule |
+|---|---|
+| `POST /proposals/:id/consent` | the caller's row in the proposal's ecosystem only (403 otherwise; no shared-ecosystem fallback); one position per member, owned by `member_id`, a second call replaces it; `member_name` is gone from the schema (ignored if sent) |
+| `DELETE /proposals/:id/consent` | withdraw the caller's own position (`withdrawn`); the only way an objection is lifted, so only its author lifts it |
+| `POST /proposals/:id/advice` | 409 outside advice; records `member_id` |
+| `POST /proposals/:id/test` | 409 outside test; records `reporter_member_id` (detail adds `reporter_name`) |
+| `PUT /proposals/:id` | author or steward; outside draft/advice any changed value is 409 `PROPOSAL_LOCKED` (see "The text members decide on") |
+| `POST /proposals/:id/status` | `{status, note}`; `note` required to send back (consent/test -> advice); `ratified` needs a steward who is not the author (`policy.can_confirm_ratification`; the author-steward, or on a legacy proposal the steward its proposer text names, gets 403 `code: NEEDS_ANOTHER_STEWARD`); no withdrawal once ratified or withdrawn |
+| `POST /proposals/:id/register-agreement` | `agreements.register_ratified_proposal`; `policy.can_register_agreement` (active mod+ of the ecosystem); proposal row locked; 409 unless ratified, unregistered and with captured `ratified_text` |
+| `PUT /members/:id` | self only; a `profile` that confers administration (co_creator, builder) is 403 `PROFILE_GRANT_ONLY` unless already held (`policy.can_choose_own_profile`); `POST /members` likewise |
+| `PUT /members/:id/role` | `policy.can_assign_role` (owner decision) and a recorded `MemberStatusTransition` |
+| `PUT /members/:id/profile-grant` | `policy.can_grant_profile`: whoever may make the member an admin, never on yourself; recorded like a role grant |
+| `POST /onboarding/:member_id/ceremony` | `policy.can_record_onboarding_consent`: the member or a steward of their ecosystem, else 403 |
+
+Proposal detail adds `allowed_next` (the caller's manual moves with `ready`),
+`caller_position` (`{position, reason}` in the latest consent record),
+`caller_can_register`, and briefs (`id`, `agreement_id`, `title`, `status`,
+`version`) for `governing_agreement`, `amends_agreement` and
+`registered_agreement`. Sub-records are serialized oldest first, so the last
+consent record is the one the gate reads. A governing or amended agreement
+must be in force (`active`, `under_review`); `decision_type` is `consent` or
+`consensus`.
+
+### The text members decide on
+
+From consent on, members are deciding on the proposal as written, so `PUT
+/proposals/:id` (author and steward alike) refuses any changed value outside
+draft and advice with 409 `PROPOSAL_LOCKED`; the edit form resends every field,
+so an unchanged resend (trimmed text, empty == unset) is not a change. The
+only way to change the text after advice is "Send back for revision", which
+reopens advice (new minor version, fresh advice and consent rounds). Entering
+`ratified` copies the trimmed `proposed_change` into `proposals.ratified_text`
+(`act_gates._enter_proposal_stage`, so REST, MCP and chat all capture it), and
+registration reads only that column: a later write to `proposed_change` by a
+route that skips this lock (legacy views, direct SQL) never reaches the
+registry. Rows ratified before the column existed were backfilled by
+`p8d4f1b6e3a9` (alembic/AGENTS.md). A proposal ratified with no captured text
+(for instance by the legacy dashboard, which sets the status directly) cannot
+be registered (409).
+
+Legacy proposals (`proposer_member_id` NULL) are steward-managed and their
+`proposer` is free text, so `can_confirm_ratification` also refuses the steward
+whose display name equals that text (`policy.is_legacy_proposer_named`, trimmed,
+case-insensitive). The name is only ever an extra refusal: a matching name never
+grants management or anything else (display names are self-editable).
+
+### Ratified is not registered
+
+Ratification mints the decision record; it does not touch the registry. A
+steward's "Register as agreement" does: with `amends_agreement_id` it snapshots
+the agreement, replaces its text with the proposal's `ratified_text`, bumps
+the version (members' consent is bound to the version, so they re-attest) and
+writes an `AmendmentRecord` (`amendment_type` "proposal", `status`
+"ratified"); without one it creates an `active` agreement from the proposal
+(type mapped from the proposal type, the effective ACT policy copied, no
+participation scopes). Either way an `AgreementCeremony` (outcome
+"registered") names the proposal and `proposals.registered_agreement_id`
+links them. The proposal row (and an amended agreement) is read `FOR UPDATE`
+before the "already registered" check, so two stewards pressing Register at
+once produce one agreement and a 409. Agreement detail adds `caller_can_propose_change` for in-force
+agreements; the page opens a proposal pre-filled to amend it.
+
+`PUT /agreements/:id` bumps the version only when `title` or `text` changes
+(`VERSIONED_FIELDS`): a review-date edit used to void every attestation.
+`agreements.record_member_consent` is the one consent write (row, alignment
+ledger, pending-membership activation); REST and MCP `attest_agreement_consent`
+both call it, so MCP consent now credits the ledger and refuses outside the
+consent-open stages.
+
+### Role grants (owner decision)
+
+`can_assign_role(caller, target, role, *, ecosystem_has_owner, founder_id)`:
+only roles below your own rank, only to members below it, only an owner makes
+an owner, anyone may step down. The bootstrap (`policy.can_bootstrap_roles`)
+belongs to the ecosystem's founder alone, and only while the ecosystem has no
+owner: the founder of a new ecosystem is a `user` with the co_creator profile,
+so this is how the first owner appears. Founding is recorded as the first
+member row (`ecosystems.create_ecosystem` and the chat tool insert it in the
+founding transaction); `members._bootstrap_context` reads the oldest row
+(`created_at`, then `id`). Before 2026-10-31 any co_creator/builder could
+bootstrap, and members chose their own profile, so anyone could make
+themselves owner of an ownerless ecosystem.
+
+Profiles that confer administration (`policy.PROFILE_ADMINS`: co_creator,
+builder; also honoured by `helpers.require_admin`) are therefore never
+self-chosen: `PUT /members/:id` and `POST /members` refuse them unless the row
+already holds that profile. `PUT /members/:id/profile-grant` sets any
+`MEMBER_PROFILES` value on another member for whoever could make them an admin
+(`can_grant_profile` = `can_assign_role(..., "admin")`, so owners, or the
+founder before there is one; admins cannot, as they cannot mint admins).
+
+Every role or profile change writes the smallest existing record, a
+`MemberStatusTransition` with `trigger` "role_grant" / "profile_grant",
+`from_status`/`to_status` "role:<tier>" / "profile:<value>" and the granter's
+member id in `actor_member_id` (steward status moves record it too).
+`GET /members/:id/profile` returns both kinds as `role_history` (`kind`,
+`granted_by` = the granter's CURRENT display name, read from the id: an
+editable name stored as text would let anyone rewrite who granted what), with
+`caller_assignable_roles` and `caller_grantable_profiles` for the pickers. A
+no-op grant writes nothing.
+
+## Legacy dashboard (views/)
+
+The server-rendered `/dashboard/*` and `/ecosystems` pages share the app's
+session cookie, so any write they still performed bypassed every rule above
+(`/phase` set any status including ratified, consent was recorded under a
+form-supplied name, any exit or conflict status could be written). The app is
+where governance changes now:
+
+- Every legacy write route (POST/PUT on proposals incl. advice, consent and
+  phase; agreements; conflicts; exit; members incl. status and onboarding;
+  onboarding ceremony; domains; ecosystems; safeguards audits; emergency)
+  answers 410 through `views/_rendering.retired_write`, changes nothing, and
+  links the matching app page (`FRONTEND_URL` + path). The inventory is the
+  `RETIRED` table in `tests/test_legacy_dashboard.py`; a test fails when a
+  legacy blueprint registers a write route that is not in it. The chat
+  housekeeping routes (`/chat/conversations` rename and archive) stay.
+- Legacy reads of conflict cases apply `policy.can_view_conflict` exactly like
+  `GET /api/v1/conflicts`: a non-reader gets 404 on the detail page and never
+  sees the case in the list or the htmx filter fragment.
+- The legacy chat (`views/chat.py`) runs tools through `run_legacy_tool`,
+  which passes `confirmed_keys=frozenset()`: it does not track which act the
+  member confirmed in an earlier turn, so the model's `confirmed: true` is
+  never trusted and the irreversible acts (`CONFIRMATION_TOOLS`) cannot happen
+  there; the tool result tells the model to send the member to the app's
+  assistant.

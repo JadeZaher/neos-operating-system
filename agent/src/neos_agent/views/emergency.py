@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
 
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from neos_agent.db.models import EmergencyState
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, escape_like
+from neos_agent.views._rendering import render, get_selected_ecosystem_ids, get_scoped_entity, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -115,92 +113,20 @@ async def detail(request: Request, emergency_id: uuid.UUID):
     return html(content)
 
 
+# Legacy write routes: they skipped the co-signer and jumped open -> closed past Recovery.
+LEGACY_WRITE_REFUSAL = (
+    "Emergencies are declared, co-signed, ended and closed in the NEOS app, "
+    "which requires a co-signer and a Recovery review. Nothing was changed here."
+)
+
+
 @emergency_bp.post("/declare")
 async def declare_emergency(request: Request):
-    """POST /dashboard/emergency/declare -- declare a new emergency.
-
-    Creates a circuit breaker OPEN state with a 30-day auto-revert.
-    """
-    form = request.form
-    eco_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if eco_id is None:
-        content = await render(
-            "dashboard/emergency/dashboard.html",
-            request=request,
-            active_page="emergency",
-            error="Invalid or unauthorised ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        now = datetime.utcnow()
-        auto_revert_days = int(form.get("auto_revert_days", 30))
-
-        async with request.app.ctx.db() as session:
-            state = EmergencyState(
-                id=uuid.uuid4(),
-                ecosystem_id=eco_id,
-                state="open",
-                declared_by=form.get("declared_by"),
-                declared_at=now,
-                notes=form.get("reason", ""),
-                auto_revert_at=now + timedelta(days=auto_revert_days),
-                pre_authorized_roles=[],
-                actions_log=[],
-            )
-            session.add(state)
-            await session.commit()
-            new_id = state.id
-    except Exception:
-        logger.exception("Failed to declare emergency")
-        content = await render(
-            "dashboard/emergency/dashboard.html",
-            request=request,
-            current_state=None,
-            history=[],
-            error="Failed to declare emergency.",
-            active_page="emergency",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/emergency/{new_id}")
+    """POST /dashboard/emergency/declare -- retired (410); see LEGACY_WRITE_REFUSAL."""
+    return retired_write(request, "/emergency", LEGACY_WRITE_REFUSAL)
 
 
 @emergency_bp.post("/<emergency_id:uuid>/resolve")
 async def resolve_emergency(request: Request, emergency_id: uuid.UUID):
-    """POST /dashboard/emergency/{id}/resolve -- resolve (close) an emergency."""
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            state = await get_scoped_entity(session, EmergencyState, emergency_id, request)
-            if state is None:
-                return html(
-                    await render(
-                        "dashboard/emergency/dashboard.html",
-                        request=request,
-                        current_state=None,
-                        history=[],
-                        error="Emergency record not found.",
-                        active_page="emergency",
-                    ),
-                    status=404,
-                )
-
-            state.state = "closed"
-            state.closed_at = datetime.utcnow()
-            await session.commit()
-            logger.info("Emergency %s resolved", emergency_id)
-    except Exception:
-        logger.exception("Failed to resolve emergency")
-        return html(
-            await render(
-                "dashboard/emergency/dashboard.html",
-                request=request,
-                current_state=None,
-                history=[],
-                error="Failed to resolve emergency.",
-                active_page="emergency",
-            ),
-            status=500,
-        )
-
-    return redirect("/dashboard/emergency")
+    """POST /dashboard/emergency/{id}/resolve -- retired (410): it used to skip Recovery."""
+    return retired_write(request, f"/emergency/{emergency_id}", LEGACY_WRITE_REFUSAL)

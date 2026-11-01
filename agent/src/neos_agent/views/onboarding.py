@@ -9,19 +9,15 @@ Tracks per-section consent with a 48-hour cooling-off period.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
-from datetime import date, datetime, timedelta, timezone
-
 from sanic import Blueprint, html
 from sanic.request import Request
-from sanic.response import redirect
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from neos_agent.db.models import MemberOnboarding, Member
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, retired_write
 
 logger = logging.getLogger(__name__)
 
@@ -66,40 +62,6 @@ UAF_SECTIONS = [
         "step": 6,
     },
 ]
-
-
-def apply_section_consent(onboarding: MemberOnboarding, section_key: str, now: datetime) -> bool:
-    """Record consent for a single UAF section on an onboarding record.
-
-    Mutates the onboarding object in-place (section_consents, completion_percentage,
-    cooling-off dates). Caller must commit the session.
-
-    Returns True if all 6 sections are now consented.
-    """
-    consents = onboarding.section_consents or {}
-    if isinstance(consents, str):
-        consents = json.loads(consents)
-    consents[section_key] = {
-        "consented_at": now.isoformat(),
-        "consented": True,
-    }
-    onboarding.section_consents = consents
-
-    all_consented = all(
-        s["key"] in consents and consents[s["key"]].get("consented")
-        for s in UAF_SECTIONS
-    )
-    if all_consented and not onboarding.cooling_off_start:
-        onboarding.cooling_off_start = now.date()
-        onboarding.cooling_off_end = (now + timedelta(hours=48)).date()
-        onboarding.consent_date = now.date()
-
-    consented_count = sum(
-        1 for s in UAF_SECTIONS
-        if s["key"] in consents and consents[s["key"]].get("consented")
-    )
-    onboarding.completion_percentage = int((consented_count / len(UAF_SECTIONS)) * 100)
-    return all_consented
 
 
 # ---------------------------------------------------------------------------
@@ -200,152 +162,17 @@ async def ceremony(request: Request, onboarding_id: uuid.UUID):
 
 @onboarding_bp.post("/ceremony/<onboarding_id:uuid>/consent")
 async def record_consent(request: Request, onboarding_id: uuid.UUID):
-    """POST /dashboard/onboarding/ceremony/{id}/consent -- record consent for a UAF section.
-
-    After all 6 sections are consented, a 48-hour cooling-off period starts.
-    """
-    form = request.form
-    section_key = form.get("section_key")
-
-    if not section_key:
-        return redirect(f"/dashboard/onboarding/ceremony/{onboarding_id}")
-
-    try:
-        now = datetime.utcnow()
-        async with request.app.ctx.db() as session:
-            onboarding = await session.get(MemberOnboarding, onboarding_id)
-            if onboarding is None:
-                return redirect("/dashboard/onboarding")
-
-            # Verify ecosystem scope through parent member
-            member = await session.get(Member, onboarding.member_id)
-            eco_ids = get_selected_ecosystem_ids(request)
-            if not eco_ids or member is None or member.ecosystem_id not in eco_ids:
-                return redirect("/dashboard/onboarding")
-
-            apply_section_consent(onboarding, section_key, now)
-
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to record consent")
-        return redirect(f"/dashboard/onboarding/ceremony/{onboarding_id}")
-
-    return redirect(f"/dashboard/onboarding/ceremony/{onboarding_id}")
+    """POST /dashboard/onboarding/ceremony/{id}/consent -- retired (410): writes happen in the app."""
+    return retired_write(request, "/onboarding")
 
 
 @onboarding_bp.post("/start")
 async def start_onboarding(request: Request):
-    """POST /dashboard/onboarding/start -- start a new onboarding process."""
-    form = request.form
-    try:
-        member_id = uuid.UUID(form.get("member_id"))
-    except (ValueError, TypeError):
-        content = await render(
-            "dashboard/onboarding/list.html",
-            request=request,
-            onboardings=[],
-            error="Invalid member ID.",
-            active_page="onboarding",
-        )
-        return html(content, status=400)
-    try:
-        async with request.app.ctx.db() as session:
-            # Verify the member belongs to one of the user's selected ecosystems
-            member = await session.get(Member, member_id)
-            eco_ids = get_selected_ecosystem_ids(request)
-            if member is None or not eco_ids or member.ecosystem_id not in eco_ids:
-                content = await render(
-                    "dashboard/onboarding/list.html",
-                    request=request,
-                    onboardings=[],
-                    error="Member not found or not in your selected ecosystems.",
-                    active_page="onboarding",
-                )
-                return html(content, status=400)
-            onboarding = MemberOnboarding(
-                id=uuid.uuid4(),
-                member_id=member_id,
-                facilitator=form.get("facilitator"),
-                section_consents={},
-                completion_percentage=0,
-            )
-            session.add(onboarding)
-            await session.commit()
-            new_id = onboarding.id
-    except Exception:
-        logger.exception("Failed to start onboarding")
-        content = await render(
-            "dashboard/onboarding/list.html",
-            request=request,
-            onboardings=[],
-            error="Failed to start onboarding.",
-            active_page="onboarding",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/onboarding/ceremony/{new_id}")
+    """POST /dashboard/onboarding/start -- retired (410): writes happen in the app."""
+    return retired_write(request, "/onboarding")
 
 
 @onboarding_bp.post("/ceremony/<onboarding_id:uuid>/finalize")
 async def finalize_onboarding(request: Request, onboarding_id: uuid.UUID):
-    """POST /dashboard/onboarding/ceremony/{id}/finalize -- complete onboarding.
-
-    Only succeeds if all sections are consented and cooling-off period has passed.
-    """
-    try:
-        now = datetime.utcnow()
-        async with request.app.ctx.db() as session:
-            onboarding = await session.get(MemberOnboarding, onboarding_id)
-            if onboarding is None:
-                return redirect("/dashboard/onboarding")
-
-            # Verify ecosystem scope through parent member
-            member = await session.get(Member, onboarding.member_id)
-            eco_ids = get_selected_ecosystem_ids(request)
-            if not eco_ids or member is None or member.ecosystem_id not in eco_ids:
-                return redirect("/dashboard/onboarding")
-
-            # Verify all 6 UAF sections are consented
-            consents = onboarding.section_consents or {}
-            if isinstance(consents, str):
-                consents = json.loads(consents)
-            all_consented = all(
-                s["key"] in consents and consents[s["key"]].get("consented")
-                for s in UAF_SECTIONS
-            )
-            if not all_consented:
-                content = await render(
-                    "dashboard/onboarding/ceremony.html",
-                    request=request,
-                    onboarding=onboarding,
-                    uaf_sections=UAF_SECTIONS,
-                    error="All 6 UAF sections must be consented before finalizing.",
-                    active_page="onboarding",
-                )
-                return html(content, status=400)
-
-            # Verify cooling-off period has passed
-            if not onboarding.cooling_off_end or now.date() < onboarding.cooling_off_end:
-                content = await render(
-                    "dashboard/onboarding/ceremony.html",
-                    request=request,
-                    onboarding=onboarding,
-                    uaf_sections=UAF_SECTIONS,
-                    error="Cooling-off period has not yet passed.",
-                    active_page="onboarding",
-                )
-                return html(content, status=400)
-
-            onboarding.completion_percentage = 100
-
-            # Update the member's status to active
-            member = await session.get(Member, onboarding.member_id)
-            if member:
-                member.current_status = "active"
-
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to finalize onboarding")
-        return redirect(f"/dashboard/onboarding/ceremony/{onboarding_id}")
-
-    return redirect("/dashboard/onboarding")
+    """POST /dashboard/onboarding/ceremony/{id}/finalize -- retired (410): writes happen in the app."""
+    return retired_write(request, "/onboarding")

@@ -17,11 +17,8 @@ ASYNC SESSION SAFETY NOTES:
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
-from datetime import date, datetime, timedelta, timezone
-
 from sanic import Blueprint, html
 from sanic.request import Request
 from sanic.response import redirect
@@ -31,10 +28,9 @@ from neos_agent.db.models import (
     Member,
     MemberOnboarding,
     MemberStatusTransition,
-    User,
 )
-from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, validate_ecosystem_id, html_fragment, escape_like
-from neos_agent.views.onboarding import UAF_SECTIONS, apply_section_consent
+from neos_agent.views._rendering import render, parse_pagination, get_selected_ecosystem_ids, get_scoped_entity, escape_like, retired_write
+from neos_agent.views.onboarding import UAF_SECTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +74,6 @@ def _is_own_profile(request: Request, member_id: uuid.UUID) -> bool:
     if current_user is None:
         return False
     return current_user.id == member_id
-
-
-def _parse_comma_list(raw: str | None) -> list[str] | None:
-    """Parse a comma-separated string into a list of trimmed non-empty strings."""
-    if not raw:
-        return None
-    items = [s.strip() for s in raw.split(",") if s.strip()]
-    return items if items else None
 
 
 # ---------------------------------------------------------------------------
@@ -135,50 +123,8 @@ async def create_form(request: Request):
 
 @members_bp.post("/")
 async def create_member(request: Request):
-    """POST /dashboard/members -- create member from form data."""
-    form = request.form
-    eco_id = validate_ecosystem_id(form.get("ecosystem_id"), request)
-    if eco_id is None:
-        content = await render(
-            "dashboard/members/form.html",
-            request=request,
-            member=None,
-            error="Invalid or unauthorized ecosystem.",
-        )
-        return html(content, status=403)
-    try:
-        async with request.app.ctx.db() as session:
-            user = User(
-                id=uuid.uuid4(),
-                display_name=form.get("display_name", ""),
-                phone=form.get("phone") or None,
-            )
-            session.add(user)
-            await session.flush()
-            member = Member(
-                id=uuid.uuid4(),
-                user_id=user.id,
-                ecosystem_id=eco_id,
-                member_id=form.get("member_id", ""),
-                display_name=form.get("display_name", ""),
-                current_status="prospective",
-                profile=form.get("profile"),
-                notes=form.get("notes"),
-            )
-            session.add(member)
-            await session.commit()
-            member_id = member.id
-    except Exception:
-        logger.exception("Failed to create member")
-        content = await render(
-            "dashboard/members/form.html",
-            request=request,
-            member=None,
-            error="Failed to create member. Please check your input and try again.",
-        )
-        return html(content, status=400)
-
-    return redirect(f"/dashboard/members/{member_id}")
+    """POST /dashboard/members -- retired (410): writes happen in the app."""
+    return retired_write(request, "/members/new")
 
 
 @members_bp.get("/<member_id:uuid>")
@@ -274,233 +220,29 @@ async def edit_form(request: Request, member_id: uuid.UUID):
 
 @members_bp.put("/<member_id:uuid>")
 async def update_member(request: Request, member_id: uuid.UUID):
-    """PUT /dashboard/members/{member_id} -- update member (own profile only)."""
-    if not _is_own_profile(request, member_id):
-        return redirect(f"/dashboard/members/{member_id}")
-    form = request.form
-    try:
-        async with request.app.ctx.db() as session:
-            member = await get_scoped_entity(session, Member, member_id, request)
-            if member is None:
-                return html(
-                    await render(
-                        "dashboard/members/detail.html",
-                        request=request,
-                        member=None,
-                        error="Member not found.",
-                    ),
-                    status=404,
-                )
-
-            if form.get("display_name"):
-                member.display_name = form.get("display_name")
-            if form.get("profile"):
-                member.profile = form.get("profile")
-            if form.get("phone"):
-                user = await session.get(User, member.user_id)
-                if user:
-                    user.phone = form.get("phone")
-            if form.get("notes"):
-                member.notes = form.get("notes")
-            if form.get("onboarding_status"):
-                member.onboarding_status = form.get("onboarding_status")
-            if form.get("kyc_status"):
-                member.kyc_status = form.get("kyc_status")
-
-            # Skills and interests — always set (allows clearing)
-            member.skills_offered = _parse_comma_list(form.get("skills_offered"))
-            member.skills_needed = _parse_comma_list(form.get("skills_needed"))
-            member.interests = _parse_comma_list(form.get("interests"))
-
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to update member")
-        return html(
-            await render(
-                "dashboard/members/form.html",
-                request=request,
-                member=None,
-                error="Failed to update member.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/members/{member_id}")
+    """PUT /dashboard/members/{member_id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/members/{member_id}/edit")
 
 
 @members_bp.post("/<member_id:uuid>")
 async def update_member_post(request: Request, member_id: uuid.UUID):
-    """POST /dashboard/members/{id} -- delegates to PUT handler for HTML form compatibility."""
-    return await update_member(request, member_id)
+    """POST /dashboard/members/{id} -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/members/{member_id}/edit")
 
 
 @members_bp.post("/<member_id:uuid>/status")
 async def status_transition(request: Request, member_id: uuid.UUID):
-    """POST /dashboard/members/{member_id}/status -- lifecycle status transition.
-
-    Requires form fields: new_status. Optional: trigger, notes.
-    Valid statuses: prospective, onboarding, active, inactive, exiting, exited.
-    """
-    form = request.form
-    new_status = form.get("new_status")
-    trigger = form.get("trigger", "")
-    notes = form.get("notes", "")
-
-    if not new_status:
-        return html(
-            await render(
-                "dashboard/members/detail.html",
-                request=request,
-                member=None,
-                error="new_status is required for status transition.",
-            ),
-            status=400,
-        )
-
-    try:
-        async with request.app.ctx.db() as session:
-            member = await get_scoped_entity(session, Member, member_id, request)
-            if member is None:
-                return html(
-                    await render(
-                        "dashboard/members/detail.html",
-                        request=request,
-                        member=None,
-                        error="Member not found.",
-                    ),
-                    status=404,
-                )
-
-            old_status = member.current_status
-
-            # Record the transition
-            transition = MemberStatusTransition(
-                id=uuid.uuid4(),
-                member_id=member_id,
-                from_status=old_status,
-                to_status=new_status,
-                date=date.today(),
-                trigger=trigger,
-                notes=notes,
-            )
-            session.add(transition)
-
-            member.current_status = new_status
-            await session.commit()
-
-            logger.info(
-                "Member %s status: %s -> %s (trigger: %s)",
-                member_id, old_status, new_status, trigger,
-            )
-    except Exception:
-        logger.exception("Failed to transition member status")
-        return html(
-            await render(
-                "dashboard/members/detail.html",
-                request=request,
-                member=None,
-                error="Failed to update member status.",
-            ),
-            status=500,
-        )
-
-    return redirect(f"/dashboard/members/{member_id}")
+    """POST /dashboard/members/{member_id}/status -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/members/{member_id}")
 
 
 @members_bp.post("/<member_id:uuid>/onboarding/consent")
 async def onboarding_consent(request: Request, member_id: uuid.UUID):
-    """POST /dashboard/members/{member_id}/onboarding/consent
-
-    HTMX endpoint: records consent for a UAF section and returns the
-    updated onboarding checklist fragment.
-    """
-    if not _is_own_profile(request, member_id):
-        return redirect(f"/dashboard/members/{member_id}")
-
-    section_key = request.form.get("section_key")
-    if not section_key:
-        return redirect(f"/dashboard/members/{member_id}")
-
-    try:
-        now = datetime.utcnow()
-        async with request.app.ctx.db() as session:
-            member = await get_scoped_entity(session, Member, member_id, request)
-            if member is None:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            onboarding_result = await session.execute(
-                select(MemberOnboarding)
-                .where(MemberOnboarding.member_id == member_id)
-            )
-            onboarding = onboarding_result.scalar_one_or_none()
-            if onboarding is None:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            apply_section_consent(onboarding, section_key, now)
-            await session.commit()
-            await session.refresh(onboarding)
-
-            # HTMX requests get the fragment; plain POST gets a redirect
-            if not request.headers.get("HX-Request"):
-                return redirect(f"/dashboard/members/{member_id}")
-
-            fragment = await render(
-                "dashboard/members/_onboarding_checklist.html",
-                request=request,
-                onboarding=onboarding,
-                uaf_sections=UAF_SECTIONS,
-                member=member,
-                is_own_profile=True,
-            )
-            return html_fragment(fragment)
-    except Exception:
-        logger.exception("Failed to record consent from member profile")
-        return redirect(f"/dashboard/members/{member_id}")
+    """POST /dashboard/members/{member_id}/onboarding/consent -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/onboarding/{member_id}/ceremony")
 
 
 @members_bp.post("/<member_id:uuid>/onboarding/finalize")
 async def onboarding_finalize(request: Request, member_id: uuid.UUID):
-    """POST /dashboard/members/{member_id}/onboarding/finalize
-
-    Completes the onboarding process if all sections are consented and
-    the cooling-off period has passed. Redirects back to member profile.
-    """
-    if not _is_own_profile(request, member_id):
-        return redirect(f"/dashboard/members/{member_id}")
-
-    try:
-        now = datetime.utcnow()
-        async with request.app.ctx.db() as session:
-            member = await get_scoped_entity(session, Member, member_id, request)
-            if member is None:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            onboarding_result = await session.execute(
-                select(MemberOnboarding)
-                .where(MemberOnboarding.member_id == member_id)
-            )
-            onboarding = onboarding_result.scalar_one_or_none()
-            if onboarding is None:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            consents = onboarding.section_consents or {}
-            if isinstance(consents, str):
-                consents = json.loads(consents)
-
-            all_consented = all(
-                s["key"] in consents and consents[s["key"]].get("consented")
-                for s in UAF_SECTIONS
-            )
-            if not all_consented:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            if not onboarding.cooling_off_end or now.date() < onboarding.cooling_off_end:
-                return redirect(f"/dashboard/members/{member_id}")
-
-            onboarding.completion_percentage = 100
-            member.current_status = "active"
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to finalize onboarding from member profile")
-
-    return redirect(f"/dashboard/members/{member_id}")
+    """POST /dashboard/members/{member_id}/onboarding/finalize -- retired (410): writes happen in the app."""
+    return retired_write(request, f"/onboarding/{member_id}/ceremony")

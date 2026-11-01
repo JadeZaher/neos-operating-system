@@ -358,6 +358,25 @@ async def cleanup_expired_sessions(app, max_age_hours: int = 24) -> int:
         return result.rowcount  # type: ignore[return-value]
 
 
+# Irreversible acts need a confirmation from an earlier turn, which only the app's assistant tracks.
+LEGACY_CONFIRMATION_REFUSAL = (
+    "Not done. {what} This chat cannot confirm irreversible acts: ask the member to do it with the "
+    "assistant in the NEOS app. Do not call this tool again here."
+)
+
+
+async def run_legacy_tool(name: str, args, db, *, ecosystem_ids, caller_user_id) -> dict:
+    """execute_tool with no confirmations held, so the model's `confirmed: true` is never trusted here."""
+    from neos_agent.agent.governance_tools import execute_tool
+
+    result = await execute_tool(
+        name, args, db, ecosystem_ids=ecosystem_ids, caller_user_id=caller_user_id, confirmed_keys=frozenset(),
+    )
+    if result.get("needs_confirmation"):
+        result = {**result, "error": LEGACY_CONFIRMATION_REFUSAL.format(what=result["needs_confirmation"])}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -439,10 +458,7 @@ async def send_message(request: Request):
         # 5. Multi-turn tool execution loop
         try:
             import anthropic
-            from neos_agent.agent.governance_tools import (
-                get_tool_definitions,
-                execute_tool,
-            )
+            from neos_agent.agent.governance_tools import get_tool_definitions
 
             settings = request.app.ctx.settings
             if not settings.ANTHROPIC_API_KEY:
@@ -558,7 +574,7 @@ async def send_message(request: Request):
                         await response.write(": keepalive\n\n")
 
                         tool_calls_made.append({"name": block.name})
-                        result = await execute_tool(
+                        result = await run_legacy_tool(
                             block.name, block.input, db,
                             ecosystem_ids=selected_eco_ids or None,
                             caller_user_id=getattr(member, "user_id", None),

@@ -61,7 +61,7 @@ class EcosystemScope:
 import mistune
 import nh3
 import jinja2
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from sanic import html as html_response
 
 # Template directory is a sibling of the views package
@@ -149,6 +149,25 @@ async def render(template_name: str, *, request=None, **context) -> str:
         context["selected_ecosystems"] = scope.selected  # never overridable
     template = _env.get_template(template_name)
     return await template.render_async(**context)
+
+
+# Retired write routes; see api/AGENTS.md "Legacy dashboard (views/)".
+LEGACY_WRITE_GONE = (
+    "This page is read-only now. Make this change in the NEOS app, which checks who may act. "
+    "Nothing was changed here."
+)
+
+
+def retired_write(request, app_path: str, message: str = LEGACY_WRITE_GONE):
+    """410 Gone for a retired /dashboard write route: changes nothing and links the app page."""
+    frontend = getattr(getattr(request.app.ctx, "settings", None), "FRONTEND_URL", "")
+    url = (frontend.rstrip("/") if isinstance(frontend, str) else "") + app_path
+    body = (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Moved to the NEOS app</title></head>'
+        f"<body><main><h1>This page is read-only</h1><p>{escape(message)}</p>"
+        f'<p><a href="{escape(url)}">Open it in the NEOS app</a></p></main></body></html>'
+    )
+    return html_response(body, status=410)
 
 
 def html_fragment(fragment: str):
