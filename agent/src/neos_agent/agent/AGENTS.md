@@ -86,10 +86,24 @@ cannot do), then `_needs_confirmation`:
 
 `api/chat.py` supplies `confirmed_keys` from the chat session: keys that a
 tool asked about in an *earlier* request of the same session, at most 30
-minutes old (`AgentSession.context["pending_confirmations"]`). Keys asked in
+minutes old (`AgentSession.context["pending_confirmations"]`), and only when
+the member's current message is an explicit affirmative response. The UI's
+"Yes, go ahead", plain "yes", and concise "Yes, withdraw it" / "Yes, co-sign
+it" forms qualify; a verb-qualified yes must match that tool and action
+("Yes, send it" cannot authorize withdrawing a proposal). Uncertain or
+unrelated wording supplies no keys. A
+decline ("No, cancel", "do not ...", "never mind") clears the pending keys
+and cannot re-arm them in that turn, even if the model tries again. Keys asked in
 the current request only count from the next one, so the model can never
 confirm on the member's behalf, neither straight away nor in the same turn
-that asked. A successful confirmed act drops that tool's pending keys.
+that asked. Each stored key also binds the canonical tool name and a SHA-256
+digest of every action argument except `confirmed`; changed message text,
+target, reason or outcome requires a new question. Legacy unbound entries
+are ignored and re-asked; no data migration is needed. A generic affirmative
+authorizes only one pending action, never a set. If several are pending,
+re-asking one replaces the pending set so the next affirmative is unambiguous.
+A successful confirmed act consumes its exact key immediately, including
+inside the current tool loop, and cannot re-arm it in the same request.
 `confirmed_keys=None` (tests, scripts, the legacy view) trusts the flag. The
 drawer shows the question with "Yes, go ahead" / "No, cancel"
 (`client/src/lib/chat-tools.ts`).
@@ -149,6 +163,12 @@ proposal from the model (review §2).
 
 ## System prompt
 
+The assistant is the signed-in member's personal governance operator: it
+executes a clear permitted request through tools, asks for missing details
+or a required confirmation, and reports the result. It never chooses the
+member's position or makes a decision for the group. Recording the member's
+explicit consent or approval is different from inventing that choice.
+
 `build_foundation_prompt` sections, in order: identity (zero authority), how
 to talk (plain words, about 120 words, one question at a time, names not
 codes, links, the tool's `next_step`), who you act for (caller only, refusal
@@ -162,6 +182,22 @@ cannot drift from the engine (`tests/test_system_prompt.py`). Removed on
 purpose: "check_authority before every binding action" (it only knows domain
 stewardship and denied authors) and "check_quorum before consent" (neither a
 NEOS nor an app rule).
+
+## Domain lookup
+
+`_find_domain` resolves a scoped UUID, then an exact business key, exact
+name, legacy display label, partial name, and finally purpose/key text.
+Name matches take precedence over incidental mentions in another group's
+purpose. Every tier must identify exactly one domain; multiple matches
+return `AMBIGUOUS_DOMAIN` with scoped names, ecosystems and record links.
+The assistant asks which group the member meant and uses its UUID next.
+This is shared by reads, joining, posting and parent-domain choices, so an
+ambiguous query never joins or publishes to whichever row happens to be
+oldest. Regression coverage: `tests/test_operator_domain_resolution.py`.
+
+The prompt requires a fresh lookup before describing a record's current
+state, gates, steward or available actions; the question or page label is
+not evidence of live governance state.
 
 ## Router
 

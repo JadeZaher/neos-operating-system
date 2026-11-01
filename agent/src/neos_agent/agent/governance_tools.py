@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
-from sqlalchemy import func, select, or_
+from sqlalchemy import and_, func, select, or_
 from sqlalchemy.exc import DataError, IntegrityError, StatementError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -309,8 +309,16 @@ async def _find_agreement(db: AsyncSession, key: str, ecosystem_ids: list | None
     return await _find(db, Agreement, key, "agreement_id", ecosystem_ids, *options)
 
 
+class _AmbiguousDomain(Exception):
+    """A domain lookup needs the member to choose among scoped candidates."""
+
+    def __init__(self, key: str, candidates: list[dict]):
+        super().__init__(f"Several groups match '{key[:200]}'. Ask which one the member means, then use its id.")
+        self.candidates = candidates
+
+
 async def _find_domain(db: AsyncSession, key: str, ecosystem_ids: list | None, *options) -> Domain | None:
-    """A domain by UUID, DOM- key or name (exact first, then the purpose's "Name — " label, then partial)."""
+    """Resolve an exact identifier or a unique name match; see agent/AGENTS.md 'Domain lookup'."""
     raw = str(key or "").strip()
     if not raw:
         return None
@@ -319,15 +327,24 @@ async def _find_domain(db: AsyncSession, key: str, ecosystem_ids: list | None, *
         return (await db.execute(stmt)).scalars().first()
     lowered = raw.lower()
     for match in (
-        or_(func.lower(Domain.domain_id) == lowered, func.lower(Domain.name) == lowered),
-        # The legacy "Name — purpose" label (domain_display_name's fallback).
-        Domain.purpose.ilike(f"{_escape_like(raw)}{NAME_SEPARATOR}%", escape="\\"),
-        or_(_contains(Domain.name, raw), _contains(Domain.purpose, raw), _contains(Domain.domain_id, raw)),
+        func.lower(Domain.domain_id) == lowered,
+        func.lower(func.trim(Domain.name)) == lowered,
+        and_(or_(Domain.name.is_(None), func.trim(Domain.name) == ""),
+             Domain.purpose.ilike(f"{_escape_like(raw)}{NAME_SEPARATOR}%", escape="\\")),
+        _contains(Domain.name, raw),
+        or_(_contains(Domain.purpose, raw), _contains(Domain.domain_id, raw)),
     ):
-        stmt = _scope(select(Domain).options(*options).where(match).order_by(Domain.created_at), Domain, ecosystem_ids)
-        found = (await db.execute(stmt)).scalars().first()
-        if found is not None:
-            return found
+        stmt = _scope(select(Domain).options(*options).where(match).order_by(Domain.created_at, Domain.id).limit(6), Domain, ecosystem_ids)
+        found = (await db.execute(stmt)).scalars().unique().all()
+        if len(found) > 1:
+            names = await _ecosystem_names(db, [domain.ecosystem_id for domain in found])
+            raise _AmbiguousDomain(raw, [
+                {"id": str(domain.id), "name": domain_display_name(domain),
+                 "ecosystem": names.get(str(domain.ecosystem_id)), "link": _link("domain", domain.id)}
+                for domain in found
+            ])
+        if found:
+            return found[0]
     return None
 
 
@@ -3887,6 +3904,8 @@ async def execute_tool(
         kwargs["confirmed_keys"] = confirmed_keys
     try:
         return await handler(args, db_session, **kwargs)
+    except _AmbiguousDomain as ambiguity:
+        return {"success": False, "code": "AMBIGUOUS_DOMAIN", "error": str(ambiguity), "candidates": ambiguity.candidates}
     except IntegrityError as e:
         msg = _friendly_integrity_error(e)
         await db_session.rollback()

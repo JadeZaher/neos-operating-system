@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from neos_agent.agent.governance_tools import execute_tool
+from neos_agent.agent.governance_tools import _needs_confirmation
 from neos_agent.api.chat import chat_api_bp
 from neos_agent.api.errors import register_api_errors
 from neos_agent.auth.ecosystem_scope import EcosystemScope
@@ -28,6 +29,7 @@ from neos_agent.services.act_gates import NEEDS_ANOTHER_STEWARD
 from neos_agent.db.models import (
     AdviceEntry,
     AdviceLog,
+    AgentSession,
     Agreement,
     AgreementCeremony,
     AgreementRequirement,
@@ -293,6 +295,173 @@ async def test_an_irreversible_act_waits_for_a_yes_given_in_a_later_turn(env):
         _model_turn("Done."),
     ], session_id=session)
     assert await _status(env, Proposal, prop.id) == "withdrawn"
+
+
+@pytest.mark.parametrize("reply, preserved", [
+    ("No, cancel", False),
+    ("What does withdrawal mean?", True),
+    ("Yes, but do not withdraw it.", True),
+    ("Yes, send it.", True),
+])
+async def test_a_model_cannot_use_an_old_confirmation_after_a_decline_or_unrelated_reply(env, reply, preserved):
+    prop = await _proposal(env)
+    withdraw = {"proposal_id": str(prop.id), "new_status": "withdrawn"}
+    _, session_id, _ = await _chat(env, "ada", "Withdraw my bike shed proposal.", [
+        _model_turn(calls=(("update_proposal_status", withdraw),)),
+        _model_turn("Withdrawing ends it for good. Shall I go ahead?"),
+    ])
+    events, _, _ = await _chat(env, "ada", reply, [
+        _model_turn(calls=(("update_proposal_status", {**withdraw, "confirmed": True}),)),
+        _model_turn("I will wait."),
+    ], session_id=session_id)
+    [result] = [json.loads(data) for kind, data in events if kind == "tool_result"]
+    assert result["success"] is False
+    assert await _status(env, Proposal, prop.id) == "advice"
+    async with env.db() as db:
+        saved = await db.get(AgentSession, uuid.UUID(session_id))
+        assert bool(saved.context["pending_confirmations"]) is preserved
+
+    events, _, _ = await _chat(env, "ada", "Yes, go ahead", [
+        _model_turn(calls=(("update_proposal_status", {**withdraw, "confirmed": True}),)),
+        _model_turn("The tool has answered."),
+    ], session_id=session_id)
+    [result] = [json.loads(data) for kind, data in events if kind == "tool_result"]
+    assert result["success"] is preserved
+    assert await _status(env, Proposal, prop.id) == ("withdrawn" if preserved else "advice")
+
+
+@pytest.mark.parametrize("link_style", ["omitted", "linked", "raw", "external", "code"])
+async def test_successful_record_reads_always_leave_a_trusted_link_in_the_stream_and_saved_reply(env, link_style):
+    prop = await _proposal(env, title="Bike [shed]")
+    route = f"/proposals/{prop.id}"
+    text = {
+        "omitted": "Your proposal is in advice.", "linked": f"Read [the proposal]({route}).",
+        "raw": f"Its path is {route}.", "external": f"Read [the proposal](https://example.com{route}).",
+        "code": f"```\n[the proposal]({route})\n```",
+    }[link_style]
+    events, session_id, _ = await _chat(env, "ben", "Where does this proposal stand?", [
+        _model_turn(calls=(("get_proposal", {"proposal_id": str(prop.id)}),)),
+        _model_turn("It needs advice.", calls=(("get_proposal", {"proposal_id": str(prop.id)}),)),
+        _model_turn(text),
+    ])
+    displayed = "".join(data for kind, data in events if kind == "append")
+    if link_style == "linked":
+        assert displayed.count(route) == 1
+        assert "Related records:" not in displayed
+    else:
+        assert displayed.endswith(f"Related records: [Bike \\[shed\\]]({route})")
+    async with env.db() as db:
+        saved = await db.get(AgentSession, uuid.UUID(session_id))
+        replies = [m["content"] for m in saved.context["messages"] if m["role"] == "assistant"]
+        assert "".join(replies).endswith(text if link_style == "linked" else f"Related records: [Bike \\[shed\\]]({route})")
+
+
+async def test_failed_tools_cannot_add_a_record_reference_even_if_their_payload_has_a_link(env):
+    route = f"/proposals/{uuid.uuid4()}"
+    with patch("neos_agent.api.chat.execute_tool", new=AsyncMock(return_value={
+        "success": False, "error": "Not found", "data": {"title": "Hidden record", "link": route},
+    })):
+        events, _, _ = await _chat(env, "ben", "Read the proposal.", [
+            _model_turn(calls=(("get_proposal", {"proposal_id": str(uuid.uuid4())}),)),
+            _model_turn("The proposal was not found."),
+        ])
+    assert route not in "".join(data for kind, data in events if kind == "append")
+
+
+async def test_confirmation_binds_the_message_and_is_consumed_before_a_same_turn_replay(env):
+    post_id = str(uuid.uuid4())
+    key = f"respond:{post_id}"
+    sent = []
+
+    async def send(tool_name, args, db, **context):
+        asked = _needs_confirmation(args, key, f"Send this exact message: {args['message']}?", context["confirmed_keys"])
+        if asked:
+            return asked
+        sent.append(args["message"])
+        return {"success": True, "data": {"message": "Sent"}}
+
+    original = {"post": post_id, "message": "I can help on Saturday."}
+    changed = {**original, "message": "I will pay the entire bill.", "confirmed": True}
+    with patch("neos_agent.api.chat.execute_tool", new=AsyncMock(side_effect=send)):
+        _, session_id, _ = await _chat(env, "ben", "Send my offer to help.", [
+            _model_turn(calls=(("respond_to_share_need", original),)), _model_turn("Shall I send that exact message?"),
+        ])
+        events, _, _ = await _chat(env, "ben", "Yes, go ahead", [
+            _model_turn(calls=(("respond_to_share_need", changed),)), _model_turn("The changed message needs your confirmation."),
+        ], session_id=session_id)
+        assert not sent
+        [result] = [json.loads(data) for kind, data in events if kind == "tool_result"]
+        assert result["success"] is False
+
+        events, _, _ = await _chat(env, "ben", "Yes, go ahead", [
+            _model_turn(calls=(("respond_to_share_need", changed), ("respond_to_share_need", changed))),
+            _model_turn("Sent once."),
+        ], session_id=session_id)
+        assert sent == [changed["message"]]
+        results = [json.loads(data) for kind, data in events if kind == "tool_result"]
+        assert [result["success"] for result in results] == [True, False]
+        async with env.db() as db:
+            saved = await db.get(AgentSession, uuid.UUID(session_id))
+            assert saved.context["pending_confirmations"] == []
+
+        await _chat(env, "ben", "Yes, go ahead", [
+            _model_turn(calls=(("respond_to_share_need", changed),)), _model_turn("That needs a new request."),
+        ], session_id=session_id)
+        assert sent == [changed["message"]]
+
+
+async def test_a_generic_yes_cannot_confirm_multiple_actions_and_reasking_one_narrows_the_choice(env):
+    first = await _proposal(env, title="Bike shed")
+    second = await _proposal(env, title="Tool library")
+    actions = [{"proposal_id": str(prop.id), "new_status": "withdrawn"} for prop in (first, second)]
+    _, session_id, _ = await _chat(env, "ada", "Withdraw both proposals.", [
+        _model_turn(calls=tuple(("update_proposal_status", args) for args in actions)),
+        _model_turn("Which withdrawal should I do first?"),
+    ])
+    events, _, _ = await _chat(env, "ada", "Yes", [
+        _model_turn(calls=(("update_proposal_status", {**actions[0], "confirmed": True}),)),
+        _model_turn("Confirm just the bike shed withdrawal?"),
+    ], session_id=session_id)
+    assert await _status(env, Proposal, first.id) == "advice"
+    assert await _status(env, Proposal, second.id) == "advice"
+    assert all(not json.loads(data)["success"] for kind, data in events if kind == "tool_result")
+    await _chat(env, "ada", "Yes, withdraw it.", [
+        _model_turn(calls=(("update_proposal_status", {**actions[0], "confirmed": True}),)), _model_turn("Withdrawn."),
+    ], session_id=session_id)
+    assert await _status(env, Proposal, first.id) == "withdrawn"
+    assert await _status(env, Proposal, second.id) == "advice"
+
+
+async def test_a_legacy_unbound_confirmation_requires_a_new_question(env):
+    prop = await _proposal(env)
+    withdraw = {"proposal_id": str(prop.id), "new_status": "withdrawn"}
+    _, session_id, _ = await _chat(env, "ada", "Withdraw my proposal.", [
+        _model_turn(calls=(("update_proposal_status", withdraw),)), _model_turn("Shall I withdraw it?"),
+    ])
+    async with env.db() as db:
+        saved = await db.get(AgentSession, uuid.UUID(session_id))
+        context = dict(saved.context)
+        context["pending_confirmations"] = [{key: entry[key] for key in ("key", "at")} for entry in context["pending_confirmations"]]
+        saved.context = context
+        await db.commit()
+    events, _, _ = await _chat(env, "ada", "Yes", [
+        _model_turn(calls=(("update_proposal_status", {**withdraw, "confirmed": True}),)), _model_turn("Please confirm again."),
+    ], session_id=session_id)
+    assert await _status(env, Proposal, prop.id) == "advice"
+    assert all(not json.loads(data)["success"] for kind, data in events if kind == "tool_result")
+
+
+@pytest.mark.parametrize("route", [
+    "https://example.com/proposals/00000000-0000-0000-0000-000000000001",
+    "//example.com/proposals/00000000-0000-0000-0000-000000000001",
+    "/proposals/not-a-record",
+    "/proposals/00000000-0000-0000-0000-000000000001#member-text",
+    "/discover?tab=shares-needs&post=not-a-record",
+])
+def test_record_reference_rejects_external_or_noncanonical_routes(route):
+    from neos_agent.api.chat import _record_reference
+
+    assert _record_reference({"link": route, "title": "A member's text"}) is None
 
 
 # ---------------------------------------------------------------------------

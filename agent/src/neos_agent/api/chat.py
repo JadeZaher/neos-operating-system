@@ -16,11 +16,14 @@ Provides an agentic SSE streaming chat with:
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
+import re
 import secrets
 import uuid
 import datetime as _dt
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from sanic import Blueprint, json as json_response
 from sanic.request import Request
@@ -35,6 +38,7 @@ from neos_agent.ai.provider import acompletion, is_ai_enabled
 from neos_agent.agent.governance_tools import CONFIRMATION_TOOLS, get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
 from neos_agent.agent.router import SkillRouter
+from neos_agent.services.next_steps import ROUTES
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +122,91 @@ _SHRINK_STEPS = ((2000, 12), (800, 10), (400, 8), (200, 5), (100, 3), (60, 2))
 _NEVER_CLIP = frozenset({"error", "needs_confirmation", "confirmation_key", "next_step", "link", "_link", "message"})
 # A confirmation the member was asked for stays usable this long.
 _CONFIRMATION_TTL = _dt.timedelta(minutes=30)
+
+
+def _confirmation_reply(message: str) -> str | None:
+    """Recognize the member's explicit confirmation or cancellation; see api/AGENTS.md."""
+    reply = re.sub(r"[.!?,]", "", message.casefold()).strip()
+    reply = " ".join(reply.split())
+    if re.match(r"^(?:no|cancel|stop|never mind|nevermind|don't|do not)(?:\s|$)", reply):
+        return "cancel"
+    if "?" in message:
+        return None
+    if reply in {"yes", "yes go ahead", "go ahead", "yes do it", "yes do that", "yes proceed", "confirm", "confirmed"}:
+        return "confirm"
+    qualified = re.fullmatch(r"yes (withdraw|ratify|declare|co-sign|cosign|end|file|publish|send|join|record|approve|archive|sunset) (?:it|that)(?: now)?", reply)
+    if qualified:
+        return "confirm:" + qualified[1]
+    return None
+
+
+def _confirmation_matches_action(reply: str | None, tool_name: str, args: dict) -> bool:
+    """A verb-qualified yes must name the action the tool would perform."""
+    if reply == "confirm":
+        return True
+    verb = (reply or "").partition(":")[2]
+    if tool_name == "update_proposal_status":
+        moves = {"withdraw": "withdrawn", "ratify": "ratified"}
+        return verb in moves and moves[verb] == args.get("new_status")
+    if tool_name == "update_agreement_status":
+        moves = {"archive": "archived", "sunset": "sunset", "approve": "active", "publish": "active"}
+        return verb in moves and moves[verb] == args.get("new_status")
+    verbs = {
+        "declare_emergency": {"declare"}, "cosign_emergency": {"co-sign", "cosign"},
+        "end_emergency_authority": {"end"}, "record_emergency_review": {"record"},
+        "create_exit_record": {"file"}, "create_conflict_case": {"record"},
+        "respond_to_share_need": {"send"}, "end_collaboration": {"end"},
+        "join_ecosystem": {"join"}, "attest_agreement_consent": {"record"},
+        "respond_to_health_audit": {"record"}, "record_agreement_evidence": {"record"},
+    }
+    return verb in verbs.get(tool_name, set())
+
+
+def _confirmation_digest(tool_name: str, args: dict) -> str:
+    """Bind a confirmation to the exact tool arguments, excluding the confirmation flag."""
+    action = {"tool": tool_name, "args": {key: value for key, value in args.items() if key != "confirmed"}}
+    return hashlib.sha256(json.dumps(action, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _record_reference(data: dict | None, artifact: dict | None = None) -> tuple[str, str] | None:
+    """A trusted local record link from successful tool output, never member-authored nested data."""
+    if not isinstance(data, dict):
+        return None
+    route = data.get("link") or (artifact or {}).get("route")
+    if not isinstance(route, str) or not route.startswith("/") or route.startswith("//") or any(ord(char) < 32 for char in route):
+        return None
+    parsed = urlsplit(route)
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        return None
+    record_id = None
+    for prefix in (*ROUTES.values(), "/collaborations", "/ecosystems", "/members"):
+        if parsed.path.startswith(prefix + "/") and not parsed.query:
+            record_id = parsed.path[len(prefix) + 1:]
+            break
+    if parsed.path in {"/discover", "/messaging"}:
+        query = dict(parse_qsl(parsed.query))
+        expected = {"tab", "post"} if parsed.path == "/discover" else {"conversation"}
+        if set(query) == expected and (parsed.path != "/discover" or query["tab"] == "shares-needs"):
+            record_id = query.get("post") or query.get("conversation")
+    try:
+        if str(uuid.UUID(record_id)) != record_id.lower():
+            return None
+    except (ValueError, TypeError, AttributeError):
+        return None
+    label = data.get("title") or data.get("name") or (artifact or {}).get("label") or "Open record"
+    label = " ".join(str(label).split())[:120]
+    label = re.sub(r"([\\\[\]])", r"\\\1", label)
+    return route, label
+
+
+def _missing_record_links(references: dict[str, str], assistant_text: str) -> str:
+    """Supply record navigation when the model omits it."""
+    prose = re.sub(r"```.*?(?:```|$)|~~~.*?(?:~~~|$)|`[^`\n]*`", "", assistant_text, flags=re.DOTALL)
+    missing = [
+        f"[{label}]({route})" for route, label in references.items()
+        if not re.search(r"\]\(" + re.escape(route) + r"(?:\s+\"[^\"\n]*\")?\)", prose)
+    ]
+    return "\n\nRelated records: " + " · ".join(missing) if missing else ""
 
 
 def _json_size(value) -> int:
@@ -301,7 +390,10 @@ async def _load_confirmations(request: Request, session_id: str | None, member) 
         except (KeyError, TypeError, ValueError):
             continue
         if fresh:
-            pending.append({"key": str(entry["key"]), "at": entry["at"]})
+            tool = entry.get("tool")
+            digest = entry.get("args_digest")
+            if isinstance(tool, str) and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest):
+                pending.append({"key": str(entry["key"]), "at": entry["at"], "tool": tool, "args_digest": digest})
     return pending
 
 
@@ -604,9 +696,17 @@ async def send_message(request: Request):
 
             # Confirmations asked for in an earlier turn; this turn's asks only count from the next turn.
             pending = await _load_confirmations(request, session_id, member)
-            confirmed_keys = frozenset(entry["key"] for entry in pending)
-            asked_now: dict[str, str] = {}
-            confirmed_tools_used: set[str] = set()
+            confirmation_reply = _confirmation_reply(message)
+            if confirmation_reply == "cancel":
+                pending = []
+            affirmative = confirmation_reply is not None and confirmation_reply.startswith("confirm")
+            granted = pending[0] if affirmative and len(pending) == 1 else None
+            if affirmative and len(pending) > 1:
+                system_prompt += "\nSeveral actions await confirmation. Ask which one the member means, then ask for confirmation of that single action. This reply authorizes none of them."
+            asked_now: dict[str, dict] = {}
+            consumed_keys: set[str] = set()
+            record_references: dict[str, str] = {}
+            assistant_parts: list[str] = []
 
             if current_skill:
                 await response.write(_sse_event("skill", current_skill))
@@ -694,6 +794,7 @@ async def send_message(request: Request):
 
                 if assistant_msg.content:
                     await response.write(_sse_event("append", assistant_msg.content))
+                    assistant_parts.append(assistant_msg.content)
                     assistant_appended = True
 
                 # Check for tool calls
@@ -715,6 +816,12 @@ async def send_message(request: Request):
                         tool_args = {}
                     if not isinstance(tool_args, dict):
                         tool_args = {}
+                    args_digest = _confirmation_digest(tool_name, tool_args)
+                    confirmed_keys = frozenset({granted["key"]}) if (
+                        granted and granted["key"] not in consumed_keys
+                        and granted["tool"] == tool_name and granted["args_digest"] == args_digest
+                        and _confirmation_matches_action(confirmation_reply, tool_name, tool_args)
+                    ) else frozenset()
 
                     display_name = _TOOL_DISPLAY_NAMES.get(
                         tool_name, tool_name.replace("_", " ").capitalize(),
@@ -749,15 +856,25 @@ async def send_message(request: Request):
                         logger.exception("Tool execution failed: %s", tool_name)
                         result = {"success": False, "error": "The tool failed unexpectedly. Nothing was changed."}
 
-                    if result.get("needs_confirmation") and result.get("confirmation_key"):
-                        asked_now[str(result["confirmation_key"])] = _dt.datetime.now(_dt.UTC).isoformat()
+                    confirmation_key = str(result.get("confirmation_key") or "")
+                    if confirmation_reply != "cancel" and confirmation_key not in consumed_keys and result.get("needs_confirmation") and confirmation_key:
+                        asked_now[confirmation_key] = {
+                            "key": confirmation_key, "at": _dt.datetime.now(_dt.UTC).isoformat(),
+                            "tool": tool_name, "args_digest": args_digest,
+                        }
                     elif result.get("success") and tool_name in CONFIRMATION_TOOLS and tool_args.get("confirmed"):
-                        confirmed_tools_used.add(tool_name)
+                        consumed_keys.update(confirmed_keys)
+                        for key in confirmed_keys:
+                            asked_now.pop(key, None)
                     round_tool_calls.append({"name": tool_name, "args": tool_args, "success": bool(result.get("success"))})
 
                     artifact = None
                     if result.get("success"):
                         artifact = _get_artifact_info(tool_name, result.get("data"))
+                        reference = _record_reference(result.get("data"), artifact)
+                        if reference:
+                            route, label = reference
+                            record_references[route] = label
 
                     # The screen and the model see the same shrunk result.
                     tool_content = _fit_tool_result(dict(result))
@@ -818,17 +935,21 @@ async def send_message(request: Request):
                     "I wasn't able to generate a response for that. Please try rephrasing your question or try again in a moment.",
                 ))
 
+            reference_text = _missing_record_links(record_references, "".join(assistant_parts))
+            if reference_text:
+                await response.write(_sse_event("append", reference_text))
+                if messages[-1].get("role") == "assistant" and not messages[-1].get("tool_calls"):
+                    messages[-1]["content"] = (messages[-1].get("content") or "") + reference_text
+                else:
+                    messages.append({"role": "assistant", "content": reference_text.strip()})
+
             # --- Persist session (with the confirmations the next turn may use) ---
-            still_pending = {
-                entry["key"]: entry["at"] for entry in pending
-                if entry["key"].split(":", 1)[0] not in confirmed_tools_used
-            }
-            still_pending.update(asked_now)
+            still_pending = asked_now or {entry["key"]: entry for entry in pending if entry["key"] not in consumed_keys}
             session_id = await _save_session(
                 request, session_id, member, messages,
                 current_skill, total_usage,
                 ecosystem_id, validated_eco_ids,
-                pending_confirmations=[{"key": key, "at": at} for key, at in still_pending.items()][-10:],
+                pending_confirmations=list(still_pending.values())[-10:],
             )
             await response.write(_sse_event("session", json.dumps({"session_id": session_id})))
 

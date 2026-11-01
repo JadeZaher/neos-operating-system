@@ -84,6 +84,11 @@ def test_foundation_prompt_contains_identity():
     assert "NEOS Governance Agent for OmniOne" in prompt
     assert "zero authority" in prompt
     assert "facilitator" in prompt.lower()
+    assert "personal governance operator" in prompt
+    assert "Carry out a clear, permitted request through the tools" in prompt
+    assert "never invent their preference or decide for the group" in prompt
+    assert "Before describing a record's current state" in prompt
+    assert "Never infer its live state from the question" in prompt
 
 
 # ---------------------------------------------------------------------------

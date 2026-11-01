@@ -239,6 +239,16 @@ the row as active or pending consent) and then retries; see
 
 ## Chat sessions
 
+The chat stream adds a missing record link after the model's answer and
+saves it with that answer, so navigation survives a model that omits the
+link. References come only from a successful tool's top-level server-owned
+`data.link` or its artifact route; nested member-written data is never
+traversed. Only canonical local record routes with UUIDs are accepted
+(including the Discover post and Messages conversation query routes).
+Labels are escaped for Markdown and repeated links are collapsed. Failed
+tools produce no reference. This preserves caller scoping without trusting
+the model to reconstruct a record URL.
+
 A session belongs to the member row of its own ecosystem
 (`_save_session` uses `caller_in` for the session's ecosystem). Reads match
 the caller's rows in scope: the selection for the list, every authorized
