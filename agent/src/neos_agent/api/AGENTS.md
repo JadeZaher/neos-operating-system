@@ -1,5 +1,37 @@
 # API architecture
 
+## Chat routing events
+
+`POST /chat/send` emits `skill_route` JSON with `mode`, nullable `skill`,
+and `source` before generating the answer and after any workflow transition.
+Direct answers, terminal transitions and router fallbacks explicitly clear
+the skill. The browser displays ordinary guidance labels, not probabilities
+or provider details. `active_skill` is a prior hint; `requested_skill` is an
+explicit manual selection validated against the loaded registry.
+
+Tool-call narration is not streamed or stored as an answer before the tool
+establishes the facts. Empty/failed lookup loops terminate with access-safe
+clarification. Scoped tools, lifecycle gates and exact-argument one-use
+confirmation remain the authority boundary; routing cannot authorize acts.
+
+`AgentSession.context` also holds private frozen confirmation payloads and
+bounded server-derived record references. Owner session responses expose
+messages and optional normalized `support_context`, not pending arguments
+or reference-cache internals. A matching next-turn affirmative executes
+the stored payload directly, under a session lock; an actual handler result
+produces the SSE receipt. See `agent/AGENTS.md`, Confirmation of irreversible
+acts and Session record context and support mode.
+
+Support context is explicitly enabled, freshly NodeAdmin-verified, and
+bound to its conversation's organization and public reason. It exposes only
+dedicated support tools and remains private; privacy setters and shared
+session reads reject any attempt to share a support transcript.
+Support sessions belong to `owner_user_id`, including NodeAdmins who hold
+no Member row. Their support chat/history uses authenticated User identity;
+ordinary member chat keeps its membership guard and scope. Confirmation
+consumption advances a monotonic epoch so a delayed response cannot restore
+an already consumed pending payload.
+
 ## OAuth return origins
 
 The production backend serves more than one frontend origin. OAuth initiation therefore carries the initiating frontend through the provider round trip in signed `state`, instead of relying on one global redirect URL.
@@ -770,6 +802,8 @@ agreement is not in, as REST and the chat tool do (out-of-stage test evidence
 could carry a later consent straight into force).
 
 ## Platform admin (G-Authority)
+
+**Superseded by explicit NodeAdmin assignments (2026-11-01).** Runtime platform administration now comes only from an enabled global User's explicit NodeAdmin assignment. `is_platform_admin` aliases `is_node_admin`; editable builder/co-creator profiles and the home pin no longer grant global authority. The text below records the previous rule and its original threat model. Current bootstrap, public audit, private archives, support commands and User-owned support sessions are documented in `../services/NODE_SUPPORT.md` and `../agent/NODE_SUPPORT.md`. Ordinary organization policies remain scoped as described below.
 
 Owner decision 2026-11-01: a co_creator/builder profile counts platform-wide
 only on the caller's ACTIVE member row in the home ecosystem. Founding an

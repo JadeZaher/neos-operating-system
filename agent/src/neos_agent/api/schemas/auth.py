@@ -36,7 +36,7 @@ class AuthChallengeResponse(BaseModel):
 class AuthVerifyResponse(BaseModel):
     success: bool
     display_name: str
-    member: MemberSummary
+    member: MemberSummary | None = None
 
 
 class LoginRequest(BaseModel):

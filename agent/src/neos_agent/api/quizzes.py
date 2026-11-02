@@ -30,7 +30,7 @@ from neos_agent.db.course_models import (
 from neos_agent.db.models import Domain, Member, QuizAssignment
 from neos_agent.api.errors import ApiError
 from neos_agent.api.guards import caller_in  # G-Onboard: submit_quiz keys on the row in the quiz's ecosystem
-from neos_agent.api.helpers import require_auth, get_ecosystem_ids
+from neos_agent.api.helpers import require_auth, require_admin, get_ecosystem_ids
 from neos_agent.api.policy import can_manage_onboarding
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,10 @@ async def quiz_steward_or_error(session, request: Request, ecosystem_id: uuid.UU
     """The row that may write a quiz of `ecosystem_id` or read its results: a steward there (can_manage_onboarding),
     or for a global quiz (no ecosystem) a platform admin; else 403."""
     if ecosystem_id is None:
-        if not getattr(request.ctx, "platform_admin", False):
+        administrator, error = await require_admin(request)
+        if error is not None:
             raise ApiError(403, GLOBAL_QUIZ_ADMINS_ONLY)
-        return getattr(request.ctx, "platform_admin_member", None) or request.ctx.member
+        return administrator
     caller = await caller_in(session, request, ecosystem_id)
     if not can_manage_onboarding(caller, ecosystem_id):
         raise ApiError(403, QUIZ_STEWARDS_ONLY)
@@ -313,7 +314,7 @@ async def create_quiz(request: Request):
             visibility=body.visibility,
             is_published=body.is_published,
             is_entry_quiz=body.is_entry_quiz,
-            created_by=author.id if author is not None else None,  # the steward's row, never a client-sent id
+            created_by=author.id if isinstance(author, Member) else None,
         )
         session.add(quiz)
         await session.commit()

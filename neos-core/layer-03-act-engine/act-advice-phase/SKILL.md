@@ -18,20 +18,20 @@ depends_on: [proposal-creation, domain-mapping]
 
 - The **proposal document** (from proposal-creation) with all required fields complete
 - The **list of impacted parties** identified during proposal creation and synergy check
-- The **advice timeline** based on urgency: 7 days (normal), 3 days (elevated), 24 hours (emergency)
+- The **advice timeline** and any deadline recorded on the proposal. Suggested planning windows are 7 days (normal), 3 days (elevated), 24 hours (emergency); they do not set or close an app deadline automatically.
 - The **communication channels** through which impacted parties will be notified
 
 ## E. Step-by-Step Process
 
 1. **Announce.** The proposer (or facilitator) announces the proposal to all impacted parties through designated communication channels. The announcement includes: proposal summary, full text link, advice window dates, and how to submit advice.
-2. **Open advice window.** The clock starts. Duration by urgency: 7 days (normal), 3 days (elevated), 24 hours (emergency).
+2. **Open advice window.** The proposer opens the proposal for advice. Use its recorded timeline; if no deadline is set, do not invent one. A deadline is a reminder to review progress, not an automatic cutoff.
 3. **Gather input.** Each impacted party may submit advice in any accessible form — written, recorded audio/video, or in-person (documented by the facilitator). There is no required format; the bar is accessibility, not formality.
 4. **Document responses.** The proposer reviews each piece of advice and records their response using one of three statuses:
    - **Integrated**: the advice is adopted and the proposal is modified accordingly
    - **Partially integrated**: some aspects are adopted, with written rationale for what was not
    - **Not integrated**: the advice is heard but not adopted, with written rationale explaining why
 5. **Follow up on non-respondents.** For impacted parties who have not responded, the proposer sends one follow-up reminder at the midpoint of the advice window. Non-response is documented as "notified, no response" — it is not treated as consent or opposition.
-6. **Close advice window.** At the deadline, the advice window closes. No late advice is accepted for the current round (it may inform future rounds if the proposal returns to advice after consent failure).
+6. **Close advice window.** Advice remains open until an authorized person moves the proposal to Consent and its advice requirements are met. The proposer can close it; another steward may close it only after the recorded advice deadline has passed. With no deadline, only the proposer can close it. Passing a deadline does not close advice or reject further advice: members can still submit advice while the proposal remains in Advice.
 7. **Produce advice log.** The proposer compiles the complete advice log per `assets/advice-log-template.yaml`, including all entries, non-respondent documentation, a summary of modifications made, and the proposer's overall assessment.
 8. **Decision point.** The proposer may choose to withdraw the proposal based on advice received (archived with reason) or proceed to the Consent phase with the modified proposal.
 
@@ -41,6 +41,7 @@ An advice log following `assets/advice-log-template.yaml` containing: proposal I
 
 ## G. Authority Boundary Check
 
+- The proposer controls advice closure. A steward may close another proposer's advice only after its recorded deadline has passed and the advice requirements are met; a facilitator has no closure authority merely by facilitating. Check the live proposal's available actions before offering to move it.
 - The proposer must demonstrably seek advice from ALL identified impacted parties, not just sympathetic ones. The facilitator verifies the advice-seeking list against the impacted parties list from the proposal.
 - If an impacted party was missed (discovered during the advice window), the advice window must reopen for them — the minimum extension is 48 hours for normal urgency, 12 hours for emergency.
 - Advice is non-binding: the proposer is not required to integrate every piece of advice, but they ARE required to document their response to each one.
@@ -63,10 +64,9 @@ An advice log following `assets/advice-log-template.yaml` containing: proposal I
 
 ## J. Expiry / Review Condition
 
-- The advice window has a hard deadline based on urgency. No extensions for normal urgency unless new impacted parties are discovered.
-- One extension allowed for elevated urgency (up to 3 additional days) if new impacted parties are identified during the window.
-- Emergency timelines cannot be extended.
-- If the proposer does not produce the advice log within 7 days of the window closing, the proposal stalls and the 30-day inactivity archive rule from proposal-creation applies.
+- A recorded advice deadline prompts review and follow-up. It does not move the proposal to Consent or stop advice submissions.
+- Advice remains open after its deadline until the proposer, or an eligible steward after that deadline, closes it through the app's permitted transition. The advice requirements still apply.
+- If consultation or documentation is incomplete, explain what remains and ask the proposer to address it. Do not claim that time alone closes or archives the proposal.
 
 ## K. Exit Compatibility Check
 

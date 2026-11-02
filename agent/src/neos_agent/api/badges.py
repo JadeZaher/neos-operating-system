@@ -67,7 +67,7 @@ def _badge_to_schema(b: BadgeDefinition) -> dict:
 async def _badge_administrator(session, request: Request, ecosystem_id: uuid.UUID | None):
     """(acting row, None) when the caller may change badges of `ecosystem_id` (None = global), else (None, 403)."""
     if ecosystem_id is None:
-        return require_admin(request)
+        return await require_admin(request)
     caller = await caller_in(session, request, ecosystem_id)
     if not can_administer_ecosystem(caller, ecosystem_id):
         return None, json({"error": BADGE_MANAGE_DENIED}, status=403)
@@ -146,7 +146,7 @@ async def create_badge(request: Request):
             badge_category=create_req.badge_category,
             badge_icon=create_req.badge_icon,
             strength=create_req.strength,
-            created_by=admin.id,
+            created_by=admin.id if hasattr(admin, "ecosystem_id") else None,
         )
         session.add(badge)
         try:

@@ -11,7 +11,6 @@ from sanic.request import Request
 from sqlalchemy import or_, cast, String, Text, select, text, literal
 
 from neos_agent.api.errors import ApiError
-from neos_agent.api.policy import PROFILE_ADMINS, is_platform_admin
 from neos_agent.api.policy import ROLE_RANK  # re-exported; policy.py is the single definition
 
 logger = logging.getLogger(__name__)
@@ -25,15 +24,49 @@ def require_auth(request: Request):
     return member, None
 
 
-# Platform-admin gate: only for platform-wide resources; see api/AGENTS.md "Platform admin (G-Authority)".
-def require_admin(request: Request):
-    """(the caller's home-ecosystem admin row, None) when request.ctx.platform_admin, else (None, 401/403 response)."""
-    member = getattr(request.ctx, "member", None)
-    if member is None:
+def require_auth_user(request: Request):
+    user = getattr(request.ctx, "user", None)
+    if user is None or user.disabled_at is not None:
         return None, json({"error": "Authentication required"}, status=401)
-    if not getattr(request.ctx, "platform_admin", False):
+    return user, None
+
+
+# Platform-admin gate: only for platform-wide resources; see api/AGENTS.md "Platform admin (G-Authority)".
+async def require_admin(request: Request):
+    """Audit a legacy privileged boundary and return the actual actor's row or User."""
+    user = getattr(request.ctx, "user", None)
+    member = getattr(request.ctx, "member", None)
+    if user is None:
+        return None, json({"error": "Authentication required"}, status=401)
+    from neos_agent.services.node_admin import audit_event, authorize, log_failure
+    kind = "app_settings" if request.path.startswith("/api/v1/settings") else "ctc_handoff" if request.path.startswith("/api/v1/admin/ctc-handoff") else "quizzes" if request.path.startswith("/api/v1/quizzes") else "badge_definitions"
+    target = None
+    for value in getattr(request, "match_info", {}).values():
+        try:
+            target = str(uuid.UUID(str(value)))
+            break
+        except (ValueError, TypeError):
+            continue
+    known_fields = {"key", "value"} if kind == "app_settings" else {"ready_for_neos_den"} if kind == "ctc_handoff" else {"title", "description", "mode", "survey_json", "time_limit", "passing_score", "allow_retakes", "visibility", "is_published", "is_entry_quiz", "ecosystem_id", "domain_id", "course_id"} if kind == "quizzes" else {
+        "badge_key", "badge_name", "badge_description", "badge_category", "badge_icon", "strength", "is_active", "ecosystem_id"}
+    try:
+        body = request.json if isinstance(request.json, dict) else {}
+    except Exception:
+        body = {}
+    fields = sorted(set(body) & known_fields)
+    action = "legacy_" + {"GET": "inspect", "POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}.get(request.method, "access")
+    try:
+        async with request.app.ctx.db() as session:
+            actor = await authorize(session, user.id, locked=False)
+            event = audit_event(actor, action, kind, target, reason="Technical support", outcome="attempted", source="legacy", fields=fields)
+            session.add(event)
+            await session.commit()
+            request.ctx.node_admin_legacy_attempt = str(event.id)
+            request.ctx.node_admin_legacy_metadata = {"kind": kind, "target": target, "fields": fields, "action": action}
+    except ApiError:
+        await log_failure(request.app.ctx.db, user.id, action, kind, target, source="legacy")
         return None, json({"error": "Admin access required"}, status=403)
-    return getattr(request.ctx, "platform_admin_member", None) or member, None
+    return getattr(request.ctx, "platform_admin_member", None) or member or user, None
 
 
 # G-Authority
@@ -66,18 +99,14 @@ async def home_ecosystem_id(session, settings) -> uuid.UUID | None:
 
 
 async def platform_admin_row(session, settings, user_id: uuid.UUID):
-    """The user's row that makes them a platform admin (policy.is_platform_admin), else None."""
-    from neos_agent.db.models import Member
+    """An explicit NodeAdmin's actual membership row or User for legacy callers."""
+    from neos_agent.db.models import Member, User
+    from neos_agent.services.node_admin import is_node_admin
 
-    candidates = (await session.scalars(select(Member).where(
-        Member.user_id == user_id,
-        Member.profile.in_(PROFILE_ADMINS),
-        Member.current_status == "active",
-    ))).all()
-    if not candidates:
-        return None  # most users hold no admin profile anywhere, so the home is never looked up
-    home_id = await home_ecosystem_id(session, settings)
-    return next((row for row in candidates if is_platform_admin(row, home_id)), None)
+    if not await is_node_admin(session, user_id):
+        return None
+    member = await session.scalar(select(Member).where(Member.user_id == user_id).order_by(Member.created_at, Member.id).limit(1))
+    return member or await session.get(User, user_id)
 
 
 async def require_ecosystem_role(request: Request, ecosystem_id: uuid.UUID, min_role: str):

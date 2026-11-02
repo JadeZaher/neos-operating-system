@@ -120,6 +120,9 @@ async def verify_challenge(request: Request):
         )
         user = user_result.scalar_one_or_none()
 
+        if user is not None and user.disabled_at is not None:
+            return json({"error": "Account unavailable"}, status=403)
+
         if not display_name:
             display_name = f"Member-{did[-8:]}"
 

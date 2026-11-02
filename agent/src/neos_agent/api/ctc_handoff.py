@@ -53,7 +53,7 @@ def _to_item(row: CtcHandoff) -> dict:
 @ctc_handoff_api_bp.get("/")
 async def list_ctc_handoff(request: Request):
     """GET /api/v1/admin/ctc-handoff -- List all CTC handoff records."""
-    admin, err = require_admin(request)
+    admin, err = await require_admin(request)
     if err:
         return err
 
@@ -72,7 +72,7 @@ async def set_ctc_handoff(request: Request, member_id: uuid.UUID):
 
     Accepts JSON: CtcHandoffSetRequest
     """
-    admin, err = require_admin(request)
+    admin, err = await require_admin(request)
     if err:
         return err
 

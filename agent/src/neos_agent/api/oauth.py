@@ -477,6 +477,9 @@ async def oauth_callback(request: Request, provider: str):
             session.add(user)
             await session.flush()
 
+        if user.disabled_at is not None:
+            return _oauth_callback_redirect(frontend_origin, "/login", error="account_unavailable")
+
         # Returning users keep their memberships; only a user with none is placed.
         # A newcomer behind the agreement-consent gate lands on the gate page.
         landing_path = "/dashboard"

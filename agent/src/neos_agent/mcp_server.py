@@ -155,7 +155,7 @@ async def _caller(ctx: Context) -> Caller:
         if parent_alive is None:
             raise ValueError("The session this agent token belongs to has ended — mint a new token")
         user = await s.get(User, agent_token.user_id)
-        if user is None:
+        if user is None or user.disabled_at is not None:
             raise ValueError("Token owner no longer exists")
         # Throttled liveness stamp (at most one write per minute).
         if agent_token.last_used_at is None or agent_token.last_used_at < now - timedelta(minutes=1):

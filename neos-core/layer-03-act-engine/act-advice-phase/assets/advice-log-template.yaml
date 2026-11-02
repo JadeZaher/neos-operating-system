@@ -1,6 +1,6 @@
 proposal_id: ""
 advice_window_start: ""
-advice_window_end: ""
+advice_window_end: ""  # actual closure date; a deadline alone does not close advice
 urgency: normal  # normal | elevated | emergency
 entries:
   - advisor: ""

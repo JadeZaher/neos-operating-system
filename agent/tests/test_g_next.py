@@ -36,6 +36,7 @@ from neos_agent.auth.ecosystem_scope import EcosystemScope
 from neos_agent.db.models import Agreement, Base, EmergencyState, Ecosystem, Member, Proposal, User
 from neos_agent.services.next_steps import ADVICE_DEADLINE_PROMPT, ADVICE_DEADLINE_STEWARD_PROMPT, ADVICE_READY_PROMPT
 from neos_agent.services.dates import aoe_today  # G-Maint: "yesterday" by the one date rule
+from neos_agent.services.act_gates import PROPOSAL_LIFECYCLE
 
 OASIS = uuid.UUID("0000000e-0000-0000-0000-000000000001")
 RIVER = uuid.UUID("0000000e-0000-0000-0000-000000000002")
@@ -378,7 +379,27 @@ async def test_the_assistant_reads_the_same_queue_and_the_same_status_words(env)
     for kind, record in (("proposal", world.proposal), ("emergency", world.emergency), ("exit", world.exit),
                          ("conflict", world.case), ("agreement", str(HOUSE_RULES))):
         said = await _tool(env, "mo", "explain_status", kind=kind, record=record)
-        assert said["data"] == (await _explain(env, "mo", kind, record)).json, kind
+        data = dict(said["data"])
+        if kind == "proposal":
+            facts = data.pop("lifecycle_facts")
+            automatic = PROPOSAL_LIFECYCLE.automatic_move("advice") is not None
+            close = PROPOSAL_LIFECYCLE.manual_move("advice", "consent")
+            assert set(facts) == {"advice_advances_automatically", "meeting_advice_gate_advances_stage", "advice_closure",
+                                  "proposer_controls_closure", "transition_history_available", "actor_and_cause"}
+            assert facts["advice_advances_automatically"] is automatic
+            assert facts["meeting_advice_gate_advances_stage"] is automatic
+            assert facts["proposer_controls_closure"] is bool(close and close.proposer_until_deadline)
+            assert facts["transition_history_available"] is False
+            assert facts["actor_and_cause"].startswith("Unknown:")
+            assert "Do not infer who moved it or why" in facts["actor_and_cause"]
+            if automatic:
+                assert "engine advances Advice" in facts["advice_closure"]
+            elif close and close.proposer_until_deadline:
+                assert "proposer closes Advice" in facts["advice_closure"]
+                assert "only after its deadline" in facts["advice_closure"]
+            else:
+                assert "authorized manual transition" in facts["advice_closure"]
+        assert data == (await _explain(env, "mo", kind, record)).json, kind
 
     assert (await _tool(env, "ben", "get_conflict_case", case_id=world.case))["success"] is False  # hidden == not found
     case = (await _tool(env, "mo", "get_conflict_case", case_id=world.case))["data"]

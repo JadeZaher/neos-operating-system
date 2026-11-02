@@ -325,8 +325,8 @@ async def test_a_model_cannot_use_an_old_confirmation_after_a_decline_or_unrelat
         _model_turn(calls=(("update_proposal_status", {**withdraw, "confirmed": True}),)),
         _model_turn("The tool has answered."),
     ], session_id=session_id)
-    [result] = [json.loads(data) for kind, data in events if kind == "tool_result"]
-    assert result["success"] is preserved
+    results = [json.loads(data) for kind, data in events if kind == "tool_result"]
+    assert [result["success"] for result in results] == ([True] if preserved else [])
     assert await _status(env, Proposal, prop.id) == ("withdrawn" if preserved else "advice")
 
 
@@ -389,17 +389,17 @@ async def test_confirmation_binds_the_message_and_is_consumed_before_a_same_turn
         events, _, _ = await _chat(env, "ben", "Yes, go ahead", [
             _model_turn(calls=(("respond_to_share_need", changed),)), _model_turn("The changed message needs your confirmation."),
         ], session_id=session_id)
-        assert not sent
+        assert sent == [original["message"]]
         [result] = [json.loads(data) for kind, data in events if kind == "tool_result"]
-        assert result["success"] is False
+        assert result["success"] is True
 
         events, _, _ = await _chat(env, "ben", "Yes, go ahead", [
             _model_turn(calls=(("respond_to_share_need", changed), ("respond_to_share_need", changed))),
             _model_turn("Sent once."),
         ], session_id=session_id)
-        assert sent == [changed["message"]]
+        assert sent == [original["message"]]
         results = [json.loads(data) for kind, data in events if kind == "tool_result"]
-        assert [result["success"] for result in results] == [True, False]
+        assert results == []
         async with env.db() as db:
             saved = await db.get(AgentSession, uuid.UUID(session_id))
             assert saved.context["pending_confirmations"] == []
@@ -407,7 +407,7 @@ async def test_confirmation_binds_the_message_and_is_consumed_before_a_same_turn
         await _chat(env, "ben", "Yes, go ahead", [
             _model_turn(calls=(("respond_to_share_need", changed),)), _model_turn("That needs a new request."),
         ], session_id=session_id)
-        assert sent == [changed["message"]]
+        assert sent == [original["message"]]
 
 
 async def test_a_generic_yes_cannot_confirm_multiple_actions_and_reasking_one_narrows_the_choice(env):

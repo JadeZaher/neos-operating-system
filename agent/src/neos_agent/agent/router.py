@@ -203,6 +203,13 @@ class SkillRouter:
             with ``destination_skill=None`` matches, or simply
             "stay in current skill").
         """
+        transition = self.match_transition(current_skill, tool_calls)
+        return transition.destination_skill if transition else None
+
+    def match_transition(
+        self, current_skill: str, tool_calls: list[dict],
+    ) -> TransitionPattern | None:
+        """Return the matched move, including a terminal move with no destination."""
         for tc in tool_calls:
             # Skip failed tool calls
             if not tc.get("success", True):
@@ -221,7 +228,7 @@ class SkillRouter:
                     if tc.get("args", {}).get("new_status") != p.trigger_status:
                         continue
 
-                return p.destination_skill
+                return p
 
         return None
 

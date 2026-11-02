@@ -387,6 +387,8 @@ async def _proposal_detail_payload(session, proposal: Proposal, caller: Member |
                                    outcome: ActOutcome | None = None) -> dict:
     """Detail JSON: gates and linked agreements, the ACT outcome when one ran, caller standing, position and moves."""
     payload = _proposal_to_detail(proposal).model_dump(mode="json")
+    from neos_agent.services.node_admin import support_provenance
+    payload["support_provenance"] = await support_provenance(session, proposal)
     await _attach_gate_context(session, proposal, payload)
     await _attach_reporter_names(session, payload)
     if outcome is not None:
@@ -450,7 +452,12 @@ async def list_proposals(request: Request):
         total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         proposals = (await session.execute(stmt.offset(page.offset).limit(page.per_page))).scalars().all()
 
-    items = [_proposal_to_list_item(p).model_dump(mode="json") for p in proposals]
+        from neos_agent.services.node_admin import support_provenance
+        items = []
+        for proposal in proposals:
+            item = _proposal_to_list_item(proposal).model_dump(mode="json")
+            item["support_provenance"] = await support_provenance(session, proposal)
+            items.append(item)
     return json({"items": items, "total": total, "page": page.page, "per_page": page.per_page})
 
 

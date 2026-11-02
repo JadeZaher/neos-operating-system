@@ -57,6 +57,8 @@ class Proposal(TimestampMixin, Base):
     proposer_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         GUID(), ForeignKey("members.id", ondelete="SET NULL"), nullable=True
     )
+    support_created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), nullable=True)
+    support_action_id: Mapped[Optional[uuid.UUID]] = mapped_column(GUID(), nullable=True)
     co_sponsors: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     affected_domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     impacted_parties: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

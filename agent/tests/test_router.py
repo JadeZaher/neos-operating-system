@@ -216,3 +216,14 @@ def test_unknown_skill_no_transition(router: SkillRouter):
         agent_response="",
     )
     assert result is None
+
+
+def test_terminal_transition_is_distinct_from_no_matching_transition(router):
+    terminal = router.match_transition("governance-health-audit", [
+        {"name": "create_safeguard_audit", "args": {}, "success": True},
+    ])
+    assert terminal is not None and terminal.destination_skill is None
+    assert router.match_transition("governance-health-audit", []) is None
+    assert router.match_transition("governance-health-audit", [
+        {"name": "create_safeguard_audit", "args": {}, "success": False},
+    ]) is None

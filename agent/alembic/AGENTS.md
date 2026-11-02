@@ -234,3 +234,9 @@ Data, on both kinds of database (typed `sa.table` statements, no dialect SQL):
 Other free-text categories are left as they are (the server refuses new ones). The downgrade drops the columns;
 the data rewrites are not restored. `proposed_by_member_id` is not backfilled (nothing recorded the proposer).
 Tested by `tests/test_exchange_migration.py` (SQLite, and PostgreSQL with downgrade and re-upgrade).
+
+### w3c7f1a9d5e2: explicit node support
+
+Follows v1b4e7c9d2f5. Adds global User assignments (`node_admins`), append-only public events (`node_admin_actions`) and append-only private repair archives (`node_admin_snapshots`). Both immutable tables install SQLite/PostgreSQL rejection triggers through model table creation and migration. Adds `users.disabled_at`, proposal support-user/action provenance, and `agent_sessions.owner_user_id`; existing sessions backfill their actual User through Member.user_id. Columns/tables are added only when absent for create_all compatibility.
+
+The migration grants no assignments from historical profiles and never marks an empty node bootstrapped. The server's reviewed explicit `NODE_ADMIN_BOOTSTRAP_USER_IDS` input is the only first-assignment path, with enabled/usable identity checks, serialized all-or-nothing grants, public server-bootstrap events and a sealed completion marker. No production IDs belong in source. See `src/neos_agent/services/NODE_SUPPORT.md`. Tests are authored in `test_node_admin_migration.py` for SQLite and disposable PostgreSQL; the coordinator runs the integrated sweep after all fixes.

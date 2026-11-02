@@ -14,6 +14,8 @@ MemberProfile = Literal["co_creator", "builder", "collaborator", "townhall"]
 
 
 class MemberListItem(BaseModel):
+    is_node_admin: bool = False
+    node_admin_badge: dict | None = None
     id: uuid.UUID
     ecosystem_id: uuid.UUID
     member_id: str

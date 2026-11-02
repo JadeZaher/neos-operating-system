@@ -65,7 +65,7 @@ async def put_setting(request: Request):
 
     Accepts JSON: AppSettingPutRequest
     """
-    admin, err = require_admin(request)
+    admin, err = await require_admin(request)
     if err:
         return err
 
@@ -74,7 +74,8 @@ async def put_setting(request: Request):
         put_req = AppSettingPutRequest(**body)
     except Exception as e:
         return json({"error": f"Invalid request: {e}"}, status=400)
-    if put_req.key == PLATFORM_HOME_SETTING_KEY:  # otherwise a platform admin could move the platform home
+    from neos_agent.services.node_admin_catalog import SETTING_KEYS
+    if put_req.key not in SETTING_KEYS:
         return json({"error": PLATFORM_HOME_NOT_SETTABLE}, status=400)
 
     async with request.app.ctx.db() as session:

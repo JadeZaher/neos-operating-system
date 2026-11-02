@@ -42,6 +42,7 @@ class User(TimestampMixin, Base):
     oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    disabled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     headline: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

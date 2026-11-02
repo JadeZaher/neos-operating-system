@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     AI_BASE_URL: str = "https://openrouter.ai/api/v1"
     AI_MODEL: str = "openrouter/qwen/qwen3-30b-a3b-instruct-2507"  # Default OpenRouter model
     AI_PROVIDER: str = "openrouter"  # openrouter, anthropic, openai, local
+    AI_DECISION_MODEL: str = ""
+    AI_DECISION_TIMEOUT_SECONDS: float = Field(default=6.0, ge=0.25, le=15)
 
     NEOS_CORE_PATH: str = "../neos-core"
     LOG_LEVEL: str = "info"
@@ -72,6 +74,7 @@ class Settings(BaseSettings):
     # The platform home ecosystem's id (a UUID); overrides the pinned app_settings row
     # "platform_home_ecosystem_id". See api/AGENTS.md "Platform admin (G-Authority)".
     PLATFORM_HOME_ECOSYSTEM_ID: str = ""
+    NODE_ADMIN_BOOTSTRAP_USER_IDS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

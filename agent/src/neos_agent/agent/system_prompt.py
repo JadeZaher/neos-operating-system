@@ -182,6 +182,7 @@ _LAYER_SEPARATOR = "\n---\n"
 def build_foundation_prompt(
     ecosystem_names: list[str] | str,
     skill_index: list[dict],
+    *, include_act_guide: bool = True,
 ) -> str:
     """Build the always-present foundation prompt.
 
@@ -213,8 +214,9 @@ def build_foundation_prompt(
     parts.append("\n## Who you act for\n")
     parts.append(_ACTING_RULES)
 
-    parts.append("\n## How decisions are made (ACT)\n")
-    parts.append(act_stage_guide())
+    if include_act_guide:
+        parts.append("\n## How decisions are made (ACT)\n")
+        parts.append(act_stage_guide())
 
     # Principles
     parts.append("\n## NEOS Principles\n")
@@ -452,6 +454,7 @@ def assemble_system_prompt(
     page_context: str | None = None,
     ecosystem_names: list[str] | None = None,
     selected_ecosystem_ids: list[str] | None = None,
+    response_mode: str = "general",
 ) -> str:
     """Assemble the complete system prompt from all three layers.
 
@@ -487,7 +490,7 @@ def assemble_system_prompt(
     else:
         skill_index = []
 
-    foundation = build_foundation_prompt(names, skill_index)
+    foundation = build_foundation_prompt(names, skill_index if active_skill else [], include_act_guide=False)
 
     # Append active ecosystem scope context
     if selected_ecosystem_ids and len(names) > 0:
@@ -525,7 +528,67 @@ def assemble_system_prompt(
         if dep_prompt:
             layers.append(dep_prompt)
 
+    layers.append(build_runtime_policy(response_mode))
     return _LAYER_SEPARATOR.join(layers)
+
+
+def build_runtime_policy(response_mode: str = "general") -> str:
+    """Current app policy overrides older skill prose; see agent/AGENTS.md."""
+    mode = {
+        "platform": (
+            "Answer as platform help using only this verified navigation map and successful tool results. "
+            "Use exact markdown links to the relevant known page. "
+            "For changing a display name: open sidebar [Me](/me), choose the Profile tab, "
+            "change the Display name textbox, then press Save profile. The field is immediately editable; "
+            "there is no Edit button or avatar-menu step.\n"
+            "Known sidebar destinations: [Dashboard](/dashboard), [Discover](/discover), [Me](/me), "
+            "[Messaging](/messaging), [Agreements](/agreements), [Proposals](/proposals), "
+            "[Decisions](/decisions), [Members](/members), [Domains](/domains), "
+            "[Ecosystems](/ecosystems), [Newcomers](/onboarding), [Conflicts](/conflicts), "
+            "[Emergency](/emergency), [Exit](/exit), [Safeguards](/safeguards). "
+            "Some destinations depend on the member's access. A domain is a group. "
+            "The dashboard and bell show what needs the member. Discover holds shares and needs; "
+            "Messaging holds conversations. Me has Profile, My decisions, Notifications, Agent access, "
+            "and Quiz history tabs. Orientation is a journey, separate from a quiz. "
+            "Explain the shortest known path without forcing a governance process or opening a record. "
+            "For controls or paths absent from this map and tool results, say you do not know the exact steps "
+            "and ask what the member sees. Never guess button labels, menus, tabs, or routes."
+        ),
+        "framework": (
+            "Answer a governance question directly from these framework facts. A definition is not a request "
+            "to start a process or write a record. Consent means no reasoned objection, not a vote. "
+            "A member can consent, stand aside with a concern, or object with a reason. An objection stops the change. "
+            "Advice means sharing useful thoughts before the author chooses the next step."
+        ),
+        "skill": "Use the selected skill as process guidance, within the current app policy below.",
+    }.get(response_mode, "Answer the member's actual request; use a process only when it helps.")
+    return (
+        "## Current application policy (authoritative)\n"
+        "These current lifecycle rules and successful tool results override conflicting workflow prose in any skill or dependency. "
+        "A skill is guidance, never authority or evidence of a record's state.\n"
+        + act_stage_guide()
+        + "\n## Response for this request\n" + mode
+        + "\nUse two to four short sentences when that is enough; about 80 words for a simple question, "
+        "120 words for other answers unless asked for detail. Most sentences should have 12 words or fewer. "
+        "Use plain verbs: ask, help, try, agree, stop, leave. Skip formal preambles and unexplained jargon.\n"
+        "Before claiming a record's state or what changed it, read it. Current state does not prove who changed it or why. "
+        "If the audit history does not establish the cause, say you cannot tell; never invent an automatic transition. "
+        "Meeting the advice gate does NOT advance Advice automatically. Use lifecycle_facts from proposal tools: "
+        "if transition_history_available is false, the actor and cause are unknown, even when advice requirements are met. "
+        "After an empty scoped lookup, explain the access limit or ask for a title/ecosystem; do not keep retrying the same search.\n"
+        "A group is a domain, not an ecosystem. To join a named group, read get_domain or list_domains, "
+        "then use join_domain for the member's chosen domain. If several match, show their names and ask which. "
+        "Use the server's known record references to resolve follow-up choices to the same kind and UUID; "
+        "do not search ecosystems when the member is choosing between domain candidates. Re-read tools still check access.\n"
+        "When several ecosystems are selected, ask WHICH ECOSYSTEM before asking about its group or other draft details. "
+        "Never choose the first selected ecosystem for the member.\n"
+        "When drafting, include only the member's stated commitments. An unspecified date, weekday, time, venue, price, "
+        "deadline, quota, assigned person or rule stays unspecified. Do not turn 'monthly' into 'the first Saturday'. "
+        "Use the member's scope and proposed change; ask for essential missing content, and show the draft text before suggesting it is ready.\n"
+        "When asked how to leave, always explain: leaving is voluntary and has no penalty; file your own exit; "
+        "hand over roles and commitments during the wind-down (up to 30 days, 7 if urgent); a steward confirms departure; "
+        "you can export a portable copy of your records. Explaining exit does not file one."
+    )
 
 
 # G-Exchange: the Discover hint names the tools that keep its promise (api/AGENTS.md "Exchange (G-Exchange)").

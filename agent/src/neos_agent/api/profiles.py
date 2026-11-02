@@ -22,6 +22,7 @@ from neos_agent.db.models import (
     SharesNeeds,
     User,
 )
+from neos_agent.services.node_admin import BADGE, is_node_admin
 
 
 profiles_api_bp = Blueprint("profiles_api", url_prefix="/api/v1/profiles")
@@ -331,7 +332,9 @@ async def _build_profile_response(
         )).scalars().all()
         own_publications = await exchange.publication_payloads(session, own_rows, viewer)
 
+    node_admin_badge = dict(BADGE) if await is_node_admin(session, user.id) else None
     return {
+        "node_admin_badge": node_admin_badge,
         "profile": {
             "id": str(user.id),
             "username": user.username,

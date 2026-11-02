@@ -35,6 +35,7 @@ from neos_agent.db.models import (
     CtcHandoff,
     Ecosystem,
     Member,
+    NodeAdmin,
     Team,
     TeamMembership,
     User,
@@ -92,6 +93,8 @@ def platform(tmp_path_factory):
             user = User(id=uuid.uuid4(), display_name=name.title())
             session.add(user)
             session.flush()
+            if name in {"lani", "bram"}:
+                session.add(NodeAdmin(user_id=user.id, active=True))
             for ecosystem_id, status, profile, role, created in rows:
                 session.add(Member(
                     id=uuid.uuid4(), ecosystem_id=ecosystem_id, user_id=user.id,
@@ -184,9 +187,9 @@ async def _read(db, statement):
 # --- Acts: (status, took effect) --------------------------------------------------------------
 
 async def put_setting(db, call):
-    key = f"flag-{uuid.uuid4().hex[:8]}"
-    response = await call("put", "/api/v1/settings", {"key": key, "value": {"on": True}})
-    return response.status, await _read(db, select(AppSetting.id).where(AppSetting.key == key)) is not None
+    key, value = "ctc_map", {"test_nonce": uuid.uuid4().hex}
+    response = await call("put", "/api/v1/settings", {"key": key, "value": value})
+    return response.status, await _read(db, select(AppSetting.value).where(AppSetting.key == key)) == value
 
 
 async def list_ctc_handoff(db, call):
@@ -378,14 +381,14 @@ HOME_CASES = [
 
 
 @pytest.mark.parametrize("env_home, signup_slug, renamed, pinned, expected", HOME_CASES)
-async def test_the_pinned_home_decides_who_is_a_platform_admin(
+async def test_home_changes_do_not_change_explicit_node_admin_assignments(
     platform, db, monkeypatch, env_home, signup_slug, renamed, pinned, expected,
 ):
     monkeypatch.setattr(platform.app.ctx.settings, "PLATFORM_HOME_ECOSYSTEM_ID", env_home)
     monkeypatch.setattr(platform.app.ctx.settings, "SIGNUP_DEFAULT_ECOSYSTEM_SLUG", signup_slug)
     async with _home_altered(db, renamed=renamed, pinned=pinned):
         outcomes = {actor: await put_setting(db, functools.partial(_call, platform, actor)) for actor in expected}
-    assert outcomes == {actor: (status, status == 200) for actor, status in expected.items()}
+    assert outcomes == {actor: (200, True) if actor in {"lani", "bram"} else (403, False) for actor in expected}
 
 
 async def test_a_platform_admin_cannot_move_the_home_through_the_settings_api(platform, db):

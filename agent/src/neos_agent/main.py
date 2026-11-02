@@ -81,6 +81,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             async with app.ctx.db_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             logger.info("Database initialized")
+            from neos_agent.services.node_admin import initialize_node_support
+            await initialize_node_support(app.ctx.db, settings.NODE_ADMIN_BOOTSTRAP_USER_IDS)
         except Exception as e:
             logger.error("Failed to initialize database: %s", e)
             app.ctx.db = None
@@ -160,6 +162,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.agent_tokens import agent_tokens_api_bp
     from neos_agent.api.my_decisions import my_decisions_api_bp
     from neos_agent.api.next_steps import next_steps_api_bp
+    from neos_agent.api.node_admin import node_admin_api_bp
 
     app.blueprint(health_bp)
     app.blueprint(skills_bp)
@@ -197,6 +200,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(agent_tokens_api_bp)
     app.blueprint(my_decisions_api_bp)
     app.blueprint(next_steps_api_bp)
+    app.blueprint(node_admin_api_bp)
 
     # Register dashboard view blueprints
     from neos_agent.views import register_views
@@ -307,6 +311,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             row = await platform_admin_row(db, settings, user.id) if user is not None else None
             request.ctx.platform_admin_member = row
             request.ctx.platform_admin = row is not None
+            request.ctx.node_admin = row is not None
 
         # Helper: resolve user from session cookie
         async def _try_resolve_user():
@@ -327,7 +332,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     )
                     auth_session = result.scalar_one_or_none()
                     if auth_session:
-                        return await db.get(UserModel, auth_session.user_id)
+                        user = await db.get(UserModel, auth_session.user_id)
+                        return user if user is not None and user.disabled_at is None else None
                     return None
             except Exception:
                 logger.debug("Session resolve failed on public route")
@@ -335,13 +341,14 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
 
         # Anonymous, preflight and failed lookups are never platform admins.
         request.ctx.platform_admin = False
+        request.ctx.node_admin = False
         request.ctx.platform_admin_member = None
 
         # CORS preflight requests (OPTIONS) never carry cookies — let them through
         if request.method == "OPTIONS":
             return None
 
-        if is_public_route(request.path):
+        if is_public_route(request.path, request.method):
             user = await _try_resolve_user()
             request.ctx.user = user
             selected_ids = _parse_selected_cookie()
@@ -352,6 +359,7 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     await _resolve_platform_admin(db, user)
             except Exception:
                 request.ctx.platform_admin, request.ctx.platform_admin_member = False, None
+                request.ctx.node_admin = False
                 ecosystems, eco_ids, all_auth_ids = [], [], []
                 request.ctx.member = None
                 request.ctx.ecosystem_scope = EcosystemScope.empty()
@@ -395,6 +403,8 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
                     return _unauth(delete_cookie=True)
 
                 user = await db.get(UserModel, auth_session.user_id)
+                if user is None or user.disabled_at is not None:
+                    return _unauth(delete_cookie=True)
                 request.ctx.user = user
 
                 selected_ids = _parse_selected_cookie()
@@ -410,6 +420,19 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
             return _unauth()
 
         return None
+
+    @app.middleware("response")
+    async def complete_legacy_admin_audit(request, response):
+        attempt = getattr(request.ctx, "node_admin_legacy_attempt", None)
+        if attempt:
+            from neos_agent.services.node_admin import audit_event
+            async with app.ctx.db() as session:
+                metadata = request.ctx.node_admin_legacy_metadata
+                event = audit_event(getattr(request.ctx, "user", None), metadata["action"], metadata["kind"], metadata["target"], fields=metadata["fields"],
+                                    outcome="completed" if response.status < 400 else "failed", source="legacy", correlation_id=attempt)
+                session.add(event)
+                await session.commit()
+        return response
 
     # Root redirect
     @app.get("/")

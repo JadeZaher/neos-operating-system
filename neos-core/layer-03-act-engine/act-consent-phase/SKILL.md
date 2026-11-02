@@ -10,7 +10,7 @@ depends_on: [act-advice-phase, proposal-creation, domain-mapping]
 
 ## C. Trigger Conditions
 
-- The Advice phase closes with a completed advice log
+- The proposer, or an eligible steward after the advice deadline, explicitly closes Advice with its advice requirements met. A passed deadline alone does not start Consent.
 - The proposer decides to proceed (rather than withdraw)
 - The facilitator confirms the advice log is complete (all impacted party responses documented)
 

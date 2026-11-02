@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 
 # Routes that do NOT require authentication
 PUBLIC_PREFIXES = (
@@ -28,8 +29,10 @@ PUBLIC_EXACT = frozenset({
 })
 
 
-def is_public_route(path: str) -> bool:
+def is_public_route(path: str, method: str = "GET") -> bool:
     """Check if a request path is publicly accessible."""
+    if method == "GET" and (path in {"/api/v1/node-admin/audit", "/api/v1/node-admin/roster"} or re.fullmatch(r"/api/v1/node-admin/audit/[0-9a-fA-F-]{36}", path)):
+        return True
     if path in PUBLIC_EXACT:
         return True
     for prefix in PUBLIC_PREFIXES:

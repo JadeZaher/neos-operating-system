@@ -88,6 +88,8 @@ def _escape_like(value: str) -> str:
 
 def _member_to_list_item(m: Member, user: User | None = None) -> dict:
     return MemberListItem(
+        is_node_admin=bool(getattr(user, "node_admin_active", False)),
+        node_admin_badge={"key": "node_admin", "label": "Node admin"} if getattr(user, "node_admin_active", False) else None,
         id=m.id,
         ecosystem_id=m.ecosystem_id,
         member_id=m.member_id,
@@ -117,6 +119,8 @@ def _onboarding_snapshot(ob: MemberOnboarding | None) -> OnboardingSnapshot | No
 
 def _member_to_detail(m: Member, ob: MemberOnboarding | None = None, user: User | None = None) -> dict:
     return MemberDetail(
+        is_node_admin=bool(getattr(user, "node_admin_active", False)),
+        node_admin_badge={"key": "node_admin", "label": "Node admin"} if getattr(user, "node_admin_active", False) else None,
         id=m.id,
         member_id=m.member_id,
         display_name=m.display_name,
@@ -151,6 +155,8 @@ def _member_to_profile(
     tags: list,
 ) -> dict:
     return MemberProfileResponse(
+        is_node_admin=bool(getattr(user, "node_admin_active", False)),
+        node_admin_badge={"key": "node_admin", "label": "Node admin"} if getattr(user, "node_admin_active", False) else None,
         id=m.id,
         member_id=m.member_id,
         display_name=m.display_name,

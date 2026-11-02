@@ -240,7 +240,9 @@ async def test_a_steward_named_as_a_party_cannot_triage_their_own_case(env):
     assert (await _call(env.app, "put", "mo", url, json={"status": "triaged"})).status == 403
 
 
-async def test_case_follows_its_lifecycle_and_resolving_needs_a_summary(env):
+async def test_case_follows_its_lifecycle_and_resolving_needs_a_summary(env, monkeypatch):
+    today = dt.datetime.now(dt.timezone.utc).date()
+    monkeypatch.setattr("neos_agent.api.conflicts.dates.utc_today", lambda: today)
     case = await _report(env.app)
     url = f"/api/v1/conflicts/{case['id']}"
     skipped = await _call(env.app, "put", "mo", url, json={"status": "resolved", "resolution_summary": "ok"})
@@ -250,7 +252,7 @@ async def test_case_follows_its_lifecycle_and_resolving_needs_a_summary(env):
     assert (await _call(env.app, "put", "mo", url, json={"status": "resolved"})).status == 400
     done = await _call(env.app, "put", "mo", url, json={"status": "resolved", "resolution_summary": "Rota agreed."})
     assert done.status == 200
-    assert done.json["resolved_date"] == dt.date.today().isoformat()
+    assert done.json["resolved_date"] == today.isoformat()
     assert "closes the case" in done.json["next_step"]
 
 
@@ -305,9 +307,10 @@ async def _case_with_repair(app: Sanic) -> tuple[str, dict]:
     return case["id"], resp.json
 
 
-async def test_repair_check_ins_are_scheduled_and_fulfilling_needs_confirmation(env):
+async def test_repair_check_ins_are_scheduled_and_fulfilling_needs_confirmation(env, monkeypatch):
+    today = dt.datetime.now(dt.timezone.utc).date()
+    monkeypatch.setattr("neos_agent.api.conflicts.dates.utc_today", lambda: today)
     case_id, repair = await _case_with_repair(env.app)
-    today = dt.date.today()
     assert [repair[f"checkin_{d}_date"] for d in (30, 60, 90)] == [(today + dt.timedelta(days=d)).isoformat() for d in (30, 60, 90)]
     assert repair["next_checkin_date"] == repair["checkin_30_date"] and repair["next_checkin_overdue"] is False
 

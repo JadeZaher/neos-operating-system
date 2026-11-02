@@ -273,6 +273,9 @@ async def api_verify(request: Request):
         )
         user = user_result.scalar_one_or_none()
 
+        if user is not None and user.disabled_at is not None:
+            return json({"error": "Account unavailable"}, status=403)
+
         if not display_name:
             display_name = f"Member-{did[-8:]}"
 
@@ -359,8 +362,7 @@ async def api_me(request: Request):
 
     session_id = verify_session_cookie(cookie, settings.SESSION_SECRET)
     if not session_id:
-        logger.warning("/auth/me: cookie present but verification failed (len=%d, secret_prefix=%s)",
-                       len(cookie), settings.SESSION_SECRET[:8])
+        logger.warning("/auth/me: cookie verification failed")
         return json({"error": "Invalid session"}, status=401)
 
     async with request.app.ctx.db() as db:
@@ -377,7 +379,7 @@ async def api_me(request: Request):
 
         # Load the user
         user = await db.get(User, auth_session.user_id)
-        if not user:
+        if not user or user.disabled_at is not None:
             return json({"error": "User not found"}, status=401)
 
         # Every membership row, any status: the client applies the active-only rule per ecosystem from these.
@@ -388,10 +390,10 @@ async def api_me(request: Request):
 
         # The server's default row (oldest ACTIVE membership, else the oldest), as request.ctx.member without a selection.
         member = await default_member(db, user.id, selected_ids=[], authorized_ids=[])
-        if not member:
+        if not member and not getattr(request.ctx, "node_admin", False):
             return json({"error": "Member not found"}, status=401)
 
-        member_summary = _member_to_summary(member, user)
+        member_summary = _member_to_summary(member, user) if member else None
         pending_consents = await pending_consent_gates(db, user.id)
 
         ecosystems = []
@@ -439,6 +441,8 @@ async def api_me(request: Request):
         item["membership_status"], item["role"] = status, role
         item["is_steward"] = steward  # FX-Onboard: policy.can_administer_ecosystem there, so the client never re-derives it
     payload["is_platform_admin"] = bool(getattr(request.ctx, "platform_admin", False))  # set by G-Authority's middleware
+    payload["is_node_admin"] = bool(getattr(request.ctx, "node_admin", False))
+    payload["node_admin_badge"] = {"key": "node_admin", "label": "Node admin"} if payload["is_node_admin"] else None
     return json(payload)
 
 
@@ -502,7 +506,7 @@ async def api_login(request: Request):
         )
         user = result.scalar_one_or_none()
 
-        if user is None or not user.password_hash:
+        if user is None or user.disabled_at is not None or not user.password_hash:
             return json({"error": "Invalid username or password"}, status=401)
 
         if not _verify_password(password, user.password_hash):
@@ -513,7 +517,7 @@ async def api_login(request: Request):
             select(Member).where(Member.user_id == user.id).limit(1)
         )
         member = member_result.scalar_one_or_none()
-        if member is None:
+        if member is None and not user.node_admin_active:
             return json({"error": "No membership found"}, status=401)
 
         # Create auth session (same flow as DID verify)
@@ -529,12 +533,12 @@ async def api_login(request: Request):
         session.add(auth_session)
         await session.commit()
 
-        member_summary = _member_to_summary(member, user)
+        member_summary = _member_to_summary(member, user) if member else None
 
     cookie_value = make_session_cookie(str(session_id), settings.SESSION_SECRET)
     response_data = AuthVerifyResponse(
         success=True,
-        display_name=member.display_name,
+        display_name=member.display_name if member else user.display_name,
         member=member_summary,
     )
     response = json(response_data.model_dump(mode="json"), status=200)

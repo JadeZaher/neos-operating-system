@@ -97,13 +97,30 @@ and cannot re-arm them in that turn, even if the model tries again. Keys asked i
 the current request only count from the next one, so the model can never
 confirm on the member's behalf, neither straight away nor in the same turn
 that asked. Each stored key also binds the canonical tool name and a SHA-256
-digest of every action argument except `confirmed`; changed message text,
-target, reason or outcome requires a new question. Legacy unbound entries
-are ignored and re-asked; no data migration is needed. A generic affirmative
+digest and frozen JSON payload of every action argument except `confirmed`
+(at most 8 KB). A single matching affirmative executes that exact payload
+under the session row lock, with the same handler, current scope and current
+authority. It does not ask a model to regenerate a target or reason. The
+handler checks its newly resolved confirmation key, so a reused title or
+changed party resolution cannot redirect approval. Consumption and ordinary
+member writes share the transaction. Support consumes approval durably
+before invoking its separately transacted audited service, so a later
+session-save failure cannot replay a committed support command; a failed
+attempt needs a fresh request. Support also reauthorizes inside that service.
+The receipt reports the actual outcome and record link.
+Changed message text, target, reason or outcome requires a new question.
+Legacy entries without a valid payload are re-asked. A generic affirmative
 authorizes only one pending action, never a set. If several are pending,
 re-asking one replaces the pending set so the next affirmative is unambiguous.
-A successful confirmed act consumes its exact key immediately, including
-inside the current tool loop, and cannot re-arm it in the same request.
+A frozen confirmation is consumed once, including when fresh checks refuse
+the action. A replay with no pending action returns a deterministic message
+and cannot arm another model-selected action.
+Consumption increments a monotonic `confirmation_epoch` under the session
+lock. Every session save locks again and compares its request's snapshot
+epoch with the live one. A stale unrelated response cannot restore inherited
+pending actions; only new questions explicitly asked by that response can
+be saved after an epoch change. The epoch itself is never overwritten by a
+stale snapshot.
 `confirmed_keys=None` (tests, scripts, the legacy view) trusts the flag. The
 drawer shows the question with "Yes, go ahead" / "No, cancel"
 (`client/src/lib/chat-tools.ts`).
@@ -201,7 +218,95 @@ not evidence of live governance state.
 
 ## Router
 
+Each request first calls `skill_decision.select_skill` with the new prompt,
+bounded recent context, page type and skill metadata. `active_skill` is only
+a prior-context hint; an explicit `requested_skill` is a validated manual
+selection. Typed decisions can choose a skill or direct platform/framework
+context. Failure falls back to general guidance and clears the prior skill.
+Routing changes context, never caller authority or confirmation rules.
+Transport and selection policy: `ai/AGENTS.md` and `DECISIONS.md`.
+
 `router.py` only routes moves the lifecycle tables have; the old
 `consent -> active` agreement pattern was dead (every agreement passes
 through test). `tests/test_router.py` checks every agreement pattern against
 `AGREEMENT_LIFECYCLE`.
+
+`match_transition` returns the matched pattern, so a terminal destination
+of `None` clears the active skill instead of looking like no match. The
+older `detect_transition` method retains its destination-only contract for
+internal callers. Chat emits `skill_route` on selection and each transition,
+including the null skill, and saves the resulting skill in the session.
+
+## Runtime guidance and bounded lookup
+
+Prompt assembly places current application policy after skill/dependency
+prose. The ACT guide is generated from `PROPOSAL_LIFECYCLE`; stale skill
+descriptions cannot establish automatic advice closure or override tool
+gates. Direct platform/framework modes explain the relevant facts without
+loading a process skill. A fresh record lookup is required for live claims;
+current state does not establish who changed it or why.
+
+The canonical `act-advice-phase` skill and its advice-log asset also describe
+explicit closure, continued advice while overdue, and a deadline as a
+reminder. The consent skill's entry condition names the same authorized
+transition. A final prompt override alone did not prevent the model from
+repeating the former hard-cutoff instruction in pass 04; keep source and
+runtime policy aligned. Real-registry prompt coverage checks both layers.
+
+Platform help uses a bounded navigation map verified against
+`client/src/App.tsx`, `components/AppSidebar.tsx`, `pages/me/MePage.tsx` and
+`pages/Profile.tsx` in `charting-the-course`. Profile editing is sidebar
+`Me` (`/me`) -> `Profile` -> `Display name` -> `Save profile`; no preliminary
+edit control exists. Answers link to known routes and acknowledge unknown
+controls rather than inventing a generic avatar-menu path. Update this map
+when the client changes; it describes navigation, not access grants.
+
+The final policy prioritizes short, plain answers, explicit ecosystem choice
+before other creation details, all exit facts (voluntary/no penalty,
+wind-down, steward confirmation and portable records), and no invented
+dates, schedules or commitments in drafts. Creating a proposal returns its
+actual change and rationale so the draft can be reviewed. A clear request
+to create and open a draft remains possible through the existing tools.
+
+Chat withholds model narration accompanying tool calls from the visible
+answer and saved text history. Those calls can claim a state before the
+lookup establishes it. Only the resulting final prose is presented; tool
+status remains visible through its own events.
+
+Failed/empty lookups are tracked by exact tool/argument signature per turn.
+A repeated unresolved call, or an additional lookup after three unresolved
+attempts, ends the search with scope/access clarification. Reads that find
+a record remain repeatable, and the guard never reveals whether a hidden record
+exists or grants a write. Real SSE regression coverage lives in
+`tests/test_operator_routing.py`.
+
+## Session record context and support mode
+
+`known_records` retains at most 20 typed record references (kind, UUID, label,
+local link) from successful scoped tool outputs or the scoped domain
+ambiguity result. It excludes nested member content and client history.
+Each reference is re-read with current caller scope before reuse; this is
+navigation context, never cached permission. Follow-up choices keep their
+domain kind instead of being mistaken for ecosystem names.
+
+Proposal read/explain tools include lifecycle-derived automatic-transition
+facts and explicitly state that transition history was not returned. A met
+advice gate or current Consent state establishes neither an actor nor a
+cause. The runtime instruction names this distinction; live QA must still
+check the final answer rather than treating prompt text as proof.
+
+Explicit support mode requires freshly verified NodeAdmin assignment and
+`{enabled: true, organization_id, reason}` on each request. Its normalized
+organization/reason binds the conversation; changing mode starts a new one.
+Only `node_support_*` tools are exposed there, with every command using the
+same frozen confirmation contract. Each call rechecks the role and audits
+the actual actor with source `agent` and the chat session UUID. Core member
+tools remain separate and cannot impersonate another member. Support
+transcripts are owner-only: privacy changes cannot share them, and the
+shared endpoint refuses them even if an old share token exists.
+Support session ownership uses the actual User (`owner_user_id`) without
+requiring or creating a Member. Memberless NodeAdmins can use explicit
+support and their own session history; member mode still requires a real
+membership. Core member-session history retains its existing ecosystem
+scope. The chat's guard and every support tool check the current assignment,
+and support auditing always attributes the actual User.

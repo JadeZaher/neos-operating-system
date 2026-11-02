@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 
 class ProposalListItem(BaseModel):
+    support_provenance: dict | None = None
     id: uuid.UUID
     ecosystem_id: uuid.UUID
     proposal_id: str

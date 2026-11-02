@@ -26,7 +26,7 @@ from neos_agent.auth.middleware import make_session_cookie
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.db.models import (
     Agreement, AgreementMemberConsent, AgreementRequirement, AppSetting, AuthSession, Base, Domain, Ecosystem, Member,
-    MemberStatusTransition, SharesNeeds, User,
+    MemberStatusTransition, NodeAdmin, SharesNeeds, User,
 )
 
 SECRET = "fx-onboard-boundaries-secret-0123456789"
@@ -43,9 +43,9 @@ ECOSYSTEMS = (  # inserted in this order, so the private one is the first heap r
 )
 # name -> rows (ecosystem, status, role, profile)
 PEOPLE = {
-    "olga": [(OMNIONE, "active", "owner", "co_creator")],  # the home's owner and a platform admin, who leaves
+    "olga": [(OMNIONE, "active", "owner", "co_creator")],  # the home's owner; the exit test separately grants node authority
     "sami": [(OMNIONE, "active", "admin", None)],  # a home steward (confirms Olga's exit); no row in Riverbank
-    "lani": [(OMNIONE, "active", "owner", "co_creator")],  # platform admin; no row in Riverbank
+    "lani": [(OMNIONE, "active", "owner", "co_creator")],  # explicit NodeAdmin assignment below; no row in Riverbank
     "rudy": [(RIVERBANK, "active", "user", None)],  # a plain Riverbank member
     "rhea": [(RIVERBANK, "active", "mod", None), (HIDDEN, "active", "user", None)],  # Riverbank's steward
     "fern": [(RIVERBANK, "active", "user", "co_creator")],  # Riverbank's founder (role user, co_creator there)
@@ -90,6 +90,8 @@ def boundaries(tmp_path_factory):
         for name, rows in PEOPLE.items():
             session.add(User(id=_user_id(name), display_name=name.title(), username=name))
             session.flush()
+            if name == "lani":
+                session.add(NodeAdmin(user_id=_user_id(name), active=True))
             for ecosystem_id, status, role, profile in rows:
                 session.add(Member(
                     id=_row_id(name, ecosystem_id), ecosystem_id=ecosystem_id, user_id=_user_id(name),
@@ -146,9 +148,9 @@ async def _read(db, statement):
 
 
 async def _put_setting(boundaries, db, actor: str) -> tuple[int, bool]:
-    key = f"flag-{uuid.uuid4().hex[:8]}"
-    response = await _call(boundaries, actor, "put", "/api/v1/settings", {"key": key, "value": {"on": True}})
-    return response.status, await _read(db, select(AppSetting.id).where(AppSetting.key == key)) is not None
+    key, value = "ctc_map", {"test_marker": uuid.uuid4().hex}
+    response = await _call(boundaries, actor, "put", "/api/v1/settings", {"key": key, "value": value})
+    return response.status, await _read(db, select(AppSetting.value).where(AppSetting.key == key)) == value
 
 
 # --- A1 + F4: a member who leaves comes back as a fresh member --------------------------------------------------
@@ -156,6 +158,10 @@ async def _put_setting(boundaries, db, actor: str) -> tuple[int, bool]:
 
 async def test_a_home_owner_who_leaves_comes_back_as_a_member_who_consents_again(boundaries, db):
     olga = _row_id("olga", OMNIONE)
+    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is False
+    async with db() as session:
+        session.add(NodeAdmin(user_id=_user_id("olga"), active=True))
+        await session.commit()
     assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is True
 
     filed = await _call(boundaries, "olga", "post", "/api/v1/exit/",
@@ -168,14 +174,15 @@ async def test_a_home_owner_who_leaves_comes_back_as_a_member_who_consents_again
         consent = await session.scalar(select(AgreementMemberConsent).where(AgreementMemberConsent.member_id == olga))
     assert (row.current_status, row.role, row.profile) == ("exited", "user", None)
     assert consent.withdrawn_at is not None and consent.withdrawal_reason.startswith("Membership ended")
+    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_node_admin"] is True
 
-    # She returns on her own: the same row, waiting on consent again, neither the home's owner nor a platform admin.
+    # Membership re-entry loses local standing; the separately assigned global role remains.
     back = await _call(boundaries, "olga", "post", f"/api/v1/ecosystems/{OMNIONE}/join")
     assert back.status == 200, back.text
     assert (back.json["outcome"], back.json["membership_status"], [a["title"] for a in back.json["required_agreements"]]) == (
         "re_entry", "pending_consent", ["Universal Agreement Field"])
-    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is False
-    assert await _put_setting(boundaries, db, "olga") == (403, False)
+    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is True
+    assert await _put_setting(boundaries, db, "olga") == (200, True)
 
     consented = await _call(boundaries, "olga", "post", f"/api/v1/agreements/{UAF}/consent",
                             {"attestation": "I consent to the Universal Agreement Field again"})
@@ -183,8 +190,10 @@ async def test_a_home_owner_who_leaves_comes_back_as_a_member_who_consents_again
     async with db() as session:
         row = await session.get(Member, olga)
     assert (row.current_status, row.role, row.profile) == ("active", "user", None)
-    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is False
-    assert await _put_setting(boundaries, db, "olga") == (403, False)  # only an owner's grant makes an admin again
+    assert (await _call(boundaries, "olga", "get", "/api/v1/auth/me")).json["is_platform_admin"] is True
+    assert await _put_setting(boundaries, db, "olga") == (200, True)
+    async with db() as session:
+        assert (await session.get(NodeAdmin, _user_id("olga"))).active is True
 
     # The member page shows what leaving changed, and which steward's confirmation did it.
     profile = await _call(boundaries, "sami", "get", f"/api/v1/members/{olga}/profile")
@@ -288,7 +297,7 @@ QUIZ_TABLE = [
     ("POST /domains/:river/quizzes/assign", assign_to_domain, (401, 403, 404, 200, 200, 404)),
     ("POST /domains/:river/quizzes/unassign", unassign_from_domain, (401, 403, 404, 200, 200, 404)),
     ("GET /members/:rudy/quiz-history", member_quiz_history, (401, 200, 404, 200, 200, 404)),
-    # A quiz shared by every ecosystem: platform admins only.
+    # A quiz shared by every ecosystem: explicit global NodeAdmins only.
     ("POST /quizzes (shared)", create_quiz(None), (401, 403, 403, 403, 403, 201)),
     ("PUT /quizzes/:shared", update_quiz(None), (401, 403, 403, 403, 403, 200)),
 ]

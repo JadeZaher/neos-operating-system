@@ -977,9 +977,11 @@ async def create_proposal(
             "consent_mode": consent_mode,
             "status": "draft",
             "proposer": proposer_text,
+            "proposed_change": prop.proposed_change,
+            "rationale": prop.rationale,
             "link": _link("proposal", prop.id),
             "message": f"Proposal '{proposal_id}' created as a draft.",
-            "next_step": "It is a draft. You can open it for advice when it is ready.",
+            "next_step": "It is a draft. Review its proposed change and reason; open it for advice when it is ready.",
         },
     }
 
@@ -2413,6 +2415,7 @@ async def get_proposal(
         "urgency": prop.urgency,
         "created_date": str(prop.created_date) if prop.created_date else None,
         "advice_deadline": str(prop.advice_deadline) if prop.advice_deadline else None,
+        "lifecycle_facts": _proposal_lifecycle_facts(),
         "consent_deadline": str(prop.consent_deadline) if prop.consent_deadline else None,
         "advice_logs": advice_rounds,
         "consent_records": consent_records,
@@ -2423,6 +2426,25 @@ async def get_proposal(
         ],
     }
     return {"success": True, "data": data}
+
+
+def _proposal_lifecycle_facts() -> dict:
+    """Explicit engine behavior, separate from state and unrecorded history."""
+    close = PROPOSAL_LIFECYCLE.manual_move("advice", "consent")
+    automatic = PROPOSAL_LIFECYCLE.automatic_move("advice") is not None
+    closure = "Advice requires an authorized manual transition; check the record's available moves."
+    if automatic:
+        closure = "The engine advances Advice when its declared gate is met."
+    elif close and close.proposer_until_deadline:
+        closure = "The proposer closes Advice; another steward only after its deadline. Without a deadline, only the proposer."
+    return {
+        "advice_advances_automatically": automatic,
+        "meeting_advice_gate_advances_stage": automatic,
+        "advice_closure": closure,
+        "proposer_controls_closure": bool(close and close.proposer_until_deadline),
+        "transition_history_available": False,
+        "actor_and_cause": "Unknown: this result does not include transition history. Do not infer who moved it or why from gates or current state.",
+    }
 
 
 # ===================================================================
@@ -2870,7 +2892,10 @@ async def explain_status(
     if record is None:
         return {"success": False, "error": f"No {kind} '{key}' found." if key else "No live emergency found."}
     caller = caller or await _caller_row(db, caller_user_id, record.ecosystem_id)
-    return {"success": True, "data": await explain_record(db, kind, record, caller)}
+    data = await explain_record(db, kind, record, caller)
+    if kind == "proposal":
+        data["lifecycle_facts"] = _proposal_lifecycle_facts()
+    return {"success": True, "data": data}
 
 
 async def get_conflict_case(

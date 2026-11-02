@@ -459,3 +459,64 @@ def test_all_skills_fit_budget(_loaded_registry: SkillRegistry):
     assert not over_budget, (
         f"Skills exceeding {budget}-token budget:\n" + "\n".join(over_budget)
     )
+
+
+def test_runtime_lifecycle_policy_follows_and_overrides_stale_skill_prose():
+    stale = "The advice window closes automatically at the deadline."
+    reg = _mock_registry(_make_skill("act-advice-phase", raw_text=stale))
+    prompt = assemble_system_prompt(active_skill="act-advice-phase", skill_registry=reg, response_mode="skill")
+    assert stale in prompt
+    assert prompt.index("## Current application policy (authoritative)") > prompt.index(stale)
+    assert prompt.rfind("Advice never ends by itself") > prompt.index(stale)
+    assert "Current state does not prove who changed it or why" in prompt
+
+
+def test_real_advice_skill_and_runtime_agree_on_overdue_advice(_loaded_registry):
+    from neos_agent.services.act_gates import PROPOSAL_LIFECYCLE
+
+    assert PROPOSAL_LIFECYCLE.automatic_move("advice") is None
+    closure = next(move for move in PROPOSAL_LIFECYCLE.moves if (move.source, move.target) == ("advice", "consent"))
+    assert closure.proposer_until_deadline and closure.gate == "advice"
+
+    skill = build_skill_prompt("act-advice-phase", _loaded_registry)
+    prompt = assemble_system_prompt(
+        active_skill="act-advice-phase", skill_registry=_loaded_registry, response_mode="skill",
+    )
+    assert "members can still submit advice while the proposal remains in Advice" in skill
+    assert "another steward may close it only after the recorded advice deadline has passed" in skill
+    assert "With no deadline, only the proposer can close it" in skill
+    assert "A deadline is a reminder" in skill
+    assert "Advice never ends by itself" in prompt
+    for text in (skill, prompt):
+        assert "No late advice is accepted" not in text
+        assert "At the deadline, the advice window closes" not in text
+        assert "hard deadline" not in text
+
+    consent = build_skill_prompt("act-consent-phase", _loaded_registry)
+    assert "A passed deadline alone does not start Consent" in consent
+    asset = (_NEOS_CORE / "layer-03-act-engine/act-advice-phase/assets/advice-log-template.yaml").read_text(encoding="utf-8")
+    assert "actual closure date; a deadline alone does not close advice" in asset
+
+
+def test_platform_help_uses_verified_profile_controls_and_bounded_routes():
+    prompt = assemble_system_prompt(response_mode="platform")
+    assert "sidebar [Me](/me)" in prompt
+    assert "choose the Profile tab" in prompt
+    assert "Display name textbox, then press Save profile" in prompt
+    assert "immediately editable" in prompt
+    assert "[Messaging](/messaging)" in prompt
+    assert "say you do not know the exact steps" in prompt
+    assert "Never guess button labels, menus, tabs, or routes" in prompt
+
+
+@pytest.mark.parametrize("mode, expected", [
+    ("platform", "Answer as platform help"), ("framework", "Answer a governance question directly"),
+])
+def test_direct_context_keeps_tools_and_exit_rules_without_loading_a_skill(mode, expected):
+    reg = _mock_registry(_make_skill("voluntary-exit", raw_text="UNSELECTED SKILL BODY"))
+    prompt = assemble_system_prompt(skill_registry=reg, response_mode=mode)
+    assert expected in prompt and "UNSELECTED SKILL BODY" not in prompt
+    assert "leaving is voluntary and has no penalty" in prompt
+    assert "portable copy of your records" in prompt
+    assert "When several ecosystems are selected, ask WHICH ECOSYSTEM" in prompt
+    assert "An unspecified date" in prompt and "first Saturday" in prompt

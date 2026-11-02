@@ -68,8 +68,16 @@ from .teammembership import TeamMembership  # noqa: F401
 from .quizassignment import QuizAssignment  # noqa: F401
 from .appsetting import AppSetting  # noqa: F401
 from .ctchandoff import CtcHandoff  # noqa: F401
+from .nodeadmin import NodeAdmin, NodeAdminAction, NodeAdminSnapshot  # noqa: F401
+
+from sqlalchemy import select as _select
+from sqlalchemy.orm import column_property as _column_property
+User.node_admin_active = _column_property(_select(NodeAdmin.active).where(NodeAdmin.user_id == User.id, User.disabled_at.is_(None)).correlate_except(NodeAdmin).scalar_subquery())
 
 __all__ = [
+    "NodeAdmin",
+    "NodeAdminAction",
+    "NodeAdminSnapshot",
     "Base",
     "GUID",
     "TimestampMixin",

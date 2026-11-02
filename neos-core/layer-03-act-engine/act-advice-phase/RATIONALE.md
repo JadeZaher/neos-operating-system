@@ -13,6 +13,12 @@ Without structured advice-gathering, decisions are made by whoever happens to be
 
 Any proposal that has passed the synergy check and entered the ACT process. The advice phase applies regardless of proposal type (EcoPlan, GenPlan, amendment, resource request, policy change) and regardless of scope (circle-level, cross-circle, ecosystem-level). The depth and duration of advice-gathering scales with the proposal's scope and urgency.
 
+## Application lifecycle alignment
+
+The live application keeps advice open after its deadline. The deadline is a reminder; it neither advances the proposal nor rejects further advice. The proposer closes advice when its requirements are met. Another steward can close it only after the recorded deadline has passed; without a deadline, closure remains the proposer's action. Facilitating a discussion grants no additional app authority. This follows `agent/src/neos_agent/services/act_gates.py` and `api/policy.py`, including the owner decision recorded on 2026-11-01.
+
+The former hard-cutoff wording caused the assistant to deny further advice on an overdue proposal whose page still showed Advice and Share Advice. Both the operational skill and the runtime guide now describe the same explicit transition. Suggested planning windows remain guidance rather than fabricated record dates. The advice-log end date records actual closure, so an overdue reminder cannot masquerade as a completed phase.
+
 ## OmniOne Walkthrough
 
 Suki, a TH member, has submitted a proposal to change the weekly TH meeting from a round-robin facilitation model to a trained-facilitator rotation. The proposal passed synergy check (no conflicting proposals found) and enters the Advice phase. Suki announces the proposal to all 35 TH members through the OmniOne governance channel, with a 7-day advice window.

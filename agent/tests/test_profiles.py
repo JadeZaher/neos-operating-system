@@ -25,6 +25,7 @@ from neos_agent.db.models import (
     Domain,
     Ecosystem,
     Member,
+    NodeAdmin,
     SharesNeeds,
     User,
 )
@@ -224,6 +225,8 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
     assert response["profile"]["skills"] == ["Facilitation"]
     assert "did" not in response["profile"]
     assert "phone" not in response["profile"]
+    assert "password_hash" not in response["profile"]
+    assert response["node_admin_badge"] is None
     assert "notes" not in response["ecosystems"][0]["membership"]
     assert response["domains"][0]["domain_id"] == "SHUR-KITCHEN"
     # Members see the domain's name; the generated code stays secondary.
@@ -238,6 +241,28 @@ async def test_public_profile_aggregates_memberships_without_private_fields(db_s
     ]
     assert response["publications"][0]["ecosystem_name"] == "OmniOne"
     assert response["publications"][0]["domain_name"] == "Community Kitchen"
+
+
+@pytest.mark.asyncio
+async def test_profile_node_admin_badge_follows_live_global_assignment_without_membership(db_session):
+    user = User(id=uuid.uuid4(), display_name="Node operator", did="did:key:private-operator", phone="private-phone", password_hash="private-password")
+    assignment = NodeAdmin(user_id=user.id, active=True)
+    db_session.add_all([user, assignment])
+    await db_session.commit()
+
+    public = await _build_profile_response(db_session, user, None)
+    assert public["node_admin_badge"] == {"key": "node_admin", "label": "Node admin"}
+    assert public["ecosystems"] == []
+    assert not {"did", "phone", "password_hash"} & public["profile"].keys()
+
+    assignment.active = False
+    await db_session.commit()
+    assert (await _build_profile_response(db_session, user, None))["node_admin_badge"] is None
+
+    assignment.active = True
+    user.disabled_at = datetime(2026, 11, 1)
+    await db_session.commit()
+    assert (await _build_profile_response(db_session, user, None))["node_admin_badge"] is None
 
 
 @pytest.mark.asyncio
