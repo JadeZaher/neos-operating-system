@@ -166,11 +166,13 @@ def _agreement_brief(agreement) -> dict:
     return {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
 
 
-def consent_gate_payload(missing: list) -> dict:
+def consent_gate_payload(missing: list, join_gates: dict | None = None) -> dict:
     """Extra sign-up response keys mirroring the join endpoint's consent contract."""
     return {
-        "status": "consent_required" if missing else "joined",
+        "status": (join_gates["status"] if join_gates and join_gates["status"] in {"quiz_required", "quiz_unavailable"}
+                   else "consent_required" if missing else "joined"),
         "required_agreements": [_agreement_brief(agreement) for agreement in missing],
+        "join_gates": join_gates,
     }
 
 
@@ -184,11 +186,13 @@ async def pending_consent_gates(session, user_id: uuid.UUID) -> list[dict]:
     )).all()
     gates = []
     for member, ecosystem in rows:
+        from neos_agent.services.join_gates import join_gate_summary
         missing = await missing_agreement_consents(session, member.id, ecosystem.id, "ecosystem")
         gates.append({
             "ecosystem_id": str(ecosystem.id),
             "ecosystem_name": ecosystem.name,
             "required_agreements": [_agreement_brief(agreement) for agreement in missing],
+            "join_gates": await join_gate_summary(session, ecosystem_id=ecosystem.id, member=member),
         })
     return gates
 
@@ -304,7 +308,8 @@ async def api_verify(request: Request):
                 member_id=f"did-{did[-12:]}",
                 display_name=display_name,
             )
-            consent_gate = consent_gate_payload(missing)
+            from neos_agent.services.join_gates import join_gate_summary
+            consent_gate = consent_gate_payload(missing, await join_gate_summary(session, ecosystem_id=ecosystem.id, member=member))
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -620,6 +625,8 @@ async def api_register(request: Request):
             member_id=f"usr-{username[:12]}",
             display_name=display_name,
         )
+        from neos_agent.services.join_gates import join_gate_summary
+        signup_gates = await join_gate_summary(session, ecosystem_id=ecosystem.id, member=member)
 
         # Create auth session
         session_id = uuid.uuid4()
@@ -643,7 +650,7 @@ async def api_register(request: Request):
         member=member_summary,
     )
     payload = response_data.model_dump(mode="json")
-    payload.update(consent_gate_payload(missing))
+    payload.update(consent_gate_payload(missing, signup_gates))
     response = json(payload, status=200)
     response.add_cookie(
         "neos_session",

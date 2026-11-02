@@ -181,6 +181,8 @@ async def list_newcomers(request: Request):
             progress[record.member_id] = record.status or "in_progress"  # the latest row wins
         items = []
         for member, ecosystem_name in rows:
+            from neos_agent.services.join_gates import join_gate_summary
+            gates = await join_gate_summary(session, ecosystem_id=member.ecosystem_id, member=member)
             missing = (await missing_agreement_consents(session, member.id, member.ecosystem_id, "ecosystem")
                        if member.current_status == "pending_consent" else [])
             items.append({
@@ -192,7 +194,8 @@ async def list_newcomers(request: Request):
                 "joined_at": member.created_at.isoformat() if member.created_at else None,
                 "required_agreements": [agreement_brief(agreement) for agreement in missing],
                 "orientation_status": progress.get(member.id, "not_started"),
-                "stuck": member.current_status == "pending_consent" and not missing,
+                "join_gates": gates,
+                "stuck": member.current_status == "pending_consent" and gates["eligible"],
             })
     items.sort(key=lambda item: (not item["stuck"], item["current_status"] != "pending_consent"))  # stable: newest first within
     return json({"items": items, "total": len(items)})

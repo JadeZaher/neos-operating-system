@@ -1,5 +1,86 @@
 # Services
 
+## Ordinary operator service boundaries
+
+`member_messaging.py` is the request-free implementation used by the messaging
+REST endpoints and ordinary operator tools. Reads check current participation;
+lists/searches preserve the selection plus cross-ecosystem post-reply rule.
+New conversations validate all recipients against active memberships in the
+caller's active ecosystems, including cross-ecosystem contacts surfaced by the
+existing member picker. The creator/sender is resolved from the actual User's
+Member rows. A caller cannot add an unrelated private outsider or supply a
+different sender. Services flush but do not commit. Message WebSocket events
+are queued on the SQLAlchemy session and broadcast only after successful commit.
+
+`exchange.prepare_collaboration` validates the normal source/target, consent,
+linked-post, date and active-domain requirements without writing, allowing the
+operator to ask a valid confirmation first. `propose_collaboration` reuses that
+preparation. Domain discovery and target lookup share `collaboration_domain_clause`;
+collaboration lists share `search_collaborations` and the existing visibility rule.
+
+The REST modules expose request-free operations where they previously embedded
+mutation: `safeguards.prepare_audit_publication` / `publish_audit_record` and
+draft-edit/abandon validators; `exit.validate_exit_move` / `apply_exit_move`;
+`conflicts.prepare_case_update` / `apply_case_update` and repair equivalents.
+The operator calls those functions with real scoped records and caller rows.
+It never invokes a route via a synthetic request or copies policy into tools.
+Publication plans are fingerprinted before confirmation; a changed plan cannot
+be published with an old approval. Repair writes accept active/fulfilled and
+cannot evade the parties' attestation by using an alternate completion spelling.
+
+Coverage: `tests/test_personal_operator_workflows.py` plus the existing messaging,
+exchange, governance-care, maintenance, exit and actor-boundary suites. All new
+source and tests are authored before the coordinator's integrated sweep.
+
+## Configured entry quizzes
+
+`join_gates.py` is the canonical prerequisite check for ecosystem enrollment, re-entry and activation,
+domain/circle participation (including all domain ancestors), and team participation. A quiz is required only
+when it is marked `is_entry_quiz` or belongs to a configured `is_onboarding_required` course of the applicable
+scope. No quiz configured means no quiz requirement. Unpublished, unsupported or empty configured quizzes fail closed.
+Knowledge quizzes with answer keys require a server-graded pass. Valid questionnaires without answer keys
+require verified completion, without judging readiness declarations or personal preferences as right or wrong.
+Schema determines this distinction; existing `mode="standard"` readiness surveys remain completion-based.
+All applicable quizzes must have a server-verified result for the entrant's actual membership, with the
+current content/scope/passing-threshold fingerprint, including course identity and its effective ecosystem/domain.
+Legacy quiz rows with no direct ecosystem safely inherit their course's ecosystem and domain; inconsistent
+course scopes fail closed. Moving a quiz or course invalidates the old pass for new admission. Legacy results without grading provenance remain history;
+they do not grant new admission. Existing active memberships and subgroup participation are not demoted.
+
+`member_lifecycle` uses `pending_consent` for the combined entry gate, so a newcomer can read and take the
+published quiz before becoming active. Agreement attestation and quiz submission both call gate-aware
+activation: completing either first never bypasses the other. Steward restores and ordinary team adds check
+the entrant's requirements. Existing proposal-author rights are a separate established policy; enrollment
+gates do not revoke authorship over historical artifacts.
+
+An enabled, explicitly assigned NodeAdmin entrant bypasses quizzes only. Builder/co-creator profiles confer
+no exemption. An administrator adding an ordinary entrant does not exempt that entrant. Bypassed admission
+records a public `join_quiz_bypass` event and never fabricates a quiz attempt or agreement consent. Explicit
+technical console corrections remain auditable support operations under the separate support policy.
+
+The shared DTO contains `target_type`, `target_id`, `eligible`, `status`, `required_quizzes`,
+`required_agreements`, and `quiz_bypass: {applied, reason}`. Each requirement carries `completion_mode`
+(`graded` or `completion`). Quiz statuses are `required`, `passed`, `completed`, `unavailable`, or `bypassed`;
+the bypass reason is `node_admin`. Links use `/quiz/take/:id` and
+`/agreements/:id`. Blocked actions return 409 with `JOIN_QUIZ_REQUIRED`, `JOIN_QUIZ_UNAVAILABLE`, or
+`CONSENT_REQUIRED` plus the complete `join_gates` DTO. New enrollment persists its pending membership and
+returns the DTO; repeated pending enrollment does not create another row. Auth pending gates and the
+steward newcomer queue expose the same DTO.
+
+Candidate quiz content and result serialization remove answer keys. Submission accepts only answers and
+time spent, resolves the actual caller, checks publication and ecosystem access, and verifies completion on the server.
+`QuizResult.completion_verified` defaults false and can be set only by this verification path. Every configured
+required field must have a valid typed answer from its allowed choices; legacy fields without `isRequired`
+are required. Explicit boolean false is an answer. Unknown fields, unsupported formats, malformed choices,
+empty submissions and blank required text cannot complete a questionnaire. Nongraded results keep `is_passed`
+null; knowledge results additionally require a passing score for admission. No client completion/pass flag is accepted.
+`target_ecosystem_id` is optional submission scope context for a shared global quiz. The server resolves the
+actual caller's active/pending row there; a local quiz rejects a mismatched target. It never accepts a member
+identity override. Orientation passes its current ecosystem, so a shared quiz result binds the journey's actual
+membership instead of an unrelated default row. Result ownership remains strict. `GET /quizzes/:id?candidate=1`
+forces candidate redaction even for authors/stewards; the take/orientation cache key is separate from editing.
+Quiz editing by stewards retains answer keys; global privileged editing uses the audited admin boundary.
+
 ## ACT lifecycle
 
 `act_gates.py` is the one place that says which ACT status moves exist, which
@@ -628,3 +709,18 @@ member has hundreds of answered posts.
 - **Chat lock (A13).** `update_share_need_status` reloads the post with `load_visible(..., for_update=True)` before
   any write, as REST `_write_post` does, so two hides at once cannot both pass `ALREADY_HIDDEN`.
 - **Restore records no note (F10).** `restore_publication` takes no reason; the client no longer offers a note field.
+
+
+## Typed quiz proof and orientation routing
+
+`same_answer_value` treats integers and floats as JSON numbers, with strings and booleans kept distinct. Both choice validation and grading use this boundary. The versioned quiz fingerprint invalidates older grading proofs without demoting existing active participation. Candidate sources and result-owner responses strip answer keys.
+
+Journey route validation belongs in `orientation_content` so member authoring, node support and completion agree on the same declared forward-only graph. A terminal destination is the step count; a missing optional route continues sequentially. Required evidence is checked only on the selected path, and a required choice cannot manufacture a path by omitting or inventing its selection.
+
+## Dev-drive cycle 2: completion, erasure and attempt boundaries
+
+Orientation validation computes the effective saved status before checking proofs; changing journeys starts fresh unless the caller explicitly completes with valid current evidence. Canonical genplan output is derived from saved choices in that same transaction, and the legacy acknowledgement shares the idempotent helper.
+
+Private matching writes and erasure serialize first on the actual User row, then recheck current consent. This persistent lock covers absent-consent creation, answer/assessment/correction writes, scoped/global withdrawal, and retention cleanup; no matching-data path acquires support locks afterward. Retention enumerates candidates without locks, processes one owner per transaction, then rechecks expiration. See api/ORIENTATION_MATCHING.md for privacy semantics and PostgreSQL concurrency evidence.
+
+No-retakes means one server-verified attempt for the current quiz fingerprint, including a genuine failed attempt. Historical or unverified results remain available without blocking the first attempt for revised content. Invalid submissions never create a verified attempt. Exact owner-result responses supply current-version eligibility so the UI can distinguish a current retake from a first attempt on revised content.

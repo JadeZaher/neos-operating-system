@@ -1,5 +1,16 @@
 # alembic - schema migrations
 
+## x4d8a2c6f0b3: configured join quizzes
+
+Follows `w3c7f1a9d5e2`; the orientation/matching migration `y5e9b3d7a1c4` follows this revision.
+Adds nullable `quizzes.team_id` with an index (and PostgreSQL foreign key) and nullable
+`quiz_results.graded_fingerprint`, plus server-owned `quiz_results.completion_verified` defaulting false.
+Existing memberships, attempts, and assignments remain unchanged; legacy results receive no verified-completion flag.
+Historical attempts receive no fabricated grading provenance. Fresh metadata carries the same columns.
+The migration is additive and tolerates columns already present after `create_all`; no production data
+backfill or automatic loss of active memberships occurs. `test_join_quiz_gates.py` covers migration
+preservation and repeat-upgrade behavior; run tests only in the coordinated end-of-batch sweep.
+
 ## Fresh databases
 
 The revision history was written against databases that `main.init_db`

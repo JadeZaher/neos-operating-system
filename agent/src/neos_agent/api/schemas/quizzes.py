@@ -4,7 +4,7 @@ import datetime as _dt
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class QuizListItem(BaseModel):
@@ -12,6 +12,7 @@ class QuizListItem(BaseModel):
     course_id: Optional[uuid.UUID] = None
     ecosystem_id: Optional[uuid.UUID] = None
     domain_id: Optional[uuid.UUID] = None
+    team_id: Optional[uuid.UUID] = None
     title: str
     description: Optional[str] = None
     mode: str
@@ -34,6 +35,7 @@ class QuizCreateRequest(BaseModel):
     course_id: Optional[uuid.UUID] = None
     ecosystem_id: Optional[uuid.UUID] = None
     domain_id: Optional[uuid.UUID] = None
+    team_id: Optional[uuid.UUID] = None
     title: str
     description: Optional[str] = None
     mode: str = "standard"
@@ -48,6 +50,7 @@ class QuizCreateRequest(BaseModel):
 
 
 class QuizUpdateRequest(BaseModel):
+    team_id: Optional[uuid.UUID] = None
     course_id: Optional[uuid.UUID] = None
     title: Optional[str] = None
     description: Optional[str] = None
@@ -62,11 +65,10 @@ class QuizUpdateRequest(BaseModel):
 
 
 class QuizSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     survey_results: Optional[dict] = None
-    score: Optional[float] = None
     time_spent: Optional[int] = None
-    is_passed: Optional[bool] = None
-    result_metadata: Optional[dict] = None
+    target_ecosystem_id: Optional[uuid.UUID] = None
 
 
 class QuizResultItem(BaseModel):
@@ -75,6 +77,7 @@ class QuizResultItem(BaseModel):
     member_id: uuid.UUID
     score: Optional[float] = None
     is_passed: Optional[bool] = None
+    completion_verified: bool = False
     time_spent: Optional[int] = None
     survey_results: Optional[dict] = None
     result_metadata: Optional[dict] = None

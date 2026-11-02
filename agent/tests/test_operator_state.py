@@ -184,7 +184,7 @@ async def test_multiorg_draft_waits_for_real_user_choice_and_replays_only_safe_f
         proposal = (await db.scalars(select(Proposal).where(Proposal.title == args["title"]))).one()
         assert proposal.ecosystem_id == RIVER and proposal.status == "draft"
         assert proposal.proposed_change == original_request
-        assert proposal.rationale == "Draft requested by the member; details to confirm."
+        assert proposal.rationale == "Reason not yet provided by the member."
         assert proposal.affected_domain is None and proposal.advice_deadline is None
         assert (await db.get(AgentSession, uuid.UUID(session))).context["pending_proposal_choice"] is None
     from neos_agent.api.chat import _execute_proposal_choice

@@ -464,6 +464,17 @@ async def update_domain(request: Request, domain_id: uuid.UUID):
 # ---------------------------------------------------------------------------
 
 
+@domains_api_bp.get("/<domain_id:uuid>/join-gates")
+@authenticated
+async def domain_join_gates(request: Request, domain_id: uuid.UUID):
+    from neos_agent.services.join_gates import join_gate_summary
+    async with request.app.ctx.db() as session:
+        domain = await get_scoped_or_404(session, request, Domain, domain_id, label="Domain")
+        member = await caller_in(session, request, domain.ecosystem_id)
+        summary = await join_gate_summary(session, ecosystem_id=domain.ecosystem_id, member=member, domain=domain)
+        return json({"join_gates": summary})
+
+
 @domains_api_bp.post("/<domain_id:uuid>/participation")
 @authenticated
 async def join_domain_participation(request: Request, domain_id: uuid.UUID):
@@ -478,22 +489,18 @@ async def join_domain_participation(request: Request, domain_id: uuid.UUID):
         local_member = await caller_in(session, request, domain.ecosystem_id)
         if local_member is None or local_member.current_status != "active":
             raise ApiError(403, "Active ecosystem membership is required for domain participation")
-
-        missing = await missing_agreement_consents(
-            session, local_member.id, domain.ecosystem_id, "domain", domain.id
-        )
-        if missing:
-            raise ApiError(409, "Agreement consent is required before domain participation", {
-                "required_agreements": [
-                    {"id": str(agreement.id), "title": agreement.title, "version": agreement.version}
-                    for agreement in missing
-                ],
-            })
-
         participation = await session.scalar(select(CircleMembership).where(
             CircleMembership.domain_id == domain.id,
             CircleMembership.member_id == local_member.id,
         ))
+        from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+        gates = await join_gate_summary(session, ecosystem_id=domain.ecosystem_id, member=local_member, domain=domain)
+        if participation is None or participation.status != "active":
+            require_join_gates(gates)
+            from neos_agent.services.join_gates import record_quiz_bypass
+            await record_quiz_bypass(session, local_member, gates)
+        else:
+            gates.update(eligible=True, status="ready", grandfathered=True)
         if participation is None:
             participation = CircleMembership(
                 id=uuid.uuid4(), domain_id=domain.id, member_id=local_member.id,
@@ -509,6 +516,7 @@ async def join_domain_participation(request: Request, domain_id: uuid.UUID):
         "domain_id": str(domain_id),
         "member_id": str(local_member.id),
         "role": role,
+        "join_gates": gates,
     }, status=201)
 
 
@@ -591,6 +599,8 @@ async def assign_quiz_to_domain(request: Request, domain_id_a: uuid.UUID):
             )
 
         quiz.domain_id = domain_id_a
+        quiz.ecosystem_id = domain.ecosystem_id
+        quiz.team_id = None
         quiz.is_entry_quiz = is_entry
         await session.commit()
 

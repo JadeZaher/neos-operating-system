@@ -26,6 +26,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    false,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import (
@@ -82,6 +83,7 @@ class Quiz(TimestampMixin, Base):
         Index("ix_quizzes_created_by", "created_by"),
         Index("ix_quizzes_ecosystem_id", "ecosystem_id"),
         Index("ix_quizzes_domain_id", "domain_id"),
+        Index("ix_quizzes_team_id", "team_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
@@ -108,6 +110,9 @@ class Quiz(TimestampMixin, Base):
     )
     is_entry_quiz: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
+    )
+    team_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID(), ForeignKey("teams.id"), nullable=True
     )
 
     # Relationships
@@ -139,6 +144,8 @@ class QuizResult(Base):
     is_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     time_spent: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     result_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    graded_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    completion_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, server_default=func.now(), nullable=True
     )

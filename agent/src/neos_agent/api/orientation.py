@@ -38,6 +38,36 @@ GLOBAL_JOURNEY_LOCKED = "This journey belongs to no ecosystem, so no ecosystem's
 PROGRESS_STATUSES = ("in_progress", "complete", "opted_out")
 
 
+async def _journey_view(db, request, journey):
+    from neos_agent.api.guards import caller_user_id
+    from neos_agent.services.matching import visible_ecosystem
+    from neos_agent.services.orientation_content import entrant_content
+    may_edit = False
+    if journey.ecosystem_id is not None:
+        _, member = await visible_ecosystem(db, journey.ecosystem_id, caller_user_id(request))
+        may_edit = can_manage_onboarding(member, journey.ecosystem_id)
+    if not journey.is_active and not may_edit:
+        raise ApiError(404, "Journey map not found")
+    return {"id": str(journey.id), "slug": journey.slug, "title": journey.title, "description": journey.description,
+            "ecosystem_id": str(journey.ecosystem_id) if journey.ecosystem_id else None,
+            "step_count": journey.step_count or len(journey.content_sequence or []),
+            "content_sequence": journey.content_sequence or [] if may_edit else entrant_content(journey.content_sequence or []),
+            "exit_package": journey.exit_package or {} if may_edit else entrant_content(journey.exit_package or {}),
+            "is_default": journey.is_default, "is_active": journey.is_active,
+            "created_at": journey.created_at.isoformat() if journey.created_at else None}
+
+
+async def _visible_journeys(db, request, maps):
+    visible = []
+    for journey in maps:
+        try:
+            visible.append(await _journey_view(db, request, journey))
+        except ApiError as error:
+            if error.status != 404:
+                raise
+    return visible
+
+
 async def _require_onboarding_steward(db, request: Request, ecosystem_id: uuid.UUID) -> Member:
     """The caller's row when they may change this ecosystem's orientation (policy.can_manage_onboarding), else 403."""
     caller = await caller_in(db, request, ecosystem_id)
@@ -94,9 +124,9 @@ async def get_ethos_detail(request: Request, ecosystem_id: uuid.UUID):
     Returns JSON with ecosystem info, member count, tags, and governance summary.
     """
     async with request.app.ctx.db() as db:
-        eco = await db.get(Ecosystem, ecosystem_id)
-        if eco is None:
-            return json({"error": "Ecosystem not found"}, status=404)
+        from neos_agent.api.guards import caller_user_id
+        from neos_agent.services.matching import visible_ecosystem
+        eco, _ = await visible_ecosystem(db, ecosystem_id, caller_user_id(request))
 
         member_count = await db.scalar(
             select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id)
@@ -124,6 +154,9 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
     include_inactive = request.args.get("include_inactive", "").lower() in ("true", "1")
 
     async with request.app.ctx.db() as db:
+        from neos_agent.api.guards import caller_user_id
+        from neos_agent.services.matching import visible_ecosystem
+        await visible_ecosystem(db, ecosystem_id, caller_user_id(request))
         filters = [JourneyMap.ecosystem_id == ecosystem_id]
         if not include_inactive:
             filters.append(JourneyMap.is_active == True)  # noqa: E712
@@ -137,22 +170,7 @@ async def list_journey_maps(request: Request, ecosystem_id: uuid.UUID):
         result = await db.execute(stmt)
         maps = result.scalars().all()
 
-        return json([
-            {
-                "id": str(m.id),
-                "slug": m.slug,
-                "title": m.title,
-                "description": m.description,
-                "ecosystem_id": str(m.ecosystem_id) if m.ecosystem_id else None,
-                "step_count": m.step_count or len(m.content_sequence or []),
-                "content_sequence": m.content_sequence or [],
-                "exit_package": m.exit_package or {},
-                "is_default": m.is_default,
-                "is_active": m.is_active,
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-            }
-            for m in maps
-        ])
+        return json(await _visible_journeys(db, request, maps))
 
 
 @orientation_api_bp.get("/journey-maps")
@@ -182,24 +200,7 @@ async def list_all_journey_maps(request: Request):
         result = await db.execute(stmt)
         maps = result.scalars().all()
 
-        return json({
-            "maps": [
-                {
-                    "id": str(m.id),
-                    "slug": m.slug,
-                    "title": m.title,
-                    "description": m.description,
-                    "ecosystem_id": str(m.ecosystem_id) if m.ecosystem_id else None,
-                    "step_count": m.step_count or len(m.content_sequence or []),
-                    "content_sequence": m.content_sequence or [],
-                    "exit_package": m.exit_package or {},
-                    "is_default": m.is_default,
-                    "is_active": m.is_active,
-                    "created_at": m.created_at.isoformat() if m.created_at else None,
-                }
-                for m in maps
-            ]
-        })
+        return json({"maps": await _visible_journeys(db, request, maps)})
 
 
 @orientation_api_bp.get("/journey-maps/<journey_map_id:uuid>")
@@ -214,19 +215,7 @@ async def get_journey_map(request: Request, journey_map_id: uuid.UUID):
         if jm is None:
             return json({"error": "Journey map not found"}, status=404)
 
-        return json({
-            "id": str(jm.id),
-            "slug": jm.slug,
-            "title": jm.title,
-            "description": jm.description,
-            "ecosystem_id": str(jm.ecosystem_id) if jm.ecosystem_id else None,
-            "step_count": jm.step_count or len(jm.content_sequence or []),
-            "content_sequence": jm.content_sequence or [],
-            "exit_package": jm.exit_package or {},
-            "is_default": jm.is_default,
-            "is_active": jm.is_active,
-            "created_at": jm.created_at.isoformat() if jm.created_at else None,
-        })
+        return json(await _journey_view(db, request, jm))
 
 
 @orientation_api_bp.post("/ethos/<ecosystem_id:uuid>/journey-maps")
@@ -249,6 +238,8 @@ async def create_journey_map(request: Request, ecosystem_id: uuid.UUID):
         if eco is None:
             return json({"error": "Ecosystem not found"}, status=404)
         await _require_onboarding_steward(db, request, ecosystem_id)
+        from neos_agent.services.orientation_content import validate_journey_routes
+        validate_journey_routes(content_sequence)
 
         jm = JourneyMap(
             id=uuid.uuid4(),
@@ -298,6 +289,8 @@ async def update_journey_map(request: Request, journey_map_id: uuid.UUID):
         if "slug" in body:
             jm.slug = body["slug"]
         if "content_sequence" in body:
+            from neos_agent.services.orientation_content import validate_journey_routes
+            validate_journey_routes(body["content_sequence"])
             jm.content_sequence = body["content_sequence"]
             jm.step_count = len(body["content_sequence"])
         if "exit_package" in body:
@@ -330,12 +323,14 @@ async def delete_journey_map(request: Request, journey_map_id: uuid.UUID):
     """DELETE -- Delete a journey map nobody has walked; one with members' progress is deactivated instead (409)."""
     async with request.app.ctx.db() as db:
         jm = await _steward_map_or_error(db, request, journey_map_id)
+        from neos_agent.db.models import OrientationChatSession
         walked = await db.scalar(
             select(func.count(UserJourneyProgress.id)).where(UserJourneyProgress.journey_map_id == journey_map_id)
         )
-        if walked:  # deleting would erase members' progress
+        conversations = await db.scalar(select(func.count(OrientationChatSession.id)).where(OrientationChatSession.journey_map_id == journey_map_id))
+        if walked or conversations:
             raise ApiError(409, "Members have progress on this journey. Deactivate it instead.",
-                           {"code": "JOURNEY_IN_USE", "progress_count": walked})
+                           {"code": "JOURNEY_IN_USE", "progress_count": walked, "conversation_count": conversations})
         await db.delete(jm)
         await db.commit()
 
@@ -423,6 +418,8 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
         )
         _require_orienting_member(member)
         await _validate_progress_body(db, ecosystem_id, body)
+        from neos_agent.services.node_admin import authorize, is_node_admin
+        node_admin_actor = await authorize(db, member.user_id) if await is_node_admin(db, member.user_id) else None
 
         # Find existing progress (locked: a step save is a read-modify-write of completed_steps)
         stmt = select(UserJourneyProgress).where(
@@ -436,10 +433,19 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
         if progress is None and not body.get("journey_map_id"):
             raise ApiError(400, "Choose a journey to begin", {"field": "journey_map_id"})
 
+        journey_id = body.get("journey_map_id") or progress.journey_map_id
+        journey = await db.get(JourneyMap, journey_id)
+        if journey is None or journey.ecosystem_id != ecosystem_id or not journey.is_active:
+            raise ApiError(409, "Choose a current journey from this ecosystem")
+        from neos_agent.services.orientation_completion import validate_progress
+        step_responses, completed_steps = await validate_progress(db, member, journey, progress, body, node_admin_actor)
+
         now = datetime.utcnow()
 
         if progress:
             # Update existing
+            if progress.journey_map_id != journey.id:
+                progress.current_step, progress.completed_at = 0, None
             if body.get("journey_map_id"):  # FX-Onboard A11: a null keeps the journey (NOT NULL column, was a 500)
                 progress.journey_map_id = body["journey_map_id"]
             if "current_step" in body:
@@ -449,21 +455,10 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
             if "was_recommended" in body:
                 progress.was_recommended = body["was_recommended"]
             progress.updated_at = now
+            progress.step_responses = step_responses
+            progress.completed_steps = completed_steps
 
             # Merge step responses
-            if "step_key" in body and "step_response" in body:
-                responses = dict(progress.step_responses or {})
-                responses[body["step_key"]] = body["step_response"]
-                progress.step_responses = responses
-
-            # Track completed steps
-            if "current_step" in body:
-                completed = list(progress.completed_steps or [])
-                step_idx = body["current_step"] - 1  # previous step was completed
-                if step_idx >= 0 and step_idx not in completed:
-                    completed.append(step_idx)
-                progress.completed_steps = completed
-
             status = body.get("status", progress.status)
             progress.status = status
             if status == "complete" and not progress.completed_at:
@@ -479,10 +474,11 @@ async def save_progress(request: Request, ecosystem_id: uuid.UUID):
                 journey_map_id=body.get("journey_map_id"),
                 orientation_path=body.get("orientation_path", "explorer"),
                 current_step=body.get("current_step", 0),
-                completed_steps=[],
-                step_responses={},
+                completed_steps=completed_steps,
+                step_responses=step_responses,
                 status=body.get("status", "in_progress"),
                 started_at=now,
+                completed_at=now if body.get("status") == "complete" else None,
                 was_recommended=body.get("was_recommended", True),
                 misalignment_flags=[],
             )
@@ -508,6 +504,32 @@ async def save_genplan_input(request: Request):
     Accepts JSON payload with orientation choice data.
     Returns JSON: {"status": "ok", "received": true}
     """
-    # Store genplan inputs as part of journey progress step_responses.
-    # For now, acknowledge receipt.
-    return json({"status": "ok", "received": True})
+    body = request.json or {}
+    if not isinstance(body, dict) or set(body) - {"ethos_id", "journey_step_id", "section_key", "choice_key", "choice_label", "choice_index", "output_text"}:
+        raise ApiError(400, "Use only the documented saved-choice fields")
+    try:
+        ecosystem_id = uuid.UUID(str(body.get("ethos_id", "")))
+        step_index = int(body.get("journey_step_id", ""))
+    except (TypeError, ValueError):
+        raise ApiError(400, "Choose the ecosystem and saved journey choice") from None
+    async with request.app.ctx.db() as db:
+        member = await caller_in_or_join_required(db, request, ecosystem_id, not_found="Ecosystem not found", join_message="Begin this ecosystem's orientation first")
+        _require_orienting_member(member)
+        progress = await db.scalar(select(UserJourneyProgress).where(UserJourneyProgress.member_id == member.id, UserJourneyProgress.ecosystem_id == ecosystem_id).order_by(UserJourneyProgress.created_at.desc()).with_for_update().limit(1))
+        journey = await db.get(JourneyMap, progress.journey_map_id) if progress else None
+        steps = journey.content_sequence if journey and isinstance(journey.content_sequence, list) else []
+        if not 0 <= step_index < len(steps) or not isinstance(steps[step_index], dict) or steps[step_index].get("type") != "choice":
+            raise ApiError(409, "Save a real choice from your current journey first")
+        step = steps[step_index]
+        selected = next((choice for choice in step.get("choices", []) if isinstance(choice, dict) and choice.get("value") == body.get("choice_key")), None)
+        saved = (progress.step_responses or {}).get(f"step_{step_index}")
+        if selected is None or not isinstance(saved, dict) or saved.get("choice") != selected["value"]:
+            raise ApiError(409, "This choice has not been saved in your own orientation")
+        from neos_agent.services.orientation_completion import canonical_genplan_inputs
+        responses = canonical_genplan_inputs(journey, progress.step_responses or {})
+        canonical = responses["genplan_inputs"][str(step_index)]
+        if any(key in body and body[key] != canonical[key] for key in canonical):
+            raise ApiError(409, "Plan labels and output must match the saved journey source")
+        progress.step_responses = responses
+        await db.commit()
+        return json({"status": "ok", "received": True, "saved": True, "journey_id": str(journey.id), "step_id": f"step_{step_index}"})

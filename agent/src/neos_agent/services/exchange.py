@@ -783,9 +783,49 @@ def _date_field(body: dict, field: str, today: _dt.date) -> _dt.date | None:
     return value
 
 
-async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.date | None = None) -> Collaboration:
-    """Any active member of the source ecosystem proposes; the source side counts as approved at once only when the
-    proposer is a steward there (owner default) and the sides are different ecosystems."""
+def collaboration_domain_clause(viewer: Viewer):
+    return Domain.ecosystem_id.in_(select(Ecosystem.id).where(or_(
+        Ecosystem.visibility == "public", Ecosystem.id.in_([row.ecosystem_id for row in viewer.rows]),
+    )))
+
+
+async def collaboration_domains(session, viewer: Viewer, query="", *, limit=30):
+    from neos_agent.api.domains import domain_display_name
+    stmt = select(Domain, Ecosystem.name).join(Ecosystem, Ecosystem.id == Domain.ecosystem_id).where(
+        collaboration_domain_clause(viewer), Domain.status == "active",
+    )
+    if query:
+        escaped = str(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(or_(Domain.name.ilike(f"%{escaped}%", escape="\\"), Domain.purpose.ilike(f"%{escaped}%", escape="\\")))
+    rows = (await session.execute(stmt.order_by(Domain.name, Domain.id).limit(max(1, min(int(limit), 50))))).all()
+    return [{"id": str(domain.id), "name": domain_display_name(domain), "purpose": domain.purpose,
+             "ecosystem": name, "ecosystem_id": str(domain.ecosystem_id)} for domain, name in rows]
+
+
+async def search_collaborations(session, viewer: Viewer, *, query="", status="active", tier=None, page=1, limit=20):
+    stmt = select(Collaboration).where(collaboration_visible_clause(viewer))
+    if status != "all":
+        if status not in COLLABORATION_STATUSES:
+            raise ApiError(400, "Unknown status", {"allowed": [*COLLABORATION_STATUSES, "all"]})
+        stmt = stmt.where(Collaboration.status == status)
+    if tier:
+        stmt = stmt.where(Collaboration.engagement_tier == tier)
+    if query:
+        escaped = str(query).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = stmt.where(or_(Collaboration.title.ilike(f"%{escaped}%", escape="\\"), Collaboration.description.ilike(f"%{escaped}%", escape="\\")))
+    total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    limit, page = max(1, min(int(limit), 50)), max(1, int(page))
+    rows = (await session.scalars(stmt.order_by(Collaboration.created_at.desc(), Collaboration.id)
+        .offset((page - 1) * limit).limit(limit))).all()
+    items = []
+    for record in rows:
+        sides = await load_sides(session, record)
+        items.append(await collaboration_payload(session, viewer, record, sides))
+    return {"items": items, "total": total, "page": page, "per_page": limit}
+
+
+async def prepare_collaboration(session, viewer: Viewer, body, *, today: _dt.date | None = None) -> tuple[dict, Member, Sides]:
+    """Validate both sides and return proposal values without writing or approving."""
     today = today or _dates.aoe_today()  # "not in the past" by the one date rule (F9)
     if not isinstance(body, dict):
         raise ApiError(400, "JSON object required")
@@ -813,10 +853,8 @@ async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.dat
         raise ApiError(404, "source_domain_id not found")
     proposer = await require_active_member(session, viewer.row_in(source.ecosystem_id), source.ecosystem_id,
                                            "propose a collaboration")
-    target = await session.get(Domain, target_id)
-    target_ecosystem = await session.get(Ecosystem, target.ecosystem_id) if target is not None else None
-    if target is None or target_ecosystem is None or (
-            target_ecosystem.visibility != "public" and viewer.row_in(target.ecosystem_id) is None):
+    target = await session.scalar(select(Domain).where(Domain.id == target_id, collaboration_domain_clause(viewer)))
+    if target is None:
         raise ApiError(404, "target_domain_id not found")
     require_active_domain(source, "source_domain_id", "collaborate")
     require_active_domain(target, "target_domain_id", "collaborate")
@@ -831,20 +869,26 @@ async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.dat
         if linked.domain_id not in (source.id, target.id):
             raise _bad("linked_share_need_id", "The post belongs to another domain than these two.")
     required = await required_agreements_for_scope(session, source.ecosystem_id, "collaboration", source.id)
-    record = Collaboration(
-        id=uuid.uuid4(), source_domain_id=source.id, target_domain_id=target.id, title=title.strip(),
-        description=description, engagement_tier=tier.strip().lower(), terms=terms,
-        required_agreement_ids=[str(a.id) for a in required] or None, status="proposed", review_date=review_date,
-        linked_shares_needs=[str(linked.id)] if linked is not None else None, proposed_by_member_id=proposer.id,
-    )
+    values = {
+        "source_domain_id": source.id, "target_domain_id": target.id, "title": title.strip(),
+        "description": description, "engagement_tier": tier.strip().lower(), "terms": terms,
+        "required_agreement_ids": [str(a.id) for a in required] or None, "status": "proposed", "review_date": review_date,
+        "linked_shares_needs": [str(linked.id)] if linked is not None else None, "proposed_by_member_id": proposer.id,
+    }
+    return values, proposer, Sides(source=source, target=target)
+
+
+async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.date | None = None) -> Collaboration:
+    """Propose after shared validation; source stewardship supplies only that side's approval."""
+    values, proposer, sides = await prepare_collaboration(session, viewer, body, today=today)
+    record = Collaboration(id=uuid.uuid4(), **values)
     session.add(record)
     await session.flush()
-    sides = Sides(source=source, target=target)
-    if _may_approve(proposer, source.ecosystem_id, sides, proposer.user_id):
-        session.add(CollaborationApproval(id=uuid.uuid4(), collaboration_id=record.id, ecosystem_id=source.ecosystem_id,
+    if _may_approve(proposer, sides.source.ecosystem_id, sides, proposer.user_id):
+        session.add(CollaborationApproval(id=uuid.uuid4(), collaboration_id=record.id, ecosystem_id=sides.source.ecosystem_id,
                                           member_id=proposer.id, approved_at=_now()))
         await session.flush()
-    await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    await session.refresh(record)
     return record
 
 

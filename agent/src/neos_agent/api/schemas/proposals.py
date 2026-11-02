@@ -10,7 +10,7 @@ import datetime as _dt
 import uuid
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ProposalListItem(BaseModel):
@@ -107,6 +107,19 @@ class ActPolicySchema(BaseModel):
     consent_required: bool = True
     consent_quorum: int | None = None
     test_cases: list[str] = []
+    matching_profile: dict | None = None
+
+    @field_validator("matching_profile")
+    @classmethod
+    def matching_configuration(cls, value):
+        if value is not None:
+            from neos_agent.services.matching import validate_configuration
+            from neos_agent.api.errors import ApiError
+            try:
+                validate_configuration(value)
+            except ApiError as error:
+                raise ValueError(error.message) from None
+        return value
 
 
 class ProposalDetail(ProposalListItem):

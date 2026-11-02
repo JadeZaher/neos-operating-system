@@ -20,7 +20,7 @@ from neos_agent.agent.governance_tools import execute_tool  # noqa: E402
 from neos_agent.db.models import Ecosystem, Member, User  # noqa: E402
 
 from .test_onboarding_flows import (  # noqa: E402,F401 — world is the shared fixture
-    ESCHER, GATE_AGREEMENT, HIDDEN, OASIS, OMNIONE, PEOPLE, call, row_id, status_of, transitions, world,
+    ESCHER, GATE_AGREEMENT, HIDDEN, OASIS, OMNIONE, PEOPLE, agreement_only, call, row_id, status_of, transitions, world,
 )
 
 
@@ -111,6 +111,7 @@ async def test_the_chat_asks_before_joining_and_writes_nothing_until_the_member_
     assert await _rows_in(world, OASIS) == len([p for p in PEOPLE.values() if OASIS in p.rows])
 
 
+@pytest.mark.usefixtures("agreement_only")
 async def test_a_pending_newcomer_consents_through_the_assistant_and_is_active_with_one_transition(world, monkeypatch):
     surfaces = Surfaces(world, monkeypatch)
     nia = PEOPLE["nia"].member_id(OMNIONE)
@@ -139,6 +140,7 @@ async def test_a_steward_confirms_a_stuck_newcomer_with_the_same_record_on_each_
     ("sam", "ola", OMNIONE, "suspended", None),             # rank: refused with words, no code
     ("sam", "mia", OMNIONE, "exited", "USE_EXIT_FLOW"),
 ])
+@pytest.mark.usefixtures("agreement_only")
 async def test_refused_moves_are_refused_alike_by_rest_and_chat(world, monkeypatch, who, target, ecosystem, status, code):
     surfaces = Surfaces(world, monkeypatch)
     target_id = PEOPLE[target].member_id(ecosystem)

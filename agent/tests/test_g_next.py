@@ -381,11 +381,18 @@ async def test_the_assistant_reads_the_same_queue_and_the_same_status_words(env)
         said = await _tool(env, "mo", "explain_status", kind=kind, record=record)
         data = dict(said["data"])
         if kind == "proposal":
+            explanation = data.pop("status_explanation")
+            standing = data.pop("you")
+            plain_help = data.pop("plain_help")
+            assert explanation["current_stage"] and explanation["history_included"] is False
+            assert explanation["transition_actor"] is explanation["transition_cause"] is None
+            assert explanation["your_position"] == standing.get("my_position")
+            assert isinstance(plain_help, str) and plain_help
             facts = data.pop("lifecycle_facts")
             automatic = PROPOSAL_LIFECYCLE.automatic_move("advice") is not None
             close = PROPOSAL_LIFECYCLE.manual_move("advice", "consent")
             assert set(facts) == {"advice_advances_automatically", "meeting_advice_gate_advances_stage", "advice_closure",
-                                  "proposer_controls_closure", "transition_history_available", "actor_and_cause"}
+                                  "proposer_controls_closure", "transition_history_available", "actor_and_cause", "history_scope"}
             assert facts["advice_advances_automatically"] is automatic
             assert facts["meeting_advice_gate_advances_stage"] is automatic
             assert facts["proposer_controls_closure"] is bool(close and close.proposer_until_deadline)

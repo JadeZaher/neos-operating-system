@@ -76,6 +76,7 @@ class PendingConsentGate(BaseModel):
     ecosystem_id: UUID
     ecosystem_name: str
     required_agreements: list[RequiredAgreementSummary] = []
+    join_gates: dict | None = None
 
 
 class AuthMeResponse(BaseModel):

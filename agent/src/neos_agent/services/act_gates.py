@@ -499,6 +499,14 @@ def normalize_act_policy(raw: object) -> dict:
         cases = raw.get("test_cases")
         if isinstance(cases, list):
             policy["test_cases"] = [str(c).strip() for c in cases if str(c).strip()]
+        if raw.get("matching_profile") is not None:
+            from copy import deepcopy
+            from neos_agent.services.matching import validate_configuration
+            from neos_agent.api.errors import ApiError
+            try:
+                policy["matching_profile"] = deepcopy(validate_configuration(raw["matching_profile"]))
+            except ApiError:
+                pass
     return policy
 
 

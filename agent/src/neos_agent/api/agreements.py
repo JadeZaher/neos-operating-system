@@ -879,12 +879,9 @@ async def record_member_consent(db, agreement: Agreement, actor: Member, attesta
         actor.agreement_alignment_score += delta
     actor.last_governance_activity_date = now.date()
     if actor.current_status == "pending_consent":
-        pending = await missing_agreement_consents(
-            db, actor.id, agreement.ecosystem_id, "ecosystem"
-        )
-        if not pending:  # G-Onboard: consent activates (owner decision), recorded as one transition
-            from neos_agent.services.member_lifecycle import CONSENT_ACTIVATED, record_transition
-            record_transition(db, actor, "active", trigger=CONSENT_ACTIVATED, notes=f"Consented to {agreement.title}")
+        from neos_agent.services.join_gates import activate_if_ready
+        from neos_agent.services.member_lifecycle import CONSENT_ACTIVATED
+        await activate_if_ready(db, actor, trigger=CONSENT_ACTIVATED, notes=f"Consented to {agreement.title}")
     return consent
 
 

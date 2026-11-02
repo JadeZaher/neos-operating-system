@@ -491,7 +491,8 @@ class TestToolRegistry:
     def test_tool_definitions_format(self):
         """get_tool_definitions returns Claude API format."""
         defs = get_tool_definitions()
-        assert len(defs) == 52  # wave C: G-Maint get_governance_health; G-Onboard join_ecosystem, attest_agreement_consent, move_member; G-Exchange find_shares_needs, publish_share_need, respond_to_share_need, update_share_need_status, approve_collaboration, end_collaboration; FX-Exchange review_collaboration; FX-Maint respond_to_health_audit
+        assert len(defs) == 70
+        assert len({definition["name"] for definition in defs}) == len(defs)
         for d in defs:
             assert "name" in d
             assert "description" in d

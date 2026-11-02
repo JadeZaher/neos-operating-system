@@ -21,6 +21,8 @@ async def run_cron_loop(app):
             await asyncio.sleep(CRON_INTERVAL_SECONDS)
             await _cleanup_expired_sessions(app)
             await _auto_revert_emergencies(app)
+            from neos_agent.services.matching import cleanup_private_discovery
+            await cleanup_private_discovery(app.ctx.db)
         except asyncio.CancelledError:
             logger.info("Cron service stopping")
             break

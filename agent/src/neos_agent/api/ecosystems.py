@@ -22,9 +22,9 @@ from neos_agent.services.agreement_consent import missing_agreement_consents
 from neos_agent.services.member_lifecycle import JOINED, place_member, placement_payload  # G-Onboard
 
 from .errors import ApiError
-from .guards import authenticated, caller_in
-from .helpers import _escape_like, parse_pagination
-from .policy import can_manage_onboarding, can_update_ecosystem
+from .guards import authenticated, caller_in, caller_user_id
+from .helpers import _escape_like, parse_pagination, require_auth_user
+from .policy import can_administer_ecosystem, can_manage_onboarding, can_update_ecosystem
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
@@ -36,6 +36,23 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 ecosystems_api_bp = Blueprint("ecosystems_api", url_prefix="/api/v1/ecosystems")
+
+
+@ecosystems_api_bp.get("/<ecosystem_id:uuid>/join-gates")
+async def ecosystem_join_gates(request: Request, ecosystem_id: uuid.UUID):
+    _, unauthenticated = require_auth_user(request)
+    if unauthenticated:
+        return unauthenticated
+    from neos_agent.services.join_gates import join_gate_summary
+    async with request.app.ctx.db() as session:
+        ecosystem = await session.get(Ecosystem, ecosystem_id)
+        member = await caller_in(session, request, ecosystem_id)
+        if ecosystem is None or (ecosystem.visibility != "public" and member is None):
+            raise ApiError(404, "Ecosystem not found")
+        summary = await join_gate_summary(session, ecosystem_id=ecosystem_id, member=member, user_id=caller_user_id(request))
+        if member is not None and member.current_status == "active":
+            summary.update(eligible=True, status="ready", grandfathered=True)
+        return json({"join_gates": summary, "membership_status": member.current_status if member else None})
 
 
 # --- Helpers ---
@@ -94,6 +111,7 @@ def _ecosystem_to_detail(eco: Ecosystem, count: int) -> EcosystemDetail:
     """Convert an Ecosystem ORM instance to an EcosystemDetail schema."""
     tags = eco.tags if isinstance(eco.tags, list) else None
     return EcosystemDetail(
+        uaf_agreement_id=eco.uaf_agreement_id,
         id=eco.id,
         name=eco.name,
         description=eco.description,
@@ -247,6 +265,8 @@ async def create_ecosystem(request: Request):
             governance_summary=create_req.governance_summary,
             visibility=create_req.visibility,
         )
+        if create_req.uaf_agreement_id is not None:
+            raise ApiError(400, "Create the ecosystem first, then create and ratify its UAF before linking it in ecosystem settings")
         db.add(eco)
         await db.flush()
 
@@ -318,6 +338,12 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
         # Update fields that are not None
         update_data = update_req.model_dump(exclude_none=True)
+        if "uaf_agreement_id" in body:
+            from neos_agent.services.matching import validate_uaf_reference
+            if not can_administer_ecosystem(caller, ecosystem_id):
+                raise ApiError(403, "Only this ecosystem's stewards can link or clear its ratified UAF")
+            await validate_uaf_reference(db, ecosystem_id, update_req.uaf_agreement_id)
+            update_data["uaf_agreement_id"] = update_req.uaf_agreement_id
         for field, value in update_data.items():
             # Sanitize website URL
             if field == "website" and value and not value.startswith("https://"):
@@ -337,23 +363,24 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
 
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/join")
-@authenticated
 async def request_join_ecosystem(request: Request, ecosystem_id: uuid.UUID):
     """Join an ecosystem, heal a pending row with nothing left to consent to, or return after leaving.
 
     member_lifecycle.place_member (one transition per move): 201 for a new row, 200 for an existing one;
     a private or unknown ecosystem is 404; see api/AGENTS.md "Onboarding (G-Onboard)".
     """
-    member = request.ctx.member
-    user = getattr(request.ctx, "user", None)
-    user_id = user.id if user else member.user_id
-    member_key = f"did-{user.did[-12:]}" if user and user.did else f"usr-{str(member.id)[:12]}"
+    user, unauthenticated = require_auth_user(request)
+    if unauthenticated:
+        return unauthenticated
+    member = getattr(request.ctx, "member", None)
+    user_id = user.id
+    member_key = f"did-{user.did[-12:]}" if user.did else f"usr-{str(user.id)[:12]}"
 
     async with request.app.ctx.db() as db:
         eco = await db.get(Ecosystem, ecosystem_id)
         if eco is None:
             raise ApiError(404, "Ecosystem not found")
-        placement = await place_member(db, user_id=user_id, ecosystem=eco, display_name=member.display_name,
+        placement = await place_member(db, user_id=user_id, ecosystem=eco, display_name=user.display_name or (member.display_name if member else "Member"),
                                        member_key=member_key, trigger=JOINED)
         payload = placement_payload(placement, eco.name)
         await db.commit()
@@ -446,12 +473,15 @@ async def assign_quiz_to_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             db.add(quiz)
             quiz_id = quiz.id
 
+        quiz.domain_id = None
+        quiz.team_id = None
         # If marking as entry quiz, clear any existing entry quiz for this ecosystem
         if is_entry_quiz:
             existing_entry = await db.execute(
                 select(Quiz).where(
                     Quiz.ecosystem_id == ecosystem_id,
                     Quiz.is_entry_quiz == True,  # noqa: E712
+                    Quiz.domain_id.is_(None), Quiz.team_id.is_(None),
                 )
             )
             for eq in existing_entry.scalars().all():

@@ -18,6 +18,8 @@ depends_on: [domain-mapping]
 
 ## D. Required Inputs
 
+These are the formal proposal readiness inputs. For an executable NEOS app draft, apply the phase-specific adapter in Section E; incomplete optional readiness fields do not block saving that draft.
+
 - **Proposer identity**: who is proposing, their role, and their authority scope
 - **Proposal type**: ecoplan, genplan, amendment, resource_request, or policy_change
 - **Decision type**: preference (no structural impact, may resolve at Level 1-2) or solution (structural impact, requires full ACT from Level 3)
@@ -29,6 +31,17 @@ depends_on: [domain-mapping]
 - **Desired timeline**: when the proposer hopes to see the change implemented
 
 ## E. Step-by-Step Process
+
+### Current NEOS app adapter: draft and opening for advice
+
+- The app draft minimum is a title, the member's stated proposed change, and the server-scoped author and ecosystem. The app defaults its type to operational unless the member named another type.
+- If no reason was supplied, use exactly `Reason not yet provided by the member.` for rationale. `affected_domain` is optional: omit an unchosen domain. Do not ask for a reason or domain before creating this app draft.
+- Keep the proposed change in the member's own words. Do not add staffing, promises, schedules, urgency, sponsors or other facts. These remain unspecified unless supplied; a short request can produce a short draft.
+- One selected ecosystem already gives the draft's destination. With several selected, ask which ecosystem first. Domain discovery or an old withdrawn proposal with a similar title is not a prerequisite to this new draft.
+- For an explicit request to create and open advice, call `create_proposal`, then use its returned ID with `update_proposal_status` to open advice. The server checks current authority and lifecycle rules. Saving a draft or opening advice does not certify that the formal readiness or ratification checklist is complete.
+- Domain mapping is relevant when the member requests a domain change or selects a domain; its separate domain-creation checklist is not a proposal-draft prerequisite.
+
+### Formal readiness and later governance process
 
 1. **Identify need.** The proposer determines whether this is a preference decision (matters of taste or convenience with no structural impact, resolvable at GAIA Level 1-2 without formal ACT) or a solution decision (matters with structural, resource, or authority impact requiring full ACT starting at Level 3).
 2. **Draft proposal.** Using `assets/proposal-template.yaml`, the proposer fills in all required fields. Co-sponsors may be added — co-sponsorship demonstrates broader support but does not bypass any process step.

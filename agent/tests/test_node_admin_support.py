@@ -49,6 +49,101 @@ async def create_proposal(support):
         values={"type": "operational", "title": "Support proposal", "proposed_change": "Private body sentinel", "rationale": "Private rationale sentinel"}))
 
 
+async def test_support_agreement_create_and_update_synchronize_real_entry_requirements_atomically(support):
+    from neos_agent.db.models import Agreement, AgreementMemberConsent, AgreementRequirement
+    from neos_agent.services.join_gates import join_gate_summary
+    from neos_agent.services.member_lifecycle import place_member
+
+    receipt = await execute_command(support.factory, support.owner, command("agreements", "create", organization_id=support.org,
+        values={"agreement_id": "AGR-SUPPORT-ENTRY", "type": "uaf", "title": "Entry agreement", "status": "active",
+                "text": "Private entry terms sentinel", "requires_explicit_consent": True, "prerequisite_scopes": ["ecosystem"]}))
+    agreement_id = uuid.UUID(receipt["resource"]["id"])
+    audit_ids = [receipt["audit_id"]]
+    async with support.factory() as session:
+        requirement = await session.scalar(select(AgreementRequirement).where(AgreementRequirement.agreement_id == agreement_id))
+        assert requirement.target_kind == "ecosystem_membership" and requirement.is_active
+        ecosystem = await session.get(Ecosystem, support.org)
+        entrant = await place_member(session, user_id=support.second, ecosystem=ecosystem, display_name="Entrant", member_key="MEM-entry")
+        assert entrant.member.current_status == "pending_consent"
+        gates = await join_gate_summary(session, ecosystem_id=support.org, member=entrant.member)
+        assert gates["status"] == "agreement_consent_required"
+        assert [row["id"] for row in gates["required_agreements"]] == [str(agreement_id)]
+        await session.commit()
+        member_id = entrant.member.id
+
+    for patch, blocked in [({"requires_explicit_consent": False}, False),
+                           ({"requires_explicit_consent": True, "prerequisite_scopes": []}, False),
+                           ({"prerequisite_scopes": ["ecosystem"]}, True)]:
+        receipt = await execute_command(support.factory, support.owner, command("agreements", "update", resource_id=agreement_id,
+            expected_version=receipt["resource"]["version"], values=patch))
+        audit_ids.append(receipt["audit_id"])
+        async with support.factory() as session:
+            row = await session.get(Member, member_id)
+            gates = await join_gate_summary(session, ecosystem_id=support.org, member=row)
+            assert bool(gates["required_agreements"]) is blocked
+            assert gates["eligible"] is not blocked
+            assert await session.scalar(select(func.count()).select_from(AgreementMemberConsent)) == 0
+            assert await session.scalar(select(func.count()).select_from(AgreementRequirement).where(
+                AgreementRequirement.agreement_id == agreement_id)) == 1
+            newcomer_id = uuid.uuid4()
+            session.add(User(id=newcomer_id, display_name="Ordinary newcomer"))
+            await session.flush()
+            newcomer = await place_member(session, user_id=newcomer_id, ecosystem=await session.get(Ecosystem, support.org),
+                display_name="Ordinary newcomer", member_key=f"MEM-{newcomer_id.hex[:8]}")
+            assert newcomer.member.current_status == ("pending_consent" if blocked else "active")
+            await session.commit()
+    async with support.factory() as session:
+        row = await session.get(Member, member_id)
+        assert row.current_status == "pending_consent"
+        with pytest.raises(ApiError) as refusal:
+            await place_member(session, user_id=support.second, ecosystem=await session.get(Ecosystem, support.org),
+                               display_name="Entrant", member_key="MEM-entry")
+        assert refusal.value.extra["code"] == "CONSENT_REQUIRED"
+        for audit_id in audit_ids:
+            event = await session.get(NodeAdminAction, uuid.UUID(audit_id))
+            assert event.outcome == "completed" and event.organization_id == support.org
+            assert "Private entry terms sentinel" not in json.dumps(serialize_audit(event))
+            archive = await session.scalar(select(NodeAdminSnapshot).where(NodeAdminSnapshot.action_id == event.id))
+            assert archive.snapshot["after"]["text"] == "Private entry terms sentinel"
+        assert (await session.get(Agreement, agreement_id)).status == "active"
+
+
+async def test_support_correction_repairs_legacy_agreement_projection_and_rolls_back_when_sync_fails(support, monkeypatch):
+    from neos_agent.db.models import Agreement, AgreementMemberConsent, AgreementRequirement
+    from neos_agent.services import agreement_consent
+    from neos_agent.services.join_gates import join_gate_summary
+
+    async with support.factory() as session:
+        agreement = Agreement(ecosystem_id=support.org, agreement_id="AGR-LEGACY-ENTRY", type="uaf", title="Legacy entry",
+            status="active", requires_explicit_consent=True, prerequisite_scopes=["ecosystem"])
+        session.add(agreement)
+        await session.commit()
+        identifier = agreement.id
+    inspected = await inspect_resource(support.factory, support.owner, "agreements", identifier, "Data correction")
+    corrected = await execute_command(support.factory, support.owner, command("agreements", "update", resource_id=identifier,
+        expected_version=inspected["resource"]["version"], values={"title": "Repaired entry"}))
+    async with support.factory() as session:
+        member = await session.scalar(select(Member).where(Member.user_id == support.plain))
+        gates = await join_gate_summary(session, ecosystem_id=support.org, member=member)
+        assert [row["id"] for row in gates["required_agreements"]] == [str(identifier)]
+        assert await session.scalar(select(func.count()).select_from(AgreementMemberConsent)) == 0
+        before_version = (await session.get(Agreement, identifier)).version
+        before_events = await session.scalar(select(func.count()).select_from(NodeAdminAction))
+        before_snapshots = await session.scalar(select(func.count()).select_from(NodeAdminSnapshot))
+    async def fail_sync(*_args):
+        raise RuntimeError("Synthetic normalization failure")
+    monkeypatch.setattr(agreement_consent, "synchronize_agreement_requirements", fail_sync)
+    with pytest.raises(RuntimeError, match="normalization failure"):
+        await execute_command(support.factory, support.owner, command("agreements", "update", resource_id=identifier,
+            expected_version=corrected["resource"]["version"], values={"prerequisite_scopes": []}))
+    async with support.factory() as session:
+        actual = await session.get(Agreement, identifier)
+        assert actual.version == before_version and actual.prerequisite_scopes == ["ecosystem"]
+        assert await session.scalar(select(func.count()).select_from(NodeAdminAction)) == before_events
+        assert await session.scalar(select(func.count()).select_from(NodeAdminSnapshot)) == before_snapshots
+        assert (await session.scalar(select(AgreementRequirement).where(AgreementRequirement.agreement_id == identifier))).is_active
+
+
 async def test_explicit_role_is_independent_of_profile_and_target_membership(support):
     async with support.factory() as session:
         assert await is_node_admin(session, support.owner)
@@ -360,3 +455,36 @@ async def test_typed_proposal_rejects_authority_fields_and_generic_failure_names
         factory=support.factory, caller_user_id=support.owner, support_context=context)
     assert not unknown["success"] and "title" in unknown["writable_fields"] and "proposer_member_id" not in unknown["writable_fields"]
     assert "private-authority-marker" not in json.dumps(unknown)
+
+
+async def test_memberless_admin_lists_named_scoped_quizzes_and_saves_journey_with_public_receipt(support):
+    from neos_agent.db.course_models import Quiz
+    from neos_agent.db.models import JourneyMap
+    from neos_agent.services.node_admin import list_resources
+    qid, hidden = uuid.uuid4(), uuid.uuid4()
+    async with support.factory() as db:
+        db.add_all([Quiz(id=qid, ecosystem_id=support.org, title="Named readiness", is_published=True, survey_json={"elements": [{"type": "boolean", "name": "ready"}]}),
+            Quiz(id=hidden, ecosystem_id=support.other, title="Other organization quiz", is_published=True)])
+        await db.commit()
+        assert await db.scalar(select(func.count()).select_from(Member).where(Member.user_id == support.owner)) == 0
+    listing = await list_resources(support.factory, support.owner, "quizzes", organization_id=support.org, search="Named")
+    assert [(row["id"], row["title"]) for row in listing["items"]] == [(str(qid), "Named readiness")]
+    assert listing["audit_url"] == f"/node/audit/{listing['audit_id']}"
+    receipt = await execute_command(support.factory, support.owner, command("journey_maps", "create", organization_id=support.org,
+        values={"title": "Named lookup journey", "slug": "named-lookup", "content_sequence": [{"type": "survey", "title": "Readiness", "required": True, "quiz_id": str(qid)}]}))
+    async with support.factory() as db:
+        journey = await db.get(JourneyMap, uuid.UUID(receipt["resource"]["id"]))
+        assert journey.content_sequence[0]["quiz_id"] == str(qid)
+        public = serialize_audit(await db.get(NodeAdminAction, uuid.UUID(receipt["audit_id"])))
+        assert public["actor_user_id"] == str(support.owner)
+        assert "content_sequence" in public["changed_fields"] and "Named readiness" not in json.dumps(public)
+    with pytest.raises(ApiError) as refusal:
+        await list_resources(support.factory, support.plain, "quizzes", organization_id=support.org)
+    assert refusal.value.status == 403
+
+
+async def test_node_support_journey_authoring_uses_same_forward_route_validation(support):
+    with pytest.raises(ApiError) as refusal:
+        await execute_command(support.factory, support.owner, command("journey_maps", "create", organization_id=support.org,
+            values={"title": "Invalid", "slug": "invalid-path", "content_sequence": [{"type": "choice", "choices": [{"value": "learn"}], "choice_routes": {"learn": 0}}]}))
+    assert refusal.value.status == 400

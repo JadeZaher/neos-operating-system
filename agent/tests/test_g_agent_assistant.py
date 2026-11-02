@@ -619,7 +619,7 @@ async def test_joining_a_domain_follows_its_agreement_gate(env, who, domain, joi
     result = await _tool(env, who, "join_domain", domain=domain)
     assert result["success"] is joined, result
     if domain == "Gated Garden":
-        assert result["required_agreements"] == [{"title": "Garden rules", "version": "1.0", "link": f"/agreements/{GARDEN_RULES}"}]
+        assert result["required_agreements"] == [{"id": str(GARDEN_RULES), "title": "Garden rules", "version": "1.0", "href": f"/agreements/{GARDEN_RULES}"}]
     async with env.db() as session:
         rows = (await session.execute(select(CircleMembership.member_id, CircleMembership.status))).all()
     assert rows == ([(PEOPLE[who].member_id(), "active")] if joined else [])

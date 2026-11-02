@@ -22,6 +22,7 @@ import re
 import secrets
 import uuid
 import datetime as _dt
+import unicodedata
 from functools import wraps
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -32,15 +33,17 @@ from sanic.response import ResponseStream
 from sqlalchemy import select, or_, and_
 
 from neos_agent.api.guards import caller_in, caller_user_id
+from neos_agent.api.errors import ApiError
 from neos_agent.api.helpers import get_authorized_ecosystem_ids, get_ecosystem_ids, require_auth_user
 from neos_agent.api.policy import is_active_member_in
 from neos_agent.db.models import AgentSession, Ecosystem, Member
-from neos_agent.ai.provider import acompletion, is_ai_enabled
-from neos_agent.agent.governance_tools import CONFIRMATION_TOOLS, get_tool_definitions, execute_tool
+from neos_agent.ai.provider import AICompletionUnavailable, acompletion, is_ai_enabled
+from neos_agent.agent.governance_tools import CALLER_SCOPED_TOOLS, CONFIRMATION_TOOLS, get_tool_definitions, execute_tool
 from neos_agent.agent.system_prompt import assemble_system_prompt
 from neos_agent.agent.router import SkillRouter
 from neos_agent.agent.skill_decision import SkillDecision, select_skill
 from neos_agent.services.next_steps import ROUTES
+from neos_agent.services.member_messaging import broadcast_committed
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +60,8 @@ _LOOKUP_TOOLS = frozenset({
     "get_agreement", "search_agreements", "get_proposal", "search_proposals", "get_domain", "list_domains",
     "get_member_roles", "get_active_members", "list_ecosystems", "get_ecosystem", "search_precedents",
     "get_conflict_case", "get_exit_status", "get_emergency_state", "find_shares_needs", "explain_status",
+    "list_conversations", "get_conversation", "search_messages", "find_message_members",
+    "find_collaboration_domains", "find_collaborations", "get_collaboration", "get_health_audit",
 })
 _LOOKUP_STOP_MESSAGE = (
     "I could not find that record within the ecosystems you selected. I can only use records you can access. "
@@ -128,6 +133,24 @@ _TOOL_DISPLAY_NAMES = {
     "node_support_inspect": "Inspecting a support record",
     "node_support_command": "Preparing a support change",
     "node_support_prepare_proposal": "Preparing an organization proposal for review",
+    "list_conversations": "Listing your conversations",
+    "get_conversation": "Reading your conversation",
+    "search_messages": "Searching your messages",
+    "find_message_members": "Finding a message recipient",
+    "create_conversation": "Starting your conversation",
+    "send_message": "Sending your message",
+    "find_collaboration_domains": "Finding groups to work with",
+    "find_collaborations": "Finding collaborations",
+    "get_collaboration": "Reading a collaboration",
+    "propose_collaboration": "Proposing your collaboration",
+    "get_health_audit": "Reading a health audit",
+    "update_health_audit": "Editing your audit draft",
+    "publish_health_audit": "Publishing your audit",
+    "abandon_health_audit": "Closing an audit draft",
+    "update_exit_status": "Recording the exit's next step",
+    "export_portable_record": "Preparing your private download link",
+    "update_conflict_case": "Updating the case",
+    "update_repair_agreement": "Recording the repair check-in",
 }
 
 # Tool results the model reads are shrunk to this many characters of JSON; see agent/AGENTS.md "Tool results".
@@ -138,7 +161,7 @@ _SHRINK_STEPS = ((2000, 12), (800, 10), (400, 8), (200, 5), (100, 3), (60, 2))
 _NEVER_CLIP = frozenset({"error", "needs_confirmation", "confirmation_key", "next_step", "link", "_link", "message"})
 # A confirmation the member was asked for stays usable this long.
 _CONFIRMATION_TTL = _dt.timedelta(minutes=30)
-_MAX_PENDING_ARGS = 8000
+_MAX_PENDING_ARGS = 65536
 _MAX_KNOWN_RECORDS = 20
 _SUPPORT_TOOLS = frozenset({"node_support_catalog", "node_support_list", "node_support_inspect", "node_support_command", "node_support_prepare_proposal"})
 _SUPPORT_WRITES = frozenset({"node_support_command", "node_support_prepare_proposal"})
@@ -182,13 +205,15 @@ def _confirmation_reply(message: str) -> str | None:
     """Recognize the member's explicit confirmation or cancellation; see api/AGENTS.md."""
     reply = re.sub(r"[.!?,]", "", message.casefold()).strip()
     reply = " ".join(reply.split())
-    if re.match(r"^(?:no|cancel|stop|never mind|nevermind|don't|do not)(?:\s|$)", reply):
+    first_clause = re.split(r"[.!?;\n]", message.casefold(), maxsplit=1)[0]
+    control = " ".join(re.sub(r"[,!]", "", first_clause).split())
+    if re.fullmatch(r"(?:no(?: thanks)?(?: (?:cancel|stop)(?: (?:it|that|this|the request|the pending action))?)?|(?:please )?(?:cancel|stop)(?: (?:it|that|this|the request|the pending action))?|never ?mind|(?:don't|do not) (?:do (?:it|that)|proceed|go ahead))", control):
         return "cancel"
     if "?" in message:
         return None
     if reply in {"yes", "yes go ahead", "go ahead", "yes do it", "yes do that", "yes proceed", "confirm", "confirmed"}:
         return "confirm"
-    qualified = re.fullmatch(r"yes (withdraw|ratify|declare|co-sign|cosign|end|file|publish|send|join|record|approve|archive|sunset|create) (?:it|that)(?: now)?", reply)
+    qualified = re.fullmatch(r"yes (withdraw|ratify|declare|co-sign|cosign|end|file|publish|send|join|record|approve|archive|sunset|create|cancel|close|resolve|propose|abandon|update|complete) (?:it|that)(?: now)?", reply)
     if qualified:
         return "confirm:" + qualified[1]
     return None
@@ -215,6 +240,15 @@ def _confirmation_matches_action(reply: str | None, tool_name: str, args: dict) 
     if tool_name == "update_agreement_status":
         moves = {"archive": "archived", "sunset": "sunset", "approve": "active", "publish": "active"}
         return verb in moves and moves[verb] == args.get("new_status")
+    if tool_name == "update_exit_status":
+        moves = {"cancel": "cancelled", "withdraw": "cancelled", "complete": "completed"}
+        return verb == "record" or (verb in moves and moves[verb] == args.get("new_status"))
+    if tool_name == "create_conversation":
+        return verb == "create" or (verb == "send" and bool(args.get("message")))
+    if tool_name == "update_conflict_case":
+        return verb in {"update", "record"} or ({"close": "closed", "resolve": "resolved"}.get(verb) == (args.get("changes") or {}).get("status") and verb in {"close", "resolve"})
+    if tool_name == "update_repair_agreement":
+        return verb in {"update", "record"} or (verb == "complete" and (args.get("changes") or {}).get("status") == "fulfilled")
     verbs = {
         "declare_emergency": {"declare"}, "cosign_emergency": {"co-sign", "cosign"},
         "end_emergency_authority": {"end"}, "record_emergency_review": {"record"},
@@ -224,6 +258,8 @@ def _confirmation_matches_action(reply: str | None, tool_name: str, args: dict) 
         "respond_to_health_audit": {"record"}, "record_agreement_evidence": {"record"},
         "node_support_command": {"record", "approve", "publish", "archive"},
         "node_support_prepare_proposal": {"create", "record", "approve"},
+        "send_message": {"send"}, "propose_collaboration": {"propose"},
+        "publish_health_audit": {"publish"}, "abandon_health_audit": {"abandon"},
     }
     return verb in verbs.get(tool_name, set())
 
@@ -240,8 +276,8 @@ def _frozen_args(args: Any) -> dict | None:
         return None
     frozen = {key: value for key, value in args.items() if key != "confirmed"}
     try:
-        encoded = json.dumps(frozen, allow_nan=False)
-        return json.loads(encoded) if len(encoded) <= _MAX_PENDING_ARGS else None
+        encoded = json.dumps(frozen, allow_nan=False, ensure_ascii=False)
+        return json.loads(encoded) if len(encoded.encode("utf-8")) <= _MAX_PENDING_ARGS else None
     except (ValueError, TypeError):
         return None
 
@@ -255,19 +291,22 @@ def _known_records(result: dict) -> list[dict]:
             values = data
         elif isinstance(data, dict):
             values = [data]
-            for key in ("domains", "proposals", "agreements", "items", "results"):
+            for key in ("domains", "proposals", "agreements", "items", "results", "conversations", "exits"):
                 if isinstance(data.get(key), list):
                     values.extend(data[key])
     elif result.get("code") == "AMBIGUOUS_DOMAIN":
         values = result.get("candidates") or []
     records = []
-    kinds = {"/domains/": "domain", "/proposals/": "proposal", "/agreements/": "agreement"}
+    kinds = {"/domains/": "domain", "/proposals/": "proposal", "/agreements/": "agreement",
+             "/discover/collaborations/": "collaboration", "/safeguards/audits/": "audit", "/conflicts/": "conflict", "/exit/": "exit"}
     for value in values[:_MAX_KNOWN_RECORDS]:
         reference = _record_reference(value)
         if not reference:
             continue
         route, label = reference
         kind = next((kind for prefix, kind in kinds.items() if route.startswith(prefix)), None)
+        if route.startswith("/messaging?"):
+            records.append({"kind": "conversation", "id": dict(parse_qsl(urlsplit(route).query))["conversation"], "label": label, "link": route})
         if kind:
             records.append({"kind": kind, "id": route.rsplit("/", 1)[1], "label": label, "link": route})
     return records
@@ -303,7 +342,20 @@ async def _refresh_references(request, member, records, scope) -> list[dict]:
             if not isinstance(item, dict):
                 continue
             readers = {"domain": ("get_domain", "domain_id"), "proposal": ("get_proposal", "proposal_id"),
-                       "agreement": ("get_agreement", "agreement_id")}
+                       "agreement": ("get_agreement", "agreement_id"), "audit": ("get_health_audit", "audit_id"),
+                       "collaboration": ("get_collaboration", "collaboration"), "conflict": ("get_conflict_case", "case_id"),
+                       "exit": ("get_exit_status", "exit_id")}
+            if item.get("kind") == "conversation":
+                from neos_agent.services.member_messaging import participants, require_participant
+                try:
+                    conversation, _, _ = await require_participant(db, caller_user_id(request), uuid.UUID(str(item.get("id"))))
+                    names = [row["display_name"] for row in await participants(db, conversation.id)]
+                    refreshed.extend(_known_records({"success": True, "data": {
+                        "title": conversation.title or " / ".join(names), "link": f"/messaging?conversation={conversation.id}",
+                    }}))
+                except (ApiError, ValueError, TypeError):
+                    pass
+                continue
             reader = readers.get(item.get("kind"))
             if not reader or not isinstance(item.get("id"), str):
                 continue
@@ -343,12 +395,77 @@ async def _dispatch_tool(request, name, args, db, scope, member, keys, support_c
         return result
     if support_context:
         return {"success": False, "error": "Use dedicated support tools in node support mode."}
+    if name == "create_conversation":
+        if not isinstance(args.get("message"), str):
+            return {"success": False, "code": "MESSAGE_INTENT_REQUIRED", "error": "No conversation or confirmation was created. Include message with the exact text the member asked to send. Use an empty string only for a conversation with no initial message. Correct the tool arguments now using the supplied text; do not ask for extra approval."}
+        if args["message"] == "":
+            args = {**args, "message": None}
     if name == "create_proposal":
         args, refusal = await _proposal_target_guard(request, args, db, scope)
         if refusal is not None:
             return refusal
+        args, refusal = _proposal_text_guard(request, args)
+        if refusal is not None:
+            return refusal
     return await execute_tool(name, args, db, ecosystem_ids=scope,
                               caller_user_id=getattr(member, "user_id", None), confirmed_keys=keys)
+
+
+_DRAFT_REASON_PENDING = "Reason not yet provided by the member."
+
+
+def _source_text(value):
+    return " ".join(unicodedata.normalize("NFKC", str(value or "")).replace("\u2019", "'").replace("\u2018", "'").casefold().split())
+
+
+def _draft_elaboration_requested(message):
+    """Recognize an explicit invitation to supply ideas, never a tool's permission claim."""
+    text = _source_text(message)
+    patterns = (
+        r"\b(?:use|add|include) (?:your|those|these) (?:own )?(?:ideas|suggestions)\b",
+        r"\b(?:feel free to|you may|you can) (?:expand|elaborate|suggest|add)\b",
+        r"\b(?:brainstorm|suggest) (?:some )?(?:ideas|options)\b",
+        r"\b(?:expand|elaborate) (?:on )?(?:this|the) (?:draft|proposal|plan)\b",
+        r"\b(?:add|include) (?:suitable|reasonable|appropriate|practical) (?:details|ideas|suggestions)\b",
+        r"\bflesh (?:this|it) out\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            if not re.search(r"\b(?:not|never|don't|didn't|can't|without|no)\b", text[max(0, match.start() - 30):match.start()]):
+                return True
+    return False
+
+
+def _proposal_text_guard(request, args):
+    """Keep factual chat drafts literal unless the member explicitly requests new ideas."""
+    sources = [_source_text(value) for value in getattr(request.ctx, "proposal_source_messages", []) if value]
+    current = getattr(request.ctx, "proposal_user_message", "")
+    expanded = _draft_elaboration_requested(current)
+    unsupported = []
+    def supplied(value):
+        text = _source_text(value)
+        return bool(text) and any(text in source for source in sources)
+    if not expanded:
+        for field in ("proposed_change", "rationale"):
+            value = args.get(field)
+            if field == "rationale" and (not value or value == _DRAFT_REASON_PENDING):
+                continue
+            if not supplied(value):
+                unsupported.append(field)
+    for field in ("affected_domain", "urgency", "advice_deadline", "consent_deadline", "scope", "decision_type", "proposer"):
+        if args.get(field) and not supplied(args[field]):
+            unsupported.append(field)
+    for field in ("co_sponsors", "impacted_parties"):
+        if args.get(field) and (not isinstance(args[field], list) or any(not supplied(value) for value in args[field])):
+            unsupported.append(field)
+    if args.get("type") not in (None, "operational") and not supplied(args["type"]):
+        unsupported.append("type")
+    if unsupported:
+        return None, {"success": False, "code": "DRAFT_SOURCE_REQUIRED", "fields": unsupported,
+            "error": "No proposal was created. Copy the member's exact supplied words for the change and reason; a brief phrase is enough. "
+                     "Omit optional fields they did not supply. Use type operational unless they named a type. "
+                     f"If no reason was supplied, use '{_DRAFT_REASON_PENDING}'. Correct the tool arguments now; do not ask for extra permission or invent details."}
+    return {**args, "type": args.get("type") or "operational", "rationale": args.get("rationale") or _DRAFT_REASON_PENDING}, None
 
 
 def _user_proposal_target(message, choices, *, reply_only=False):
@@ -396,7 +513,7 @@ def _user_draft_args(message):
     unquoted = re.search(r"(?:call it|called|titled|named)\s+(.{1,300}?)(?=\s+(?:to|so|for)\b|[,.;!?]|$)", text, re.I)
     title = (quoted or unquoted).group(1).strip() if quoted or unquoted else "Member-requested draft"
     return {"title": title, "type": "operational", "proposed_change": text,
-            "rationale": "Draft requested by the member; details to confirm."}
+            "rationale": _DRAFT_REASON_PENDING}
 
 
 async def _stage_user_draft_choice(request, message, scope):
@@ -464,7 +581,20 @@ async def _execute_frozen(request, session_id, member, entry, scope, support_con
             await db.commit()
         result = await _dispatch_tool(request, entry["tool"], {**entry["args"], "confirmed": True}, db,
                                       scope, member, frozenset({entry["key"]}), support_context)
+        if not db.in_transaction():
+            sess = await _owned_session(request, session_id, member, db, lock=True)
+            if sess:
+                context = dict(sess.context or {})
+                current = list(context.get("pending_confirmations") or [])
+                if entry in current:
+                    context["pending_confirmations"] = [item for item in current if item != entry]
+                    context["confirmation_epoch"] = int(context.get("confirmation_epoch") or 0) + 1
+                    sess.context = context
         await db.commit()
+        if result.get("success"):
+            await broadcast_committed(db)
+        else:
+            db.info.pop("member_message_events", None)
         return result
 
 
@@ -503,6 +633,9 @@ def _record_reference(data: dict | None, artifact: dict | None = None) -> tuple[
         expected = {"tab", "post"} if parsed.path == "/discover" else {"conversation"}
         if set(query) == expected and (parsed.path != "/discover" or query["tab"] == "shares-needs"):
             record_id = query.get("post") or query.get("conversation")
+    export_match = re.fullmatch(r"/api/v1/exit/([0-9a-fA-F-]{36})/portable-record", parsed.path)
+    if export_match and not parsed.query:
+        record_id = export_match[1]
     try:
         if str(uuid.UUID(record_id)) != record_id.lower():
             return None
@@ -514,6 +647,34 @@ def _record_reference(data: dict | None, artifact: dict | None = None) -> tuple[
     return route, label
 
 
+def _queue_record_references(name, data):
+    """Keep navigation for the first two model-visible priority items only."""
+    if name != "what_needs_me" or not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return []
+    return [reference for item in data["items"][:2] if (reference := _record_reference(item))]
+
+
+def _queue_context_records(name, data):
+    if name != "what_needs_me" or not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return []
+    records = []
+    for item in data["items"][:2]:
+        reference = _record_reference(item)
+        if reference and isinstance(item.get("ecosystem"), str) and item["ecosystem"].strip():
+            name = re.sub(r"([\\`*_{}\[\]()<>#!|])", r"\\\1", " ".join(item["ecosystem"].split())[:120])
+            records.append({"route": reference[0], "label": reference[1], "ecosystem": name})
+    return records
+
+
+def _missing_queue_context(records, assistant_text):
+    """Keep each retained priority record tied to its actual ecosystem."""
+    groups = {}
+    for item in records:
+        if item["ecosystem"].casefold() not in assistant_text.casefold():
+            groups.setdefault(item["ecosystem"], []).append(f"[{item['label']}]({item['route']})")
+    return "".join("\n\nIn " + name + ": " + " ? ".join(links) + "." for name, links in groups.items())
+
+
 def _missing_record_links(references: dict[str, str], assistant_text: str) -> str:
     """Supply record navigation when the model omits it."""
     prose = re.sub(r"```.*?(?:```|$)|~~~.*?(?:~~~|$)|`[^`\n]*`", "", assistant_text, flags=re.DOTALL)
@@ -522,6 +683,47 @@ def _missing_record_links(references: dict[str, str], assistant_text: str) -> st
         if not re.search(r"\]\(" + re.escape(route) + r"(?:\s+\"[^\"\n]*\")?\)", prose)
     ]
     return "\n\nRelated records: " + " · ".join(missing) if missing else ""
+
+
+def _proposal_reply_facts(name, data):
+    """Complete omitted caller options from a successful current proposal read."""
+    if name not in {"get_proposal", "explain_status"} or not isinstance(data, dict):
+        return None
+    reference = _record_reference(data)
+    if reference is None or not reference[0].startswith("/proposals/"):
+        return None
+    status = data.get("status_explanation") or {}
+    standing = data.get("you") or {}
+    facts = []
+    if status.get("current_stage") == "advice" and standing.get("can_take_part") is True and not standing.get("is_author"):
+        facts.append("You can read the advice already shared." if standing.get("has_advised_this_round") else "You can share advice on this plan.")
+    if status.get("current_stage") == "consent":
+        consent = (data.get("gates") or {}).get("consent") or {}
+        if consent.get("required") is True and consent.get("met") is False:
+            facts.append("This plan now needs members' positions.")
+        if status.get("can_record_position") is True:
+            facts.append({"consent": "You have agreed to this plan.", "stand_aside": "You have stood aside on this plan.", "object": "You have objected to this plan."}.get(status.get("your_position"), "You have not said where you stand yet."))
+            choices = status.get("position_choices")
+            if choices == ["consent", "stand_aside", "object"]:
+                facts.append("You can agree, stand aside, or object.")
+            elif choices == ["consent", "object"]:
+                facts.append("You can agree or object with a reason.")
+        if status.get("can_withdraw_own_position") is True:
+            facts.append("You can withdraw your own position.")
+        if status.get("can_return_to_advice") is True:
+            facts.append("You can return it to Advice with a note." if status.get("return_note_required") else "You can return it to Advice.")
+    if status.get("can_withdraw_proposal") is True:
+        facts.append("You can still withdraw this proposal.")
+    return (reference, facts) if facts else None
+
+
+def _missing_proposal_facts(records, assistant_text):
+    parts = []
+    for route, (label, facts) in records.items():
+        missing = [text for text in facts if text.casefold() not in assistant_text.casefold()]
+        if missing:
+            parts.append((label + ": " if len(records) > 1 else "") + " ".join(missing))
+    return "\n\n" + "\n\n".join(parts) if parts else ""
 
 
 def _json_size(value) -> int:
@@ -1003,6 +1205,10 @@ async def send_message(request: Request):
     saved_state = await _session_state(request, session_id, member)
     if saved_state is None:
         return json_response({"error": "Session not found"}, status=404)
+    request.ctx.proposal_source_messages = [
+        item["content"] for item in (saved_state.get("messages") or [])[-40:]
+        if isinstance(item, dict) and item.get("role") == "user" and isinstance(item.get("content"), str)
+    ] + [message]
     if session_id and saved_state.get("support_context") != support_context:
         return json_response({"error": "Start a new conversation when entering, leaving, or changing node support mode."}, status=409)
 
@@ -1110,6 +1316,8 @@ async def send_message(request: Request):
             asked_now: dict[str, dict] = {}
             consumed_keys: set[str] = set()
             record_references: dict[str, str] = {}
+            queue_context: list[dict] = []
+            proposal_reply_records: dict = {}
             assistant_parts: list[str] = []
             unresolved_signatures: set[str] = set()
             unresolved_lookups = 0
@@ -1159,13 +1367,19 @@ async def send_message(request: Request):
                 await response.write(_sse_event("done", ""))
                 return
 
-            if affirmative and not pending:
-                receipt = "There is no pending action to confirm. Tell me what you want to do."
+            if affirmative and (not pending or (len(pending) == 1 and not granted)):
+                receipt = ("There is no pending action to confirm. Tell me what you want to do." if not pending else
+                           "Nothing was changed. Your reply names a different action from the one awaiting confirmation. Request the intended action so I can prepare its exact details.")
+                if pending:
+                    await response.write(_sse_event("tool_result", json.dumps({
+                        "name": pending[0]["tool"], "success": False,
+                        "error": receipt, "code": "CONFIRMATION_ACTION_MISMATCH",
+                    })))
                 await response.write(_sse_event("append", receipt))
                 messages.append({"role": "assistant", "content": receipt})
                 session_id = await _save_session(
                     request, session_id, member, messages, current_skill, total_usage, ecosystem_id, validated_eco_ids,
-                    known_records=known_records, support_context=support_context,
+                    pending_confirmations=pending, known_records=known_records, support_context=support_context,
                     confirmation_epoch=int(saved_state.get("confirmation_epoch") or 0),
                 )
                 await response.write(_sse_event("session", json.dumps({"session_id": session_id})))
@@ -1299,6 +1513,12 @@ async def send_message(request: Request):
                     messages.append({"role": "assistant", "content": fallback})
                     break
                 if assistant_msg.content and not tool_calls:
+                    facts_text = _missing_proposal_facts(proposal_reply_records, assistant_msg.content)
+                    if facts_text:
+                        prefix = facts_text.strip() + "\n\n"
+                        await response.write(_sse_event("append", prefix))
+                        assistant_parts.append(prefix)
+                        messages.append({"role": "assistant", "content": prefix})
                     await response.write(_sse_event("append", assistant_msg.content))
                     assistant_parts.append(assistant_msg.content)
                     assistant_appended = True
@@ -1358,6 +1578,7 @@ async def send_message(request: Request):
                                                               validated_eco_ids, member, confirmed_keys, support_context)
                                 if result.get("success"):
                                     await db.commit()
+                                    await broadcast_committed(db)
                         else:
                             result = {"success": False, "error": "Database unavailable"}
                     except Exception:
@@ -1395,6 +1616,16 @@ async def send_message(request: Request):
 
                     # The screen and the model see the same shrunk result.
                     tool_content = _fit_tool_result(dict(result))
+                    if result.get("success") and tool_name in CALLER_SCOPED_TOOLS:
+                        proposal_reply_records.clear()
+                    if result.get("success") and (reply_facts := _proposal_reply_facts(tool_name, tool_content.get("data"))):
+                        (route, label), facts = reply_facts
+                        proposal_reply_records[route] = (label, facts)
+                        proposal_reply_records = dict(list(proposal_reply_records.items())[-3:])
+                    if result.get("success"):
+                        queue_context = _queue_context_records(tool_name, tool_content.get("data")) or queue_context
+                        for route, label in _queue_record_references(tool_name, tool_content.get("data")):
+                            record_references[route] = label
                     await response.write(_sse_event("tool_result", json.dumps({
                         "name": tool_name,
                         "label": display_name,
@@ -1464,7 +1695,9 @@ async def send_message(request: Request):
                     "I wasn't able to generate a response for that. Please try rephrasing your question or try again in a moment.",
                 ))
 
-            reference_text = _missing_record_links(record_references, "".join(assistant_parts))
+            context_text = _missing_proposal_facts(proposal_reply_records, "".join(assistant_parts))
+            context_text += _missing_queue_context(queue_context, "".join(assistant_parts) + context_text)
+            reference_text = context_text + _missing_record_links(record_references, "".join(assistant_parts) + context_text)
             if reference_text:
                 await response.write(_sse_event("append", reference_text))
                 if messages[-1].get("role") == "assistant" and not messages[-1].get("tool_calls"):
@@ -1493,9 +1726,32 @@ async def send_message(request: Request):
             await response.write(_sse_event("usage", json.dumps(total_usage)))
             await response.write(_sse_event("done", ""))
 
-        except Exception:
-            # Provider exceptions carry internals (model ids, key hints); members get a plain message.
-            logger.exception("Chat streaming failed")
+        except Exception as error:
+            # Provider details remain private; availability metadata has bounded safe fields.
+            if isinstance(error, AICompletionUnavailable):
+                logger.warning("Chat generation unavailable status=%s attempts=%s", error.status_code, error.attempts)
+                await response.write(_sse_event("availability", json.dumps(error.as_event())))
+                context_text = _missing_proposal_facts(proposal_reply_records, "".join(assistant_parts))
+                context_text += _missing_queue_context(queue_context, "".join(assistant_parts) + context_text)
+                receipt = _ASSISTANT_UNAVAILABLE + context_text + _missing_record_links(record_references, "".join(assistant_parts) + context_text)
+                messages.append({"role": "assistant", "content": receipt})
+                try:
+                    still_pending = asked_now or {entry["key"]: entry for entry in pending if entry["key"] not in consumed_keys}
+                    session_id = await _save_session(
+                        request, session_id, member, messages, current_skill, total_usage, ecosystem_id, validated_eco_ids,
+                        pending_confirmations=list(still_pending.values())[-10:], known_records=known_records,
+                        support_context=support_context, confirmation_epoch=int(saved_state.get("confirmation_epoch") or 0),
+                        new_confirmations=list(asked_now.values())[-10:],
+                    )
+                    await response.write(_sse_event("session", json.dumps({"session_id": session_id})))
+                except Exception:
+                    logger.error("Could not save the unavailable assistant turn")
+                await response.write(_sse_event("append", receipt))
+                await response.write(_sse_event("usage", json.dumps(total_usage)))
+                await response.write(_sse_event("done", ""))
+                return
+            else:
+                logger.exception("Chat streaming failed")
             await response.write(_sse_event("append", _ASSISTANT_UNAVAILABLE))
             await response.write(_sse_event("done", ""))
 

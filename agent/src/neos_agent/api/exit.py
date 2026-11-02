@@ -226,6 +226,31 @@ async def _mark_exited(session, member_id: uuid.UUID, exit_id: uuid.UUID, stewar
     await withdraw_on_exit(session, leaver)
 
 
+def validate_exit_move(record: ExitRecord, caller: Member | None, new_status: str) -> None:
+    """The leaver cancels; another steward records handoff/completion, with no waiting requirement."""
+    if new_status not in EXIT_STATUSES:
+        raise ApiError(400, "That is not an exit status.", {"allowed": list(EXIT_STATUSES)})
+    who = EXIT_MOVES.get(record.status, {}).get(new_status)
+    if who == "leaver" and not is_exit_leaver(caller, record):
+        raise ApiError(403, LEAVER_ONLY)
+    if who == "steward" and not can_steward_exit(caller, record):
+        raise ApiError(403, STEWARD_ONLY)
+    if who is None:
+        raise ApiError(409, f"An exit that is {record.status} cannot move to {new_status}.",
+                       {"allowed_next": allowed_next(record, caller)})
+
+
+async def apply_exit_move(session, record: ExitRecord, caller: Member | None, new_status: str) -> None:
+    validate_exit_move(record, caller, new_status)
+    record.status = new_status
+    if new_status == "unwinding" and record.coordinator_id is None:
+        record.coordinator_id = caller.id
+    if new_status == "completed":
+        record.completed_date = _today()
+        await _mark_exited(session, record.member_id, record.id, caller)
+    await session.flush()
+
+
 @exit_api_bp.post("/<exit_id:uuid>/status")
 @authenticated
 async def status_transition(request: Request, exit_id: uuid.UUID):
@@ -237,25 +262,11 @@ async def status_transition(request: Request, exit_id: uuid.UUID):
     new_status = status_req.new_status
     if new_status not in EXIT_STATUSES:
         raise ApiError(400, "That is not an exit status.", {"allowed": list(EXIT_STATUSES)})
-    today = _today()
     async with request.app.ctx.db() as session:
         record = await _load_for_update(session, request, exit_id)
         caller = await caller_in(session, request, record.ecosystem_id)
-        who = EXIT_MOVES.get(record.status, {}).get(new_status)
-        if who == "leaver" and not is_exit_leaver(caller, record):
-            raise ApiError(403, LEAVER_ONLY)
-        if who == "steward" and not can_steward_exit(caller, record):
-            raise ApiError(403, STEWARD_ONLY)
-        if who is None:
-            raise ApiError(409, f"An exit that is {record.status} cannot move to {new_status}.",
-                           {"allowed_next": allowed_next(record, caller)})
         old_status = record.status
-        record.status = new_status
-        if new_status == "unwinding" and record.coordinator_id is None:
-            record.coordinator_id = caller.id
-        if new_status == "completed":
-            record.completed_date = today
-            await _mark_exited(session, record.member_id, record.id, caller)
+        await apply_exit_move(session, record, caller, new_status)
         await session.commit()
         await session.refresh(record)
         logger.info("Exit %s status: %s -> %s", exit_id, old_status, new_status)

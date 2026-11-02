@@ -373,14 +373,20 @@ async def get_audit(request: Request, audit_id: uuid.UUID):
         return json(await audit_detail_payload(session, audit, caller))
 
 
-async def _audit_to_edit(session, request: Request, audit_id: uuid.UUID) -> tuple[GovernanceHealthAudit, Member]:
-    """A draft audit the caller is recording; 404 outside their ecosystems, 403 for anyone else, 409 once published."""
-    audit = await get_scoped_or_404(session, request, GovernanceHealthAudit, audit_id, label="Audit")
-    caller = await caller_in(session, request, audit.ecosystem_id)
+def require_editable_audit(audit: GovernanceHealthAudit, caller: Member | None) -> None:
+    """The recorded auditor may edit only their active draft."""
     if not policy.can_finish_audit(caller, audit):
         raise ApiError(403, AUDIT_FINISH_DENIED)
     if audit.status != AUDIT_DRAFT:
         raise ApiError(409, "This audit is already published")
+
+
+async def _audit_to_edit(session, request: Request, audit_id: uuid.UUID) -> tuple[GovernanceHealthAudit, Member]:
+    """A draft audit the caller is recording; 404 outside their ecosystems, 403 for anyone else, 409 once published."""
+    audit = await get_scoped_or_404(session, request, GovernanceHealthAudit, audit_id, label="Audit")
+    await session.refresh(audit, with_for_update=True)
+    caller = await caller_in(session, request, audit.ecosystem_id)
+    require_editable_audit(audit, caller)
     return audit, caller
 
 
@@ -390,6 +396,11 @@ def _apply_audit_fields(audit: GovernanceHealthAudit, fields: dict) -> None:
         if name == "indicator_scores":
             value = [row if isinstance(row, dict) else row.model_dump() for row in value]
         setattr(audit, name, value)
+
+
+def edit_audit_record(audit: GovernanceHealthAudit, caller: Member | None, fields: dict) -> None:
+    require_editable_audit(audit, caller)
+    _apply_audit_fields(audit, fields)
 
 
 @safeguards_api_bp.post("/audits")
@@ -439,7 +450,7 @@ async def update_audit(request: Request, audit_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         audit, caller = await _audit_to_edit(session, request, audit_id)
-        _apply_audit_fields(audit, update_req.model_dump(exclude_none=True))
+        edit_audit_record(audit, caller, update_req.model_dump(exclude_none=True))
         await session.commit()
         await session.refresh(audit)
         return json(_audit_to_detail(audit, caller, await _ecosystem_name(session, audit.ecosystem_id)))
@@ -462,6 +473,45 @@ async def require_auditor(session, member: Member | None, ecosystem_id) -> None:
         raise refusal
 
 
+async def prepare_audit_publication(session, audit: GovernanceHealthAudit, caller: Member | None) -> dict:
+    """Validate and compute the frozen publication, without publishing it."""
+    require_editable_audit(audit, caller)
+    await require_auditor(session, caller, audit.ecosystem_id)
+    now = dates.utc_now()
+    start, end = health.period_bounds(audit.audit_period_start, audit.audit_period_end, now)  # FX-Maint (F11)
+    if start > end:
+        raise ApiError(400, "The audit period must start on or before its end")
+    snapshot = await health.health_snapshot(session, audit.ecosystem_id, start=start, end=end, now=now)
+    prior = await health.latest_published_audit(session, audit.ecosystem_id)
+    rows, missing = health.frozen_indicators(
+        snapshot, _scores_to_list(audit.indicator_scores), _scores_to_list(prior.indicator_scores) if prior else None,
+    )
+    if missing:
+        names = ", ".join(f"{i} {health.INDICATOR_BY_ID[i].name}" for i in missing)
+        raise ApiError(400, f"Rate every indicator that has data in the period before publishing. Still to rate: {names}.",
+                       {"code": "RATINGS_MISSING", "missing": missing})
+    score = audit_score(rows)
+    if score is None:
+        raise ApiError(400, "Rate at least one indicator (healthy, warning or critical) before publishing")
+    return {"rows": rows, "start": start, "end": end, "score": score, "date": dates.utc_today(now),
+            "self_assessment": policy.is_self_assessment(caller)}
+
+
+async def publish_audit_record(session, audit: GovernanceHealthAudit, caller: Member | None, plan: dict | None = None) -> None:
+    require_editable_audit(audit, caller)
+    await require_auditor(session, caller, audit.ecosystem_id)
+    plan = plan or await prepare_audit_publication(session, audit, caller)
+    audit.indicator_scores = plan["rows"]
+    audit.audit_period_start, audit.audit_period_end = plan["start"], plan["end"]
+    audit.overall_health_score = plan["score"]
+    audit.overall_health = _health_score_to_label(plan["score"])
+    audit.self_assessment = plan["self_assessment"]
+    audit.status = AUDIT_PUBLISHED
+    audit.audit_date = plan["date"]
+    audit.next_audit_due = audit.audit_date + _dt.timedelta(days=NEXT_AUDIT_AFTER_DAYS)
+    await session.flush()
+
+
 @safeguards_api_bp.post("/audits/<audit_id:uuid>/publish")
 @authenticated
 async def publish_audit(request: Request, audit_id: uuid.UUID):
@@ -473,31 +523,7 @@ async def publish_audit(request: Request, audit_id: uuid.UUID):
     """
     async with request.app.ctx.db() as session:
         audit, caller = await _audit_to_edit(session, request, audit_id)
-        await require_auditor(session, caller, audit.ecosystem_id)
-        now = dates.utc_now()
-        start, end = health.period_bounds(audit.audit_period_start, audit.audit_period_end, now)  # FX-Maint (F11)
-        if start > end:
-            raise ApiError(400, "The audit period must start on or before its end")
-        snapshot = await health.health_snapshot(session, audit.ecosystem_id, start=start, end=end, now=now)
-        prior = await health.latest_published_audit(session, audit.ecosystem_id)
-        rows, missing = health.frozen_indicators(
-            snapshot, _scores_to_list(audit.indicator_scores), _scores_to_list(prior.indicator_scores) if prior else None,
-        )
-        if missing:
-            names = ", ".join(f"{i} {health.INDICATOR_BY_ID[i].name}" for i in missing)
-            raise ApiError(400, f"Rate every indicator that has data in the period before publishing. Still to rate: {names}.",
-                           {"code": "RATINGS_MISSING", "missing": missing})
-        score = audit_score(rows)
-        if score is None:
-            raise ApiError(400, "Rate at least one indicator (healthy, warning or critical) before publishing")
-        audit.indicator_scores = rows
-        audit.audit_period_start, audit.audit_period_end = start, end
-        audit.overall_health_score = score
-        audit.overall_health = _health_score_to_label(score)
-        audit.self_assessment = policy.is_self_assessment(caller)
-        audit.status = AUDIT_PUBLISHED
-        audit.audit_date = dates.utc_today(now)
-        audit.next_audit_due = audit.audit_date + _dt.timedelta(days=NEXT_AUDIT_AFTER_DAYS)
+        await publish_audit_record(session, audit, caller)
         await session.commit()
         await session.refresh(audit)
         return json(_audit_to_detail(audit, caller, await _ecosystem_name(session, audit.ecosystem_id)))
@@ -563,8 +589,8 @@ def _audit_decision(audit: GovernanceHealthAudit, caller: Member, *, skill: str,
     )
 
 
-async def abandon_audit_draft(session, audit: GovernanceHealthAudit, caller: Member | None, reason: str | None) -> None:
-    """Mark a draft abandoned with a recorded reason (its auditor or a steward); the caller commits."""
+async def prepare_audit_abandonment(session, audit: GovernanceHealthAudit, caller: Member | None, reason: str | None) -> str:
+    """Validate abandonment before asking for confirmation or recording its decision."""
     if not policy.can_abandon_audit(caller, audit):
         raise ApiError(403, ABANDON_DENIED)
     reason = (reason or "").strip()
@@ -573,6 +599,12 @@ async def abandon_audit_draft(session, audit: GovernanceHealthAudit, caller: Mem
     status = await _locked_status(session, audit)
     if status != AUDIT_DRAFT:
         raise ApiError(409, NOT_A_DRAFT.format(status=status), {"code": "NOT_A_DRAFT", "status": status})
+    return reason
+
+
+async def abandon_audit_draft(session, audit: GovernanceHealthAudit, caller: Member | None, reason: str | None) -> None:
+    """Mark a draft abandoned with a recorded reason (its auditor or a steward); the caller commits."""
+    reason = await prepare_audit_abandonment(session, audit, caller, reason)
     audit.status = AUDIT_ABANDONED
     session.add(_audit_decision(audit, caller, skill=health.AUDIT_ABANDON_SKILL, note=reason,
                                 holding=f"The draft governance health audit {audit.audit_id} by "

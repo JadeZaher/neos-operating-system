@@ -158,7 +158,7 @@ def _repair_to_schema(r: RepairAgreementRecord) -> RepairAgreementSchema:
     return RepairAgreementSchema(
         id=r.id,
         title=r.title,
-        commitments=r.commitments,
+        commitments=normalize_repair_commitments(r.commitments),
         responsible_party=r.responsible_party,
         status=r.status,
         checkin_30_date=r.checkin_30_date,
@@ -365,6 +365,49 @@ async def create_conflict(request: Request):
         return json(await _conflict_to_detail(session, conflict, reporter), status=201)
 
 
+async def prepare_case_update(session, case: ConflictCase, caller: Member | None, fields: dict) -> dict:
+    """Validate a case edit using the canonical actor and lifecycle rules, without applying it."""
+    changes = dict(fields)
+    if not policy.can_triage_conflict(caller, case):
+        is_reporter = caller is not None and caller.id == case.reporter_id
+        withdraws = changes.keys() == {"status"} and changes["status"] == "closed"
+        corrects = bool(changes) and set(changes) <= REPORTER_EDITABLE_FIELDS
+        if not (is_reporter and (withdraws or corrects)):
+            raise ApiError(403, TRIAGE_DENIED)
+
+    new_status = changes.get("status")
+    if new_status is not None and new_status != case.status:
+        if new_status not in allowed_moves(case.status):
+            raise ApiError(409, f"A {case.status.replace('_', ' ')} case cannot move to {new_status.replace('_', ' ')}",
+                           {"allowed": list(allowed_moves(case.status))})
+        if new_status == "resolved":
+            summary = changes.get("resolution_summary") or case.resolution_summary
+            if not (summary or "").strip():
+                raise ApiError(400, RESOLUTION_SUMMARY_REQUIRED)
+            changes["resolved_date"] = dates.utc_today()
+    elif new_status == case.status:
+        changes.pop("status")
+
+    facilitator_id = changes.get("facilitator_id")
+    if facilitator_id is not None:
+        facilitator = await session.get(Member, facilitator_id)
+        if not policy.is_active_member_in(facilitator, case.ecosystem_id) or policy.is_conflict_party(facilitator, case):
+            raise ApiError(400, "The facilitator must be an active member of this ecosystem who is not a party to the case")
+
+    if "party_member_ids" in changes:
+        changes["parties"] = await _party_record(session, case.ecosystem_id, changes.pop("party_member_ids"))
+    if "shared_ecosystem_ids" in changes:
+        changes["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(changes["shared_ecosystem_ids"])
+    return changes
+
+
+async def apply_case_update(session, case: ConflictCase, caller: Member | None, fields: dict) -> None:
+    changes = await prepare_case_update(session, case, caller, fields)
+    for field, value in changes.items():
+        setattr(case, field, value)
+    await session.flush()
+
+
 @conflicts_api_bp.put("/<conflict_id:uuid>")
 @authenticated
 async def update_conflict(request: Request, conflict_id: uuid.UUID):
@@ -378,42 +421,43 @@ async def update_conflict(request: Request, conflict_id: uuid.UUID):
     async with request.app.ctx.db() as session:
         case, caller = await load_visible_case(session, request, conflict_id)
 
-        if not policy.can_triage_conflict(caller, case):
-            is_reporter = caller.id == case.reporter_id
-            withdraws = changes.keys() == {"status"} and changes["status"] == "closed"
-            corrects = bool(changes) and set(changes) <= REPORTER_EDITABLE_FIELDS
-            if not (is_reporter and (withdraws or corrects)):
-                raise ApiError(403, TRIAGE_DENIED)
-
-        new_status = changes.get("status")
-        if new_status is not None and new_status != case.status:
-            if new_status not in allowed_moves(case.status):
-                raise ApiError(409, f"A {case.status.replace('_', ' ')} case cannot move to {new_status.replace('_', ' ')}",
-                               {"allowed": list(allowed_moves(case.status))})
-            if new_status == "resolved":
-                summary = changes.get("resolution_summary") or case.resolution_summary
-                if not (summary or "").strip():
-                    raise ApiError(400, RESOLUTION_SUMMARY_REQUIRED)
-                case.resolved_date = dates.utc_today()
-        elif new_status == case.status:
-            changes.pop("status")
-
-        facilitator_id = changes.get("facilitator_id")
-        if facilitator_id is not None:
-            facilitator = await session.get(Member, facilitator_id)
-            if not policy.is_active_member_in(facilitator, case.ecosystem_id) or policy.is_conflict_party(facilitator, case):
-                raise ApiError(400, "The facilitator must be an active member of this ecosystem who is not a party to the case")
-
-        if "party_member_ids" in changes:
-            changes["parties"] = await _party_record(session, case.ecosystem_id, changes.pop("party_member_ids"))
-        if "shared_ecosystem_ids" in changes:
-            changes["shared_ecosystem_ids"] = serialize_shared_ecosystem_ids(update_req.shared_ecosystem_ids)
-        for field, value in changes.items():
-            setattr(case, field, value)
+        await session.refresh(case, with_for_update=True)
+        await apply_case_update(session, case, caller, changes)
 
         await session.commit()
         case = await _reload(session, case.id)
         return json(await _conflict_to_detail(session, case, caller))
+
+
+def normalize_repair_commitments(value, *, parties=None, review_date=None, facilitator_notes=None):
+    """Keep legacy list contents inside the canonical repair object."""
+    data = {"items": list(value)} if isinstance(value, list) else dict(value or {})
+    if parties:
+        data["parties"] = list(parties)
+    if review_date:
+        data["review_date"] = str(review_date)
+    if facilitator_notes:
+        data["facilitator_notes"] = facilitator_notes
+    return data
+
+
+async def create_repair_record(session, case, caller, fields):
+    """Create the same authorized repair record for REST and the personal operator."""
+    if not policy.can_triage_conflict(caller, case):
+        raise ApiError(403, TRIAGE_DENIED)
+    values = fields if isinstance(fields, RepairCreateRequest) else RepairCreateRequest(**fields)
+    today = dates.utc_today()
+    repair = RepairAgreementRecord(
+        id=uuid.uuid4(), conflict_case_id=case.id, title=values.title,
+        commitments=normalize_repair_commitments(values.commitments, parties=values.parties,
+            review_date=values.review_date, facilitator_notes=values.facilitator_notes),
+        responsible_party=values.responsible_party, status="active",
+        **{f"checkin_{days}_date": getattr(values, f"checkin_{days}_date") or today + _dt.timedelta(days=days)
+           for days in REPAIR_CHECKIN_DAYS},
+    )
+    session.add(repair)
+    await session.flush()
+    return repair
 
 
 @conflicts_api_bp.post("/<conflict_id:uuid>/repair")
@@ -427,46 +471,38 @@ async def create_repair_agreement(request: Request, conflict_id: uuid.UUID):
 
     async with request.app.ctx.db() as session:
         case, caller = await load_visible_case(session, request, conflict_id)
-        if not policy.can_triage_conflict(caller, case):
-            raise ApiError(403, TRIAGE_DENIED)
-
-        commitments_data = create_req.commitments
-        if isinstance(commitments_data, list):
-            commitments_data = {
-                "items": commitments_data,
-                "parties": create_req.parties,
-                "review_date": str(create_req.review_date) if create_req.review_date else None,
-                "facilitator_notes": create_req.facilitator_notes,
-            }
-        elif isinstance(commitments_data, dict):
-            if create_req.parties:
-                commitments_data["parties"] = create_req.parties
-            if create_req.review_date:
-                commitments_data["review_date"] = str(create_req.review_date)
-            if create_req.facilitator_notes:
-                commitments_data["facilitator_notes"] = create_req.facilitator_notes
-
-        today = dates.utc_today()
-        scheduled = {
-            days: getattr(create_req, f"checkin_{days}_date") or today + _dt.timedelta(days=days)
-            for days in REPAIR_CHECKIN_DAYS
-        }
-        repair = RepairAgreementRecord(
-            id=uuid.uuid4(),
-            conflict_case_id=conflict_id,
-            title=create_req.title,
-            commitments=commitments_data,
-            responsible_party=create_req.responsible_party,
-            status="active",
-            checkin_30_date=scheduled[30],
-            checkin_60_date=scheduled[60],
-            checkin_90_date=scheduled[90],
-        )
-        session.add(repair)
+        repair = await create_repair_record(session, case, caller, create_req)
         await session.commit()
         await session.refresh(repair)
 
     return json(_repair_to_schema(repair).model_dump(mode="json"), status=201)
+
+
+async def prepare_repair_update(case, caller, repair, fields):
+    """Validate repair follow-through; parties' agreement is a fact supplied by the facilitator."""
+    if not policy.can_triage_conflict(caller, case):
+        raise ApiError(403, TRIAGE_DENIED)
+    if repair is None or repair.conflict_case_id != case.id:
+        raise ApiError(404, "Repair agreement not found")
+    changes = dict(fields)
+    changes["commitments"] = normalize_repair_commitments(changes.get("commitments", repair.commitments))
+    confirmed = changes.pop("confirmed_by_parties", False)
+    if "status" in changes and changes["status"] not in {"active", REPAIR_FULFILLED}:
+        raise ApiError(400, "A repair status must be active or fulfilled.")
+    if changes.get("status") == REPAIR_FULFILLED and repair.status != REPAIR_FULFILLED:
+        if not confirmed:
+            raise ApiError(400, REPAIR_NEEDS_CONFIRMATION)
+        changes["completed_date"] = dates.utc_today()
+        changes["commitments"] = {**changes["commitments"],
+                                  "confirmed_by_parties_on": str(changes["completed_date"])}
+    return changes
+
+
+async def apply_repair_update(session, case, caller, repair, fields):
+    changes = await prepare_repair_update(case, caller, repair, fields)
+    for field, value in changes.items():
+        setattr(repair, field, value)
+    await session.flush()
 
 
 @conflicts_api_bp.put("/<conflict_id:uuid>/repair/<repair_id:uuid>")
@@ -486,19 +522,11 @@ async def update_repair_agreement(request: Request, conflict_id: uuid.UUID, repa
         repair = (await session.execute(select(RepairAgreementRecord).where(
             RepairAgreementRecord.id == repair_id,
             RepairAgreementRecord.conflict_case_id == conflict_id,
-        ))).scalar_one_or_none()
+        ).with_for_update())).scalar_one_or_none()
         if repair is None:
             raise ApiError(404, "Repair agreement not found")
 
-        changes = update_req.model_dump(exclude_none=True)
-        confirmed = changes.pop("confirmed_by_parties", False)
-        if changes.get("status") == REPAIR_FULFILLED and repair.status != REPAIR_FULFILLED:
-            if not confirmed:
-                raise ApiError(400, REPAIR_NEEDS_CONFIRMATION)
-            repair.completed_date = dates.utc_today()
-            repair.commitments = {**(repair.commitments or {}), "confirmed_by_parties_on": str(repair.completed_date)}
-        for field, value in changes.items():
-            setattr(repair, field, value)
+        await apply_repair_update(session, case, caller, repair, update_req.model_dump(exclude_none=True))
 
         await session.commit()
         await session.refresh(repair)

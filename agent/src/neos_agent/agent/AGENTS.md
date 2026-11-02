@@ -98,7 +98,7 @@ the current request only count from the next one, so the model can never
 confirm on the member's behalf, neither straight away nor in the same turn
 that asked. Each stored key also binds the canonical tool name and a SHA-256
 digest and frozen JSON payload of every action argument except `confirmed`
-(at most 8 KB). A single matching affirmative executes that exact payload
+(at most 64 KiB of UTF-8 JSON, allowing a legal 10,000-character message). A single matching affirmative executes that exact payload
 under the session row lock, with the same handler, current scope and current
 authority. It does not ask a model to regenerate a target or reason. The
 handler checks its newly resolved confirmation key, so a reused title or
@@ -310,3 +310,82 @@ support and their own session history; member mode still requires a real
 membership. Core member-session history retains its existing ecosystem
 scope. The chat's guard and every support tool check the current assignment,
 and support auditing always attributes the actual User.
+
+## Personal operator workflows
+
+`operator_tools.py` adds ordinary member capabilities to the same registry,
+caller-aware/scoped dispatch and frozen confirmation allowlist. These tools
+never borrow NodeAdmin authority. Shared request-free functions in messaging,
+exchange, safeguards, exit and conflicts perform the REST validation and
+mutation; no tool constructs an HTTP request or calls a route handler.
+
+| Family | Reads | Acts and confirmation |
+|---|---|---|
+| Messaging | `list_conversations`, `get_conversation`, `search_messages`, `find_message_members` | `create_conversation` (optional first message), `send_message`; both frozen and confirmed |
+| Collaboration | `find_collaboration_domains`, `find_collaborations`, `get_collaboration` | `propose_collaboration`; confirmed, actual proposer, only the canonical eligible source-side approval |
+| Health audit | `get_health_audit`, existing computed health | `update_health_audit` saves only the auditor's supplied draft fields; `publish_health_audit` and `abandon_health_audit` require confirmation |
+| Exit | existing `get_exit_status`, `export_portable_record` | `update_exit_status` is confirmed; only the leaver cancels, a different actual steward starts/completes handoff |
+| Conflict/repair | existing `get_conflict_case` | `update_conflict_case`, `update_repair_agreement`; confirmed, same visibility, actor, field and move validation as REST |
+
+Messaging recipients come from active memberships in the caller's active
+ecosystems. Namesakes remain separate choices. The creator/sender always
+comes from current participation, never an argument. Conversation reads
+mark only served messages read; cached navigation refresh checks access
+without advancing the read watermark. The confirmation key binds recipient
+membership/User identities and current names, so an edited recipient or
+participant list requires a new question. Broadcasts are queued in the
+session and delivered only after commit; a refusal cannot emit a message.
+
+Audit publication prepares a read-only plan using the actual period,
+computed values, previous values/trends, and the auditor's own ratings.
+Its confirmation key hashes that plan plus findings/scope/recommendations;
+changed content, computed evidence, or lost independence invalidates old
+approval. Publication never invents the member's ratings. Abandonment uses
+the same recorded reason and decision record as REST.
+
+Exit is voluntary and penalty-free. Handoff dates are maximum practical
+wind-down periods, not a permission or minimum waiting gate. The export
+tool returns the actual own-only authenticated download URL and says it has
+not downloaded anything; it does not transmit the private export body to
+the model or mark completion. Opening the actual export endpoint performs
+the existing owner check and records the download.
+
+Conflict moves require the same summary and non-party facilitator/steward
+rules. A reporter retains their limited text-correction/withdrawal rights.
+Repair fulfillment requires the facilitator's explicit report that both
+parties confirmed; a generic chat Yes approves only the already frozen
+payload, never invents that fact. Undeclared repair status spellings cannot
+bypass the fulfilled check. Tools flush; the dispatcher commits their
+ordinary writes atomically with one-use approval consumption.
+
+Proposal reads carry short `plain_help` derived from current stage, caller
+standing and consent/consensus mode. It is a wording aid for brief answers,
+not a new lifecycle rule. The prompt gives short advice, concern/objection
+and voluntary-exit wording; actual model P1/P2/P3 scores remain live QA work.
+Coverage: `tests/test_personal_operator_workflows.py`; the separate guarded
+real-model probe and fixture plan are in `uxqa/agent-evals/operator-capability-*`.
+
+
+## Explicit reasons are already input
+
+A clear own-position request plus an identified proposal and a concrete stated reason is enough to call `record_consent_position`; the engine checks current participation/stage. An unfair shift burden is a stated reason, without requiring the member to restate it in formal governance language. Missing reasons/targets still require clarification, and a question or vague concern does not become an automatic consent/objection. No semantic authorization parser was added. Real-model follow-through must still be verified; mocked SSE tests establish execution, scope and no-extra-confirmation behavior only.
+
+
+Proposal status tools also supply `status_explanation`, derived from the lifecycle's manual Advice exit, fresh caller standing and ready moves. It distinguishes a read with no transition history from a claim that no history is stored. Consent help identifies the caller's actual position and available options, with return-to-Advice note requirements and proposal withdrawal kept distinct from withdrawing an own position. Explaining an unexpected transition does not execute one. R4 live follow-through remains a real-model verification requirement.
+
+
+## Live plain language and factual drafting follow-through
+
+The full live retry showed that long sentences and formal vocabulary persisted despite the previous 80-word suggestion. The final policy now models short everyday wording for consent, advice and standing aside, with roughly 40 to 60 words for a simple question and sentences of 5 to 10 words. It avoids repeated titles, machine labels and closing check-in questions. These are general answer patterns, not task-ID branches; live grade thresholds remain unchanged and must still be verified.
+
+The proposal tool no longer demands 2-to-6 sentences of change and rationale from a brief user request. It asks for the supplied change/reason and omits guessed staffing, benefits and optional control fields. Chat's separate source guard can refuse unsupported wording before a write and allow an exact correction immediately. Explicit requested ideas remain draft material for review. The history limit is stated positively: the read looked only at current state and did not inspect change history. The suggested bounded wording is that this read cannot establish who moved the record or why; it is not a claim about what history is stored.
+
+## Phase-qualified skill use
+
+The selected proposal skill now distinguishes the current app draft adapter from formal readiness and later ratification guidance. Draft minimums are the title, stated change and server-scoped actor/ecosystem; an absent reason gets the transparent placeholder and an unchosen domain is omitted. The existing framework readiness fields and process remain intact. A requested create-and-open flow uses the real returned draft ID and existing lifecycle checks; it does not certify readiness or invent facts. Dependency checklists apply only to the requested work, so the domain-mapping dependency cannot turn an ordinary proposal draft into domain creation.
+
+A personal operator completes each explicit read as well as a requested write. Finding collaboration target groups and finding existing collaborations are distinct reads. A write's authorization preflight or returned updated record does not excuse silently omitting a requested search/read. Refusals still give the caller an available next action grounded in fresh tool facts; chat's bounded canonical summary completes omitted current proposal facts without executing them.
+
+Conflict update tool arguments derive their changes schema from the shared `ConflictUpdateRequest`, so the model sees actual field names rather than an unconstrained object. A requested resolution prepares both `status=resolved` and `resolution_summary`; editing the summary alone leaves the stage unchanged. Verb-qualified confirmation remains bound to the actual frozen status, with no inferred field addition. Personal operator anonymous refusals use the existing `CALLER_REQUIRED` constant, keeping the common caller boundary and error contract consistent.
+
+`create_conversation` advertises a required explicit initial-message choice in its model-facing schema. A create-and-send request includes the member's exact text in the first frozen payload; a deliberately empty string means conversation only. Chat refuses a missing choice before preparing confirmation, allowing correction within the same tool loop rather than asking the member again. This adapter does not change ordinary REST/direct-call compatibility or permit a later Yes to add a message to a conversation-only review.

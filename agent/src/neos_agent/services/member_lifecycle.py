@@ -140,9 +140,12 @@ class Placement:
     outcome: str  # SIGNUP | JOINED | GATE_CLEARED | RE_ENTRY
     missing: list
     created: bool
+    join_gates: dict | None = None
 
     @property
     def status(self) -> str:
+        if self.join_gates and self.join_gates["status"] in {"quiz_required", "quiz_unavailable"}:
+            return self.join_gates["status"]
         return "consent_required" if self.missing else "joined"
 
 
@@ -178,11 +181,16 @@ async def place_member(session, *, user_id: uuid.UUID, ecosystem: Ecosystem, dis
         raise ApiError(409, f"You are already a member of {name}.", {"code": ALREADY_MEMBER})
     if row.current_status == "pending_consent":
         missing = await missing_agreement_consents(session, row.id, ecosystem.id, "ecosystem")
+        from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+        gates = await join_gate_summary(session, ecosystem_id=ecosystem.id, member=row)
+        require_join_gates(gates)
         if missing:
             raise ApiError(409, f"You have already joined {name}: consent to its agreements to finish.",
                            {"code": CONSENT_REQUIRED, "required_agreements": [agreement_brief(a) for a in missing]})
         record_transition(session, row, "active", trigger=GATE_CLEARED, notes="Nothing was left to consent to")
-        return Placement(row, GATE_CLEARED, [], False)
+        from neos_agent.services.join_gates import record_quiz_bypass
+        await record_quiz_bypass(session, row, gates)
+        return Placement(row, GATE_CLEARED, [], False, gates)
     if row.current_status == "exited":
         if not await re_entry_open(session, row):
             raise ApiError(403, f"Your exit from {name} was recorded as final, so you cannot rejoin by yourself. "
@@ -190,9 +198,14 @@ async def place_member(session, *, user_id: uuid.UUID, ecosystem: Ecosystem, dis
         # A row that left before exits cleared it still holds its old role, profile and consents.
         await clear_standing(session, row, actor=None, reason="Returned after leaving: starts again as a member")
         missing = await missing_agreement_consents(session, row.id, ecosystem.id, "ecosystem")
-        record_transition(session, row, "pending_consent" if missing else "active", trigger=RE_ENTRY,
+        from neos_agent.services.join_gates import join_gate_summary
+        gates = await join_gate_summary(session, ecosystem_id=ecosystem.id, member=row)
+        record_transition(session, row, "active" if gates["eligible"] else "pending_consent", trigger=RE_ENTRY,
                           notes="Returned after leaving")
-        return Placement(row, RE_ENTRY, missing, False)
+        if gates["eligible"]:
+            from neos_agent.services.join_gates import record_quiz_bypass
+            await record_quiz_bypass(session, row, gates)
+        return Placement(row, RE_ENTRY, missing, False, gates)
     words = STATUS_WORDS.get(row.current_status, row.current_status)
     raise ApiError(409, f"Your membership in {name} is {words}. A steward of {name} can restore it.",
                    {"code": MEMBERSHIP_PAUSED})
@@ -210,13 +223,20 @@ async def _create_row(session, *, user_id, ecosystem: Ecosystem, display_name: s
     except IntegrityError:
         raise ApiError(409, f"You are already a member of {ecosystem.name}.", {"code": ALREADY_MEMBER}) from None
     missing = await missing_agreement_consents(session, member.id, ecosystem.id, "ecosystem")
-    record_transition(session, member, "pending_consent" if missing else "active", trigger=trigger)
-    return Placement(member, trigger, missing, True)
+    from neos_agent.services.join_gates import join_gate_summary
+    gates = await join_gate_summary(session, ecosystem_id=ecosystem.id, member=member)
+    record_transition(session, member, "active" if gates["eligible"] else "pending_consent", trigger=trigger)
+    if gates["eligible"]:
+        from neos_agent.services.join_gates import record_quiz_bypass
+        await record_quiz_bypass(session, member, gates)
+    return Placement(member, trigger, missing, True, gates)
 
 
 def placement_payload(placement: Placement, ecosystem_name: str) -> dict:
     """The join/sign-up response: status, outcome, the row's status, plain words and the agreements still to consent to."""
-    if placement.missing:
+    if placement.join_gates and placement.join_gates["status"] in {"quiz_required", "quiz_unavailable"}:
+        message = f"Your membership in {ecosystem_name} is pending. Complete its configured entry requirements to take part."
+    elif placement.missing:
         message = (f"Welcome back to {ecosystem_name}. One step left: consent to its current agreements."
                    if placement.outcome == RE_ENTRY else f"One step left: consent to {ecosystem_name}'s agreements.")
     elif placement.outcome == RE_ENTRY:
@@ -232,6 +252,7 @@ def placement_payload(placement: Placement, ecosystem_name: str) -> dict:
         "message": message,
         "ecosystem_name": ecosystem_name,
         "required_agreements": [agreement_brief(agreement) for agreement in placement.missing],
+        "join_gates": placement.join_gates,
     }
 
 
@@ -249,6 +270,12 @@ async def move_refusal(session, target: Member, to_status: str, *, caller: Membe
         words = STATUS_WORDS.get(target.current_status, target.current_status)
         return ApiError(400, f"A membership that is {words} cannot be set to {STATUS_WORDS.get(to_status, to_status)}.",
                         {"allowed": allowed})
+    if to_status == "active":
+        from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+        try:
+            require_join_gates(await join_gate_summary(session, ecosystem_id=target.ecosystem_id, member=target))
+        except ApiError as refusal:
+            return refusal
     if target.current_status == "pending_consent":
         missing = await missing_agreement_consents(session, target.id, target.ecosystem_id, "ecosystem")
         if missing:
@@ -264,6 +291,10 @@ async def move_member(session, target: Member, to_status: str, *, caller: Member
     refusal = await move_refusal(session, target, to_status, caller=caller)
     if refusal is not None:
         raise refusal
+    if to_status == "active":
+        from neos_agent.services.join_gates import join_gate_summary, record_quiz_bypass
+        gates = await join_gate_summary(session, ecosystem_id=target.ecosystem_id, member=target)
+        await record_quiz_bypass(session, target, gates, actor_user_id=caller.user_id if caller else None)
     return record_transition(session, target, to_status, trigger=STEWARD_MOVE, actor=caller,
                              notes=(notes or "").strip() or None)
 

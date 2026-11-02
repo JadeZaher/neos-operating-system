@@ -144,7 +144,8 @@ async def verify_challenge(request: Request):
             member, missing = await create_signup_member(
                 session, user=user, ecosystem=ecosystem, member_id=f"did-{did[-12:]}", display_name=display_name,
             )
-            consent_gate = consent_gate_payload(missing)
+            from neos_agent.services.join_gates import join_gate_summary
+            consent_gate = consent_gate_payload(missing, await join_gate_summary(session, ecosystem_id=ecosystem.id, member=member))
 
         # Create auth session
         session_id = uuid.uuid4()

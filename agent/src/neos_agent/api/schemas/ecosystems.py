@@ -16,6 +16,7 @@ class EcosystemStewardItem(BaseModel):
 
 
 class EcosystemDetail(EcosystemSummary):
+    uaf_agreement_id: UUID | None = None
     website: str | None = None
     founded_date: _dt.date | None = None
     tags: list[str] | None = None
@@ -27,6 +28,7 @@ class EcosystemDetail(EcosystemSummary):
 
 
 class EcosystemCreateRequest(BaseModel):
+    uaf_agreement_id: UUID | None = None
     name: str
     description: str | None = None
     location: str | None = None
@@ -40,6 +42,7 @@ class EcosystemCreateRequest(BaseModel):
 
 
 class EcosystemUpdateRequest(BaseModel):
+    uaf_agreement_id: UUID | None = None
     name: str | None = None
     description: str | None = None
     location: str | None = None

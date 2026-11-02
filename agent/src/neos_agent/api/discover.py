@@ -435,62 +435,13 @@ async def create_share_need(request: Request):
 @discover_api_bp.get("/collaborations")
 @authenticated
 async def list_collaborations(request: Request):
-    """GET /api/v1/discover/collaborations -- active by default; `status=all`; proposed ones only for either side."""
-    search = request.args.get("q", "").strip()
-    status_filter = request.args.get("status") or "active"
-    tier_filter = request.args.get("engagement_tier")
     page = parse_pagination(request, default=20, cap=50)
-    filters = []
-    if search:
-        pattern = f"%{_escape_like(search)}%"
-        filters.append(Collaboration.title.ilike(pattern) | Collaboration.description.ilike(pattern))
-    if status_filter != "all":
-        if status_filter not in exchange.COLLABORATION_STATUSES:
-            raise ApiError(400, "Unknown status", {"allowed": [*exchange.COLLABORATION_STATUSES, "all"]})
-        filters.append(Collaboration.status == status_filter)
-    if tier_filter:
-        filters.append(Collaboration.engagement_tier == tier_filter)
-
     async with request.app.ctx.db() as session:
-        from neos_agent.api.domains import domain_display_name
-
         viewer = await _viewer(session, request)
-        stmt = select(Collaboration).where(exchange.collaboration_visible_clause(viewer), *filters)
-        total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        rows = (await session.execute(
-            stmt.order_by(Collaboration.created_at.desc(), Collaboration.id).offset(page.offset).limit(page.per_page)
-        )).scalars().all()
-        domain_ids = {r.source_domain_id for r in rows} | {r.target_domain_id for r in rows}
-        domains = {d.id: d for d in (await session.execute(
-            select(Domain).where(Domain.id.in_(domain_ids)))).scalars()} if domain_ids else {}
-        eco_ids = {d.ecosystem_id for d in domains.values()}
-        eco_names = dict((await session.execute(
-            select(Ecosystem.id, Ecosystem.name).where(Ecosystem.id.in_(eco_ids)))).all()) if eco_ids else {}
-
-        def side(domain_id) -> dict:
-            domain = domains.get(domain_id)
-            return {
-                "domain_name": domain_display_name(domain) if domain else None,
-                "ecosystem_id": str(domain.ecosystem_id) if domain else None,
-                "ecosystem_name": eco_names.get(domain.ecosystem_id) if domain else None,
-            }
-
-        items = []
-        for r in rows:
-            src, tgt = side(r.source_domain_id), side(r.target_domain_id)
-            items.append({
-                "id": str(r.id), "title": r.title, "description": r.description, "status": r.status,
-                "engagement_tier": r.engagement_tier,
-                "source_domain_id": str(r.source_domain_id), "source_domain_name": src["domain_name"],
-                "source_ecosystem_id": src["ecosystem_id"], "source_ecosystem_name": src["ecosystem_name"],
-                "target_domain_id": str(r.target_domain_id), "target_domain_name": tgt["domain_name"],
-                "target_ecosystem_id": tgt["ecosystem_id"], "target_ecosystem_name": tgt["ecosystem_name"],
-                "started_date": r.started_date.isoformat() if r.started_date else None,
-                "review_date": r.review_date.isoformat() if r.review_date else None,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            })
-
-    return json({"items": items, "total": total, "page": page.page, "per_page": page.per_page})
+        result = await exchange.search_collaborations(session, viewer, query=request.args.get("q", ""),
+            status=request.args.get("status") or "active", tier=request.args.get("engagement_tier"),
+            page=page.page, limit=page.per_page)
+        return json(result)
 
 
 @discover_api_bp.get("/collaborations/<collaboration_id:uuid>")

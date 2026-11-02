@@ -77,8 +77,10 @@ async def _seed(session: AsyncSession) -> None:
                 id=_member_id(person.user_id, ecosystem_id), ecosystem_id=ecosystem_id, user_id=person.user_id,
                 member_id=f"MEM-{key}-{ecosystem_id.int}", display_name=key.title(), role="user", current_status=status,
             ))
-    session.add(JourneyMap(id=JOURNEY_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OASIS, content_sequence=[], step_count=0))
-    session.add(JourneyMap(id=OMNIONE_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OMNIONE, content_sequence=[], step_count=0))
+    steps = [{"type": "text", "title": f"Step {index + 1}", "content": {"text": "Read this step."}}
+             for index in range(3)]
+    session.add(JourneyMap(id=JOURNEY_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OASIS, content_sequence=steps, step_count=3))
+    session.add(JourneyMap(id=OMNIONE_MAP_ID, slug="welcome", title="Welcome", ecosystem_id=OMNIONE, content_sequence=steps, step_count=3))
     session.add_all([
         ExitRecord(id=OASIS_EXIT, ecosystem_id=OASIS, member_id=SAM_OASIS, exit_type="standard", status="declared"),
         ExitRecord(id=OMNIONE_EXIT, ecosystem_id=OMNIONE, member_id=SAM_OMNIONE, exit_type="standard", status="declared"),

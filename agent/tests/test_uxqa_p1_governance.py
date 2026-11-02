@@ -434,6 +434,15 @@ _TOOL_ARGS = {
     "review_collaboration": {"collaboration": "Garden crews", "note": "Going well"},
     # FX-Maint
     "respond_to_health_audit": {"note": "We will rotate authorship.", "confirmed": True},
+    "create_conversation": {"participant_ids": [str(PEOPLE["ben"].member_id)], "type": "dm", "message": "I can help.", "confirmed": True},
+    "send_message": {"conversation_id": str(uuid.uuid4()), "content": "I can help.", "confirmed": True},
+    "propose_collaboration": {"source_domain": str(STEWARDED_DOMAIN), "target_domain": str(uuid.uuid4()), "title": "Shared seeds", "confirmed": True},
+    "update_health_audit": {"audit_id": str(uuid.uuid4()), "changes": {"findings": "Members supplied these findings."}},
+    "publish_health_audit": {"audit_id": str(uuid.uuid4()), "confirmed": True},
+    "abandon_health_audit": {"audit_id": str(uuid.uuid4()), "reason": "Duplicates the current audit.", "confirmed": True},
+    "update_exit_status": {"exit_id": str(uuid.uuid4()), "new_status": "cancelled", "confirmed": True},
+    "update_conflict_case": {"case_id": str(uuid.uuid4()), "changes": {"status": "resolved", "resolution_summary": "Both parties agreed."}, "confirmed": True},
+    "update_repair_agreement": {"case_id": str(uuid.uuid4()), "repair_id": str(uuid.uuid4()), "changes": {"checkin_30_notes": "Both parties reported quiet nights."}, "confirmed": True},
 }
 
 

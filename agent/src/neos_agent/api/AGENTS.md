@@ -1,5 +1,27 @@
 # API architecture
 
+## Ordinary personal operator parity
+
+Messaging REST handlers and chat call `services/member_messaging.py` for
+participant visibility, recipient validation, actual sender resolution,
+conversation/message writes and read watermarks. Collaboration discovery and
+proposals use `services/exchange.py`, including its no-write preparation step.
+Safeguards, exit and conflict route modules now expose request-free shared
+validation/mutation functions used by both surfaces; see `services/AGENTS.md`,
+Ordinary operator service boundaries, and `agent/AGENTS.md`, Personal operator
+workflows. Node support tools and authority remain separate.
+
+The portable-record operator read returns only the canonical authenticated
+owner download URL. The actual GET endpoint still checks ownership, builds the
+private record and records export completion. Chat never treats preparing that
+link as a completed download or puts its contents in model context.
+
+Orientation chat and consent-scoped discovery/matching contracts live in
+[ORIENTATION_MATCHING.md](ORIENTATION_MATCHING.md). Private, tool-free
+orientation sessions never appear in ordinary governance chat; fit estimates
+use versioned ratified sources and voluntary answers, never admission or
+authority signals.
+
 ## Chat routing events
 
 `POST /chat/send` emits `skill_route` JSON with `mode`, nullable `skill`,
@@ -1229,3 +1251,44 @@ Tests: `tests/test_exchange_flows.py::test_a_poster_in_two_ecosystems_reads_an_a
 
 The chat UI's `_TOOL_DISPLAY_NAMES` (`api/chat.py`) labels every wave-C tool; `tests/test_exchange_parity.py` fails
 when a tool has no label or a page hint names a tool that does not exist.
+
+
+## Dev-drive cycle 1: typed attempts, repair records and selected paths
+
+Participant-directory profile links use the public `/users/:identifier` UI route with the user's encoded handle and user UUID fallback. The destination uses the existing whitelisted profiles API, which resolves either identifier; matching does not add private profile fields or broaden directory eligibility.
+
+Quiz grading preserves JSON kinds and case for choice, checkbox, boolean and rating values. JSON numbers compare numerically; booleans never compare as numbers. Only free text intentionally normalizes case and surrounding whitespace. The verification fingerprint is `survey-completion-v2-typed-grading`, so older grading proofs do not clear a newly evaluated gate; active participation remains grandfathered.
+
+`GET /api/v1/quiz-results/:result_id` is an owner-only User boundary. It resolves the stored result's actual Member row and returns the exact attempt plus candidate-safe quiz content, independent of the default membership and header selection. A steward or NodeAdmin does not gain access through this endpoint. Reporting endpoints retain their separately scoped authorization.
+
+Repair creation shares `create_repair_record` between REST and the registered legacy tool. `normalize_repair_commitments` wraps old lists in `items`, keeps dictionary metadata, and runs on detail serialization and every update before check-in or fulfillment. Fulfillment still requires the parties' explicit attestation and the operator's frozen confirmation.
+
+Journey authoring validates choice keys and forward destinations through `orientation_content.validate_journey_routes`, shared with audited support commands. Runtime completion follows the selected path; required choices must select an actual configured value, and required AI/survey evidence remains bound to that path and owner. Opt-out remains available even when old content needs repair.
+
+
+## Live agent availability and priority navigation
+
+Generation retries occur inside the provider await, before a generated response reaches tool dispatch. Chat never replays an already dispatched application action. On exhausted provider availability, chat emits a bounded availability event, saves the existing text/known record references and pending-confirmation state, returns available completed usage, and provides canonical record navigation. The existing session policy still excludes raw tool payloads.
+
+Queue answers retain canonical links for the first two items in the model-visible `what_needs_me` result. The existing missing-link completion adds only validated local record links; it neither invents queue actions nor traverses member-authored nested content. The actual retained queue and grader remain unchanged.
+
+
+## Source-bound factual chat drafts
+
+Ordinary chat creation now checks draft content before calling the unchanged governance tool. For a factual request, proposed_change and rationale must be excerpts of the current own message or server-saved own user messages. Case/whitespace/Unicode compatibility normalization is allowed; assistant history and fetched record prose are not source authority. A missing reason uses the transparent placeholder `Reason not yet provided by the member.` Optional scope, people, domain, urgency and deadlines must likewise be supplied, or omitted; type defaults to operational. Ecosystem selection still uses its separate current-user choice guard.
+
+An unsupported payload returns DRAFT_SOURCE_REQUIRED before any write, with an instruction to correct the arguments in the same loop. It neither rewrites the payload nor adds an approval barrier. A brief phrase can create a real draft and then open for advice on the user's explicit request. Explicit invitations to use ideas/elaborate are recognized in the current own request and allow generated draft prose, while optional control fields remain source-bound. This is deliberately a narrow literal-source safeguard, not semantic proof that every selected excerpt preserves intent or that every possible invitation phrase is recognized. It does not authorize a write, bypass caller rules, or alter REST/direct-tool input contracts. Brainstorming without a request to save remains a discussion.
+
+Queue context completion also retains each of the first two served priority records' ecosystem names. If a generated reply omits that context, a bounded canonical navigation line supplies it from the same successful result, without inventing actions or traversing arbitrary nested content.
+
+## Pending controls and current caller follow-through
+
+Cancellation controls name the pending action itself: standalone Cancel/No, Cancel it, or Cancel the pending action. A request such as Cancel my own exit UUID is an ordinary domain operation; its tool must prepare a new frozen confirmation. Treating every cancel-prefixed request as a UI cancellation previously discarded that new confirmation. Mixed `No, cancel. <new request>` still clears the pending action and lets the model answer the new request. Verb-qualified Yes continues to match the exact frozen tool action, with fresh target/role checks and one-use consumption.
+
+Successful canonical proposal reads contribute a bounded caller summary from typed current standing, consent gates and ready moves. The summary completes omitted advice participation, own consent position/options, permitted return and proposal/own-position withdrawal, with an exact plan link. It does not infer transition actors or causes, traverse user-authored prose, perform an action, or borrow another member's rights. At most three records are retained for the turn; any later successful ordinary mutation clears these summaries, so an earlier read cannot claim stale standing after a write. Exact wording already present is not repeated; paraphrases may still receive a short canonical summary. Failed/unknown/outside records never produce one. These facts are visible text in the saved conversation, not a persisted authority cache.
+
+Caller facts are a plain prefix before the final generated answer. They do not introduce another URL: the existing trusted-link completion owns navigation, counts only real local Markdown links outside code, and preserves the escaped record label. Thus a valid generated link appears once and code/external/raw paths still receive the canonical Related records link. Multiple facts retain bounded record labels for context.
+
+A single verb-qualified Yes that does not match its frozen payload produces a deterministic failed validation receipt and does not call the model or execute any tool. In particular, `Yes, resolve it` cannot add `status=resolved` to a summary-only edit. The original pending payload remains available for the matching confirmation or can be replaced by an explicit new request and freshly prepared review. This prevents a model from repeatedly attempting a changed payload and falsely narrating a successful write. Generic Yes still confirms only the original frozen payload; multiple pending actions still require disambiguation.
+
+Chat conversation preparation requires an explicit string `message`: the exact text for an initial send, or `""` for intentionally conversation-only creation. A missing/non-string field returns MESSAGE_INTENT_REQUIRED before invoking the handler or creating a pending review, with same-loop correction guidance. The empty sentinel maps to the existing handler's None/no-message behavior; the frozen chat payload retains the explicit empty choice. This prevents accidental omission from silently preparing a conversation-only review. It is not a natural-language intent parser: the model must still choose the supplied text rather than incorrectly claiming no-message intent. REST/direct handlers retain their optional initial-message behavior. Qualified Yes send still cannot authorize a no-message review.

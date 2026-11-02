@@ -85,7 +85,7 @@ ACTORS = {"anon": None, "pending": "nia", "member": "mia", "steward": "sam", "st
 
 def _quiz(quiz_id, ecosystem_id, title, *, entry=False):
     return Quiz(id=quiz_id, title=title, ecosystem_id=ecosystem_id, is_entry_quiz=entry, is_published=True,
-                passing_score=50, survey_json={"pages": [{"elements": [{"name": "q1", "correctAnswer": "consent"}]}]})
+                passing_score=50, survey_json={"pages": [{"elements": [{"type": "text", "name": "q1", "correctAnswer": "consent"}]}]})
 
 
 async def _seed(session: AsyncSession) -> None:
@@ -187,6 +187,15 @@ async def world():
     await engine.dispose()
 
 
+@pytest_asyncio.fixture
+async def agreement_only(world):
+    """Select a consent-only fixture while keeping the quiz available for ordinary learning."""
+    async with world.db() as session:
+        quiz = await session.get(Quiz, OMNI_QUIZ)
+        quiz.is_entry_quiz = False
+        await session.commit()
+
+
 async def call(world, method: str, who: str | None, url: str, **kwargs):
     headers = {"x-test-as": who} if who else {}
     headers.update(kwargs.pop("headers", {}))
@@ -231,6 +240,7 @@ def _cookie(response) -> dict:
 # --- Sign-up -> pending -> consent -> active, one transition per move --------------------------------------------
 
 
+@pytest.mark.usefixtures("agreement_only")
 async def test_sign_up_waits_on_consent_and_consenting_activates_with_one_transition_each(world):
     _, signed_up = await world.app.asgi_client.post("/api/v1/auth/register", json={
         "username": "newbie", "password": "correct-horse-1"})
@@ -291,6 +301,7 @@ async def test_an_invite_link_places_the_sign_up_in_the_public_ecosystem_it_name
 # --- Leaving and returning ----------------------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("agreement_only")
 async def test_a_leaver_returns_to_the_same_row_as_a_fresh_member_who_consents_again(world):
     eli = PEOPLE["eli"].member_id(OMNIONE)
     # Eli left before exits cleared anything (a row from before FX-Onboard): he had consented to the UAF and was an
@@ -354,6 +365,7 @@ async def test_creating_a_second_row_for_yourself_is_a_409_not_a_500(world):
 # --- The consent gate: an empty gate heals, a non-empty one waits --------------------------------------------------
 
 
+@pytest.mark.usefixtures("agreement_only")
 async def test_an_empty_gate_heals_on_join_and_a_waiting_one_names_what_is_left(world):
     healed = await call(world, "post", "tess", f"/api/v1/ecosystems/{ESCHER}/join")  # "Check my membership"
     assert healed.status == 200, healed.text

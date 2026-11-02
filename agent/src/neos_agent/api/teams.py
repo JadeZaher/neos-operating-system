@@ -104,10 +104,57 @@ async def list_teams(request: Request):
             count_rows = await session.execute(count_stmt)
             counts = dict(count_rows.all())
 
+        items = []
+        for team in teams:
+            caller = await caller_in(session, request, team.ecosystem_id)
+            joined = caller is not None and await session.scalar(select(TeamMembership.id).where(
+                TeamMembership.team_id == team.id, TeamMembership.member_id == caller.id).limit(1)) is not None
+            items.append({**_team_to_schema(team, counts.get(team.id, 0)), "caller_is_member": joined,
+                          "caller_can_manage": can_administer_ecosystem(caller, team.ecosystem_id)})
     return json({
-        "items": [_team_to_schema(t, counts.get(t.id, 0)) for t in teams],
+        "items": items,
         "total": len(teams),
     })
+
+
+@teams_api_bp.get("/<team_id:uuid>")
+@authenticated
+async def get_team(request: Request, team_id: uuid.UUID):
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        caller = await caller_in(session, request, team.ecosystem_id)
+        joined = caller is not None and await session.scalar(select(TeamMembership.id).where(
+            TeamMembership.team_id == team.id, TeamMembership.member_id == caller.id).limit(1)) is not None
+        count = await session.scalar(select(func.count(TeamMembership.id)).where(TeamMembership.team_id == team.id)) or 0
+        return json({**_team_to_schema(team, count), "caller_is_member": joined,
+                     "caller_can_manage": can_administer_ecosystem(caller, team.ecosystem_id)})
+
+
+@teams_api_bp.post("/<team_id:uuid>/join")
+@authenticated
+async def join_team(request: Request, team_id: uuid.UUID):
+    from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+    if request.json and set(request.json):
+        raise ApiError(400, "Team self-join takes no member or role fields")
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        if not team.is_active:
+            raise ApiError(409, "This team is not accepting participation")
+        caller = await caller_in(session, request, team.ecosystem_id)
+        if caller is None or caller.current_status != "active":
+            raise ApiError(403, "Active ecosystem membership is required for team participation")
+        existing = await session.scalar(select(TeamMembership).where(
+            TeamMembership.team_id == team.id, TeamMembership.member_id == caller.id))
+        gates = await join_gate_summary(session, ecosystem_id=team.ecosystem_id, member=caller, team=team)
+        if existing is None:
+            require_join_gates(gates)
+            from neos_agent.services.join_gates import record_quiz_bypass
+            await record_quiz_bypass(session, caller, gates)
+            session.add(TeamMembership(team_id=team.id, member_id=caller.id, role="member"))
+            await session.commit()
+        else:
+            gates.update(eligible=True, status="ready", grandfathered=True)
+        return json({"status": "joined", "team_id": str(team.id), "member_id": str(caller.id), "join_gates": gates}, status=201)
 
 
 @teams_api_bp.post("/")
@@ -188,6 +235,10 @@ async def delete_team(request: Request, team_id: uuid.UUID):
         ).scalars().all()
         for tm in memberships:
             await session.delete(tm)
+        from neos_agent.db.course_models import Quiz
+        for quiz in (await session.scalars(select(Quiz).where(Quiz.team_id == team_id))).all():
+            quiz.team_id = None
+            quiz.is_entry_quiz = False
 
         await session.delete(team)
         await session.commit()
@@ -239,7 +290,7 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
         return json({"error": f"Invalid request: {e}"}, status=400)
 
     async with request.app.ctx.db() as session:
-        team, _ = await _managed_team(session, request, team_id)
+        team, administrator = await _managed_team(session, request, team_id)
 
         member = await session.get(Member, add_req.member_id)
         if member is None or member.ecosystem_id != team.ecosystem_id:
@@ -266,6 +317,14 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
                 ).model_dump(mode="json"),
                 status=201,
             )
+
+        if member.current_status != "active":
+            raise ApiError(403, "Active ecosystem membership is required for team participation")
+        from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+        gates = await join_gate_summary(session, ecosystem_id=team.ecosystem_id, member=member, team=team)
+        require_join_gates(gates)
+        from neos_agent.services.join_gates import record_quiz_bypass
+        await record_quiz_bypass(session, member, gates, actor_user_id=administrator.user_id)
 
         tm = TeamMembership(
             id=uuid.uuid4(),
@@ -311,3 +370,80 @@ async def remove_team_member(request: Request, team_id: uuid.UUID, member_id: uu
         await session.commit()
 
     return json({"success": True})
+
+
+@teams_api_bp.get("/<team_id:uuid>/join-gates")
+@authenticated
+async def team_join_gates(request: Request, team_id: uuid.UUID):
+    from neos_agent.services.join_gates import join_gate_summary
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        member = await caller_in(session, request, team.ecosystem_id)
+        return json({"join_gates": await join_gate_summary(session, ecosystem_id=team.ecosystem_id, member=member, team=team)})
+
+
+@teams_api_bp.get("/<team_id:uuid>/quizzes")
+@authenticated
+async def list_team_quizzes(request: Request, team_id: uuid.UUID):
+    from neos_agent.db.course_models import Quiz
+    from neos_agent.api.quizzes import _quiz_to_list_item
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        member = await caller_in(session, request, team.ecosystem_id)
+        from neos_agent.api.policy import can_manage_onboarding
+        stmt = select(Quiz).where(Quiz.team_id == team.id)
+        if not can_manage_onboarding(member, team.ecosystem_id):
+            stmt = stmt.where(Quiz.is_published.is_(True))
+        quizzes = (await session.scalars(stmt.order_by(Quiz.created_at))).all()
+        return json({"quizzes": [_quiz_to_list_item(quiz) for quiz in quizzes]})
+
+
+@teams_api_bp.post("/<team_id:uuid>/quizzes/assign")
+@authenticated
+async def assign_team_quiz(request: Request, team_id: uuid.UUID):
+    from neos_agent.db.course_models import Quiz
+    from neos_agent.api.quizzes import copy_quiz, quiz_steward_or_error
+    body = request.json or {}
+    try:
+        quiz_id = uuid.UUID(str(body.get("quiz_id")))
+    except (TypeError, ValueError):
+        raise ApiError(400, "Invalid quiz_id") from None
+    if not isinstance(body.get("is_entry_quiz", False), bool):
+        raise ApiError(400, "is_entry_quiz must be true or false")
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        steward = await quiz_steward_or_error(session, request, team.ecosystem_id)
+        quiz = await session.get(Quiz, quiz_id, with_for_update=True)
+        if quiz is None:
+            raise ApiError(404, "Quiz not found")
+        if quiz.ecosystem_id not in (None, team.ecosystem_id):
+            raise ApiError(403, "That quiz belongs to another ecosystem")
+        if quiz.ecosystem_id is None:
+            quiz = copy_quiz(quiz, ecosystem_id=team.ecosystem_id, domain_id=None, created_by=steward.id)
+            session.add(quiz)
+        quiz.domain_id = None
+        quiz.team_id = team.id
+        quiz.is_entry_quiz = body.get("is_entry_quiz", False)
+        await session.commit()
+        return json({"success": True, "quiz_id": str(quiz.id), "team_id": str(team.id)})
+
+
+@teams_api_bp.post("/<team_id:uuid>/quizzes/unassign")
+@authenticated
+async def unassign_team_quiz(request: Request, team_id: uuid.UUID):
+    from neos_agent.db.course_models import Quiz
+    from neos_agent.api.quizzes import quiz_steward_or_error
+    try:
+        quiz_id = uuid.UUID(str((request.json or {}).get("quiz_id")))
+    except (TypeError, ValueError):
+        raise ApiError(400, "Invalid quiz_id") from None
+    async with request.app.ctx.db() as session:
+        team = await get_scoped_or_404(session, request, Team, team_id, label="Team")
+        await quiz_steward_or_error(session, request, team.ecosystem_id)
+        quiz = await session.get(Quiz, quiz_id, with_for_update=True)
+        if quiz is None or quiz.team_id != team.id:
+            raise ApiError(404, "Quiz not found in this team")
+        quiz.team_id = None
+        quiz.is_entry_quiz = False
+        await session.commit()
+        return json({"success": True, "quiz_id": str(quiz.id)})

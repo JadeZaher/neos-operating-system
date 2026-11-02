@@ -230,6 +230,13 @@ async def test_register_applies_the_ecosystem_agreement_consent_gate(session_fac
         "ecosystem_id": str(OMNIONE_ID),
         "ecosystem_name": "OmniOne",
         "required_agreements": [{"id": agreement_id, "title": "Universal Agreement Field", "version": "1.0"}],
+        "join_gates": {
+            "target_type": "ecosystem", "target_id": str(OMNIONE_ID),
+            "status": "agreement_consent_required", "eligible": False,
+            "quiz_bypass": {"applied": False, "reason": None}, "required_quizzes": [],
+            "required_agreements": [{"id": agreement_id, "title": "Universal Agreement Field", "version": "1.0",
+                                     "href": f"/agreements/{agreement_id}"}],
+        },
     }]
 
     open_join = await _register(app, "newcomer_open", ecosystem_id=str(THIRD_SPACE_ID))

@@ -28,7 +28,7 @@ WRITABLE = {
     "collaborations": "source_domain_id target_domain_id title description status engagement_tier terms linked_shares_needs required_agreement_ids review_date end_reason",
     "compliance_summaries": "ecosystem_id summary_id status period_start period_end summary findings recommendations",
     "courses": "title description sort_order ecosystem_id domain_id is_onboarding_required",
-    "quizzes": "ecosystem_id course_id domain_id title description mode survey_json time_limit passing_score allow_retakes visibility is_published is_entry_quiz",
+    "quizzes": "ecosystem_id course_id domain_id team_id title description mode survey_json time_limit passing_score allow_retakes visibility is_published is_entry_quiz",
     "quiz_assignments": "quiz_id member_id due_date status assigned_at",
     "quiz_progress": "quiz_id member_id current_question_index answers started_at",
     "user_tags": "member_id quiz_result_id tag_key tag_value tag_category data_type numeric_value",
@@ -50,6 +50,8 @@ WRITABLE = {
     "member_onboarding": "member_id facilitator mentor_id checklist_items completion_percentage",
     "member_decisions": "state",
 }
+WRITABLE["ecosystems"] += " uaf_agreement_id"
+WRITABLE["agreements"] += " act_policy"
 
 # Human attestations and historical artifacts retain their original evidence.
 EVIDENCE = frozenset({
@@ -62,6 +64,7 @@ EVIDENCE = frozenset({
 })
 SECURITY = frozenset({"auth_sessions", "auth_challenges", "agent_tokens", "push_subscriptions"})
 INTERNAL = frozenset({"node_admins", "node_admin_actions", "node_admin_snapshots"})
+INTERNAL = INTERNAL | {"orientation_chat_sessions", "matching_consents", "ecosystem_matching_profiles", "matching_answers", "matching_assessments"}
 SECRET_FIELDS = frozenset({"password_hash", "phone", "oauth_id", "share_token", "token_hash", "token", "challenge", "challenge_text", "endpoint", "p256dh", "p256dh_key", "auth_key", "auth", "keys", "subscription", "subscription_json", "secret", "session_id", "auth_session_id", "ip_address", "user_agent", "cookie", "access_token", "refresh_token"})
 SETTING_KEYS = frozenset({"ctc_map", "sharesneeds_categories", "shares_needs_categories"})
 LIST_FIELDS = ("id", "name", "title", "display_name", "username", "badge_name", "user_id", "member_id", "ecosystem_id", "status", "current_status", "active", "is_active", "archived", "created_at", "updated_at")
@@ -134,6 +137,8 @@ def catalog_entry(spec):
                  "required": not column.nullable and column.default is None and column.server_default is None and not column.primary_key}
         if column.foreign_keys:
             entry["reference"] = next(iter(column.foreign_keys)).target_fullname.split(".")[0]
+        if spec.key == "ecosystems" and column.name == "uaf_agreement_id":
+            entry["type"], entry["reference"] = "reference", "agreements"
         if spec.key == "members" and column.name == "role":
             entry["options"] = ["user", "mod", "admin", "owner"]
         if spec.key == "app_settings" and column.name == "key":

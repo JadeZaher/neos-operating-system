@@ -1,3 +1,4 @@
+# Formal readiness template; app draft minimums are in SKILL.md Section E.
 proposal_id: ""
 type: ""  # ecoplan | genplan | amendment | resource_request | policy_change
 decision_type: ""  # preference | solution
@@ -6,11 +7,11 @@ version: "1.0.0"
 status: draft  # draft | synergy_check | advice | consent | test | adopted | reverted | withdrawn | archived
 proposer: ""
 co_sponsors: []
-affected_domain: ""
+affected_domain: ""  # optional for an app draft; leave unchosen
 impacted_parties: []
 urgency: normal  # normal | elevated | emergency
 proposed_change: ""
-rationale: ""
+rationale: ""  # app draft fallback: Reason not yet provided by the member.
 created_date: ""
 advice_deadline: ""
 consent_deadline: ""

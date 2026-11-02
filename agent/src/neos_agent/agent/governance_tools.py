@@ -2037,7 +2037,7 @@ async def create_ecosystem(
 async def create_safeguard_audit(
     args: dict, db: AsyncSession, ecosystem_ids: list | None = None, *, caller_user_id: uuid.UUID | None = None,
 ) -> dict:
-    """Start a DRAFT governance health audit with the caller as its auditor; only that member publishes it (in the UI)."""
+    """Start an audit draft with the caller as auditor; publishing their ratings needs their confirmation."""
     if caller_user_id is None:
         return {"success": False, "error": CALLER_REQUIRED}
     findings = args.get("findings", "")
@@ -2106,7 +2106,7 @@ async def create_safeguard_audit(
             "link": f"/safeguards/audits/{audit.id}",
             "message": f"Draft audit '{audit_id}' started with you as its auditor.",
             "next_step": ("It is a draft and does not count yet. You rate each indicator beside its computed value "
-                          "and publish it yourself on its page."),
+                          "and can ask me to save your ratings and publish after you confirm."),
         },
     }
 
@@ -2144,21 +2144,10 @@ async def create_repair_agreement(
     if not can_triage_conflict(caller, case):
         return {"success": False, "error": CONFLICT_TRIAGE_DENIED}
 
-    # 30/60/90-day check-ins from today; check-in notes and fulfilment are later records (both parties confirm).
-    today = _today()
-    repair = RepairAgreementRecord(
-        id=uuid.uuid4(),
-        conflict_case_id=case.id,
-        title=title,
-        commitments=commitments,
-        responsible_party=args.get("responsible_party"),
-        status="active",
-        checkin_30_date=today + timedelta(days=30),
-        checkin_60_date=today + timedelta(days=60),
-        checkin_90_date=today + timedelta(days=90),
-    )
-    db.add(repair)
-    await db.flush()
+    from neos_agent.api.conflicts import create_repair_record
+    repair = await create_repair_record(db, case, caller, {
+        "title": title, "commitments": commitments, "responsible_party": args.get("responsible_party"),
+    })
 
     return {
         "success": True,
@@ -2399,11 +2388,14 @@ async def get_proposal(
         ],
     }]
 
+    moves = proposal_next_moves(prop, gates, caller)
     data = {
         **_proposal_brief(prop, prop.ecosystem.name if prop.ecosystem else None),
         "next_step": proposal_next_step(prop, gates, you, await proposal_facts(db, prop)),
         "you": you,
-        "your_moves": proposal_next_moves(prop, gates, caller),
+        "your_moves": moves,
+        "plain_help": _proposal_plain_help(prop.status, you, gates["consent"]["mode"], moves),
+        "status_explanation": _proposal_status_explanation(prop.status, you, moves, gates["consent"]["mode"]),
         "gates": _compact_gates(gates),
         "decision_type": prop.decision_type,
         "version": prop.version,
@@ -2443,8 +2435,58 @@ def _proposal_lifecycle_facts() -> dict:
         "advice_closure": closure,
         "proposer_controls_closure": bool(close and close.proposer_until_deadline),
         "transition_history_available": False,
-        "actor_and_cause": "Unknown: this result does not include transition history. Do not infer who moved it or why from gates or current state.",
+        "history_scope": "This tool read only current state. It did not inspect change history.",
+        "actor_and_cause": "Unknown: this read did not inspect change history. Do not infer who moved it or why from gates or current state.",
     }
+
+
+def _proposal_status_explanation(stage, standing, moves, mode):
+    """Bind transition policy and next options to the current engine/caller facts."""
+    facts = _proposal_lifecycle_facts()
+    ready = {move["to"]: move for move in moves if move.get("ready") and not move.get("blocked")}
+    return {"advice_advances_automatically": facts["advice_advances_automatically"],
+            "advice_closure": facts["advice_closure"],
+            "history_included": False, "transition_actor": None, "transition_cause": None,
+            "history_limitation": facts["history_scope"],
+            "current_stage": stage, "your_position": standing.get("my_position"),
+            "can_record_position": stage == "consent" and bool(standing.get("can_take_part")),
+            "position_choices": (["consent", "object"] if mode == "consensus" else ["consent", "stand_aside", "object"])
+                if stage == "consent" and standing.get("can_take_part") else [],
+            "can_return_to_advice": stage == "consent" and "advice" in ready,
+            "return_note_required": bool(ready.get("advice", {}).get("note_required")),
+            "can_withdraw_proposal": "withdrawn" in ready,
+            "can_withdraw_own_position": stage == "consent" and bool(standing.get("can_take_part")) and standing.get("my_position") not in (None, "withdrawn")}
+
+
+def _proposal_plain_help(stage: str, standing: dict, mode: str = "consent", moves: list | None = None) -> str:
+    """Short state-grounded wording for a member who asks for a plain explanation."""
+    if stage == "advice":
+        text = "Advice means sharing a thought to help a plan. "
+        if standing.get("is_author"):
+            return text + "You wrote it, so listen to the views shared. You choose when to close advice once its needs are met."
+        if standing.get("can_take_part"):
+            return text + ("You have shared a thought this round. You can read what others said." if standing.get("has_advised_this_round") else
+                           "You can share what may help or what worries you. You can choose to do this. It is not a vote.")
+        return text + "You can read it. An active member of this group can share advice."
+    if stage == "consent":
+        parts = ["This plan needs everyone to agree." if mode == "consensus" else "This plan is now at consent."]
+        if standing.get("can_take_part"):
+            mine = standing.get("my_position")
+            positions = {"consent": "You consented.", "stand_aside": "You stood aside.", "object": "You objected."}
+            parts.append(positions.get(mine, "You have not said where you stand yet."))
+            if mine not in (None, "withdrawn"):
+                parts.append("You can withdraw your own position.")
+            parts.append("You can agree or object with a reason. Standing aside is not a choice for this plan." if mode == "consensus" else
+                         "You can agree, stand aside, or object. Stand aside means you have a concern but let it go ahead. An objection would stop it. Say why.")
+        else:
+            parts.append("Only active members here can record a position.")
+        ready = {move["to"]: move for move in moves or [] if move.get("ready") and not move.get("blocked")}
+        if "advice" in ready:
+            parts.append("You can send it back to advice with a note on what will change.")
+        if "withdrawn" in ready:
+            parts.append("You can also withdraw this proposal.")
+        return " ".join(parts)
+    return "Read the plan and the next step shown on its page."
 
 
 # ===================================================================
@@ -2596,25 +2638,19 @@ async def join_domain(
     member = await _caller_row(db, caller_user_id, domain.ecosystem_id)
     if not is_active_member_in(member, domain.ecosystem_id):
         return {"success": False, "error": "Active ecosystem membership is required for domain participation"}
-
-    missing = await missing_agreement_consents(db, member.id, domain.ecosystem_id, "domain", domain.id)
-    if missing:
-        return {
-            "success": False,
-            "error": (
-                f"Joining {name} needs your consent to its agreement(s) first: "
-                + ", ".join(agreement.title for agreement in missing)
-                + ". Consent on each agreement's page, then ask again."
-            ),
-            "required_agreements": [
-                {"title": a.title, "version": a.version, "link": _link("agreement", a.id)} for a in missing
-            ],
-        }
-
     participation = await db.scalar(select(CircleMembership).where(
         CircleMembership.domain_id == domain.id, CircleMembership.member_id == member.id,
     ))
     already = participation is not None and participation.status == "active"
+    from neos_agent.services.join_gates import join_gate_summary, require_join_gates
+    gates = await join_gate_summary(db, ecosystem_id=domain.ecosystem_id, member=member, domain=domain)
+    if not already:
+        try:
+            require_join_gates(gates)
+        except ApiError as refusal:
+            return _api_refusal(refusal)
+        from neos_agent.services.join_gates import record_quiz_bypass
+        await record_quiz_bypass(db, member, gates)
     if participation is None:
         db.add(CircleMembership(
             id=uuid.uuid4(), domain_id=domain.id, member_id=member.id,
@@ -2628,6 +2664,7 @@ async def join_domain(
         "status": "joined",
         "link": _link("domain", domain.id),
         "message": f"You already take part in {name}." if already else f"You joined {name}.",
+        "join_gates": gates,
     }}
 
 
@@ -2895,6 +2932,12 @@ async def explain_status(
     data = await explain_record(db, kind, record, caller)
     if kind == "proposal":
         data["lifecycle_facts"] = _proposal_lifecycle_facts()
+        gates = await proposal_gate_status(db, record)
+        you = await _proposal_standing(db, record, caller)
+        moves = proposal_next_moves(record, gates, caller)
+        data["you"] = you
+        data["status_explanation"] = _proposal_status_explanation(record.status, you, moves, gates["consent"]["mode"])
+        data["plain_help"] = _proposal_plain_help(record.status, you, gates["consent"]["mode"], moves)
     return {"success": True, "data": data}
 
 
@@ -3203,21 +3246,21 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 7
     ToolDef(
         name="create_proposal",
-        description="Create a new ACT proposal as a draft, authored by the signed-in member. Consensus mode is set for OSC/UAF scope, consent otherwise. It stays a draft until its author opens it for advice.",
+        description="Create a new ACT proposal as a draft, authored by the signed-in member. A title and stated change are enough when the ecosystem is known: use the documented missing-reason label and omit an unchosen domain. Do not block the app draft on a formal readiness checklist. Consensus mode is set for OSC/UAF scope, consent otherwise. It stays a draft until its author opens it for advice; do that next if they explicitly requested it.",
         parameters={
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Proposal title."},
-                "type": {"type": "string", "description": "Proposal type (for example policy, resource, structure)."},
+                "type": {"type": "string", "description": "Default operational. Use another type only if the member named it."},
                 "ecosystem": _ECOSYSTEM_PARAM,
                 "proposer": {"type": "string", "description": "Optional display name of who the proposal is on behalf of; defaults to the signed-in member. The signed-in member is always the author."},
-                "proposed_change": {"type": "string", "description": "What exactly changes, in the member's own words, made concrete (2-6 sentences)."},
-                "rationale": {"type": "string", "description": "Why the change is needed and what it should improve (2-6 sentences)."},
+                "proposed_change": {"type": "string", "description": "The member's exact stated change. Keep a brief request brief; do not add staffing, duties, schedules or other commitments."},
+                "rationale": {"type": "string", "description": "The member's stated reason only. If absent, use: Reason not yet provided by the member. Do not invent expected benefits."},
                 "scope": {"type": "string", "description": "Decision scope (used for consent-mode auto-detection)."},
                 "decision_type": {"type": "string", "description": "Explicit decision type hint."},
-                "affected_domain": {"type": "string", "description": "Domain affected by this proposal."},
+                "affected_domain": {"type": "string", "description": "Only a domain explicitly chosen by the member; omit when unknown."},
                 "impacted_parties": {"type": "array", "items": {"type": "string"}, "description": "List of impacted parties."},
-                "urgency": {"type": "string", "description": "Urgency level (low, medium, high, critical)."},
+                "urgency": {"type": "string", "description": "Only urgency explicitly supplied by the member; otherwise omit."},
                 "co_sponsors": {"type": "array", "items": {"type": "string"}, "description": "Member names co-sponsoring this proposal."},
                 "advice_deadline": {"type": "string", "description": "When advice-gathering should close (ISO date, YYYY-MM-DD)."},
                 "consent_deadline": {"type": "string", "description": "When the consent round should close (ISO date, YYYY-MM-DD)."},
@@ -3244,13 +3287,13 @@ GOVERNANCE_TOOLS: list[ToolDef] = [
     # 9
     ToolDef(
         name="record_consent_position",
-        description="Record the signed-in member's own position on a proposal in its consent stage: consent (no reasoned objection), stand_aside (concerns, will not block) or object (it would harm our shared aim; a reason is required). A new position replaces their earlier one. Never record a position for anyone else. Stand aside is not allowed in consensus mode.",
+        description="Record the signed-in member's own position on a proposal in its consent stage: consent (no reasoned objection), stand_aside (concerns, will not block) or object (it would harm our shared aim; a reason is required). An explicit own objection with a concrete stated reason is a complete request: use their words, without asking for a more formal argument or extra permission. Ask only if the reason or target is missing. A new position replaces their earlier one. Never record a position for anyone else. Stand aside is not allowed in consensus mode.",
         parameters={
             "type": "object",
             "properties": {
                 "proposal_id": {"type": "string", "description": "The proposal's id from the page, its PROP- key, or its exact title."},
                 "position": {"type": "string", "enum": ["consent", "stand_aside", "object"], "description": "The member's position."},
-                "reason": {"type": "string", "description": "The member's reason, in their words (required to object; ask for one when standing aside)."},
+                "reason": {"type": "string", "description": "The member's already stated reason, in their words. Required for object/stand aside; ask only if missing, never demand governance jargon."},
             },
             "required": ["proposal_id", "position"],
         },
@@ -4097,8 +4140,11 @@ async def join_ecosystem(
         return {"success": False, "error": "Ecosystem not found"}
     existing = await _caller_row(db, caller_user_id, ecosystem.id)
     gate = await required_agreements_for_scope(db, ecosystem.id, "ecosystem")
+    from neos_agent.services.join_gates import join_gate_summary
+    preview = await join_gate_summary(db, ecosystem_id=ecosystem.id, member=existing, user_id=caller_user_id)
     what = (f"This makes you a member of {ecosystem.name}"
-            + (f"; you take part once you consent to {', '.join(a.title for a in gate)}." if gate else
+            + ("; you take part once its configured entry quizzes and agreement requirements are complete." if preview["required_quizzes"] else
+               f"; you take part once you consent to {', '.join(a.title for a in gate)}." if gate else
                ", active at once (it has no membership agreements)."))
     asked = _needs_confirmation(args, f"join_ecosystem:{ecosystem.id}", what, confirmed_keys)
     if asked is not None and (existing is None or existing.current_status == "exited"):
@@ -4116,7 +4162,7 @@ async def join_ecosystem(
         return _api_refusal(refusal)
     payload = _lifecycle.placement_payload(placement, ecosystem.name)
     await db.commit()
-    return {"success": True, "data": {**payload, "link": "/welcome/consent" if placement.missing else "/dashboard"}}
+    return {"success": True, "data": {**payload, "link": "/welcome/consent" if placement.member.current_status == "pending_consent" else "/dashboard"}}
 
 
 async def attest_agreement_consent(
@@ -4652,3 +4698,14 @@ GOVERNANCE_TOOLS.append(ToolDef(
 ))
 _TOOL_HANDLERS["review_collaboration"] = review_collaboration
 CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {"review_collaboration"}
+
+
+from neos_agent.agent.operator_tools import CONFIRMED_TOOLS as _OPERATOR_CONFIRMED, READ_TOOLS as _OPERATOR_READS
+from neos_agent.agent.operator_tools import definitions as _operator_definitions
+
+_PERSONAL_OPERATOR_TOOLS = _operator_definitions(ToolDef)
+GOVERNANCE_TOOLS.extend(_PERSONAL_OPERATOR_TOOLS)
+_TOOL_HANDLERS.update({tool.name: tool.handler for tool in _PERSONAL_OPERATOR_TOOLS})
+CALLER_SCOPED_TOOLS = CALLER_SCOPED_TOOLS | {tool.name for tool in _PERSONAL_OPERATOR_TOOLS if tool.name not in _OPERATOR_READS}
+CALLER_AWARE_TOOLS = CALLER_AWARE_TOOLS | _OPERATOR_READS
+CONFIRMATION_TOOLS = CONFIRMATION_TOOLS | _OPERATOR_CONFIRMED

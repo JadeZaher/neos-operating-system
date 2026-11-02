@@ -62,6 +62,14 @@ def json_value(value):
     return value
 
 
+def public_json_value(value):
+    """Public timestamps name UTC explicitly; private archive encoding stays unchanged."""
+    if isinstance(value, datetime):
+        aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+        return aware.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return json_value(value)
+
+
 async def is_node_admin(session, user_id):
     return user_id is not None and await session.scalar(select(NodeAdmin.user_id).join(User, User.id == NodeAdmin.user_id).where(NodeAdmin.user_id == user_id, NodeAdmin.active.is_(True), User.disabled_at.is_(None))) is not None
 
@@ -98,7 +106,7 @@ def audit_event(actor, action, kind, resource_id=None, organization_id=None, *, 
 
 
 def serialize_audit(row):
-    return {name: json_value(getattr(row, name)) for name in ("id", "created_at", "actor_user_id", "actor_name", "action", "resource_type", "resource_id", "organization_id", "reason", "outcome", "source", "changed_fields", "safe_summary", "correlation_id")}
+    return {name: public_json_value(getattr(row, name)) for name in ("id", "created_at", "actor_user_id", "actor_name", "action", "resource_type", "resource_id", "organization_id", "reason", "outcome", "source", "changed_fields", "safe_summary", "correlation_id")}
 
 
 async def log_failure(factory, user_id, action, kind, resource_id=None, *, outcome="denied", source="ui", correlation_id=None, organization_id=None, reason="Technical support"):
@@ -407,6 +415,21 @@ async def execute_command(factory, user_id, data, *, source="ui", correlation_id
         if set(supplied) - spec.editable:
             raise ApiError(400, "The command contains fields outside the support allowlist")
         values = {name: convert_value(spec.model.__table__.columns[name], value) for name, value in supplied.items()}
+        if key == "journey_maps" and "content_sequence" in values:
+            from neos_agent.services.orientation_content import validate_journey_routes
+            validate_journey_routes(values["content_sequence"])
+        if key == "ecosystems" and "uaf_agreement_id" in values:
+            from neos_agent.services.matching import validate_uaf_reference
+            if row is None and values["uaf_agreement_id"] is not None:
+                raise ApiError(400, "Create the ecosystem first, then link its own active UAF")
+            await validate_uaf_reference(session, row.id if row else None, values["uaf_agreement_id"])
+        if key == "agreements" and values.get("act_policy") is not None:
+            from neos_agent.api.schemas.proposals import ActPolicySchema
+            from neos_agent.services.act_gates import normalize_act_policy
+            try:
+                values["act_policy"] = normalize_act_policy(ActPolicySchema.model_validate(values["act_policy"]).model_dump())
+            except (ValueError, TypeError):
+                raise ApiError(400, "The ACT or matching policy configuration is invalid") from None
         if action == "override_state" and (not values or set(values) - {"status", "current_status", "state"}):
             raise ApiError(400, "A state correction accepts only status, current_status or state")
         if key == "members":
@@ -473,6 +496,9 @@ async def execute_command(factory, user_id, data, *, source="ui", correlation_id
                 _regenerate_fingerprint(row)
             await session.flush()
             await session.refresh(row)
+            if key == "agreements":
+                from neos_agent.services.agreement_consent import synchronize_agreement_requirements
+                await synchronize_agreement_requirements(session, row)
             event.resource_id = str(getattr(row, next(iter(spec.model.__table__.primary_key.columns)).name))
             event.safe_summary = {"administrative_correction": True}
             payload = serialize_resource(spec, row)

@@ -509,6 +509,21 @@ def test_platform_help_uses_verified_profile_controls_and_bounded_routes():
     assert "Never guess button labels, menus, tabs, or routes" in prompt
 
 
+def test_real_proposal_skill_qualifies_formal_checklists_for_executable_app_drafts(_loaded_registry):
+    skill = build_skill_prompt("proposal-creation", _loaded_registry)
+    prompt = assemble_system_prompt(active_skill="proposal-creation", skill_registry=_loaded_registry, response_mode="skill")
+    assert "formal proposal readiness inputs" in skill
+    assert "Current NEOS app adapter: draft and opening for advice" in skill
+    assert "Do not ask for a reason or domain before creating this app draft" in skill
+    assert "Reason not yet provided by the member." in skill
+    assert "domain-creation checklist is not a proposal-draft prerequisite" in skill
+    assert skill.index("Current NEOS app adapter") < skill.index("Formal readiness and later governance process")
+    assert "Neither a missing reason nor an unchosen domain blocks this app draft" in prompt
+    assert "complete every explicitly requested read" in prompt.lower()
+    asset = (_NEOS_CORE / "layer-03-act-engine/proposal-creation/assets/proposal-template.yaml").read_text(encoding="utf-8")
+    assert "optional for an app draft" in asset
+
+
 @pytest.mark.parametrize("mode, expected", [
     ("platform", "Answer as platform help"), ("framework", "Answer a governance question directly"),
 ])
