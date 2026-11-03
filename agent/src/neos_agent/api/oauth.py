@@ -33,7 +33,8 @@ from sqlalchemy import select
 from neos_agent.auth.middleware import make_session_cookie
 from neos_agent.db.models import AuthSession, User
 
-from .auth import create_signup_member, existing_membership, signup_ecosystem
+from .auth import (SignupEcosystemNotFound, create_signup_member, existing_membership,
+                   requested_ecosystem_id, signup_ecosystem)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ def _create_oauth_state(
     secret: str,
     *,
     now: int | None = None,
+    ecosystem_id: uuid.UUID | None = None,
 ) -> str:
     """Sign the frontend destination and OAuth request metadata."""
     issued_at = int(time.time() if now is None else now)
@@ -126,6 +128,8 @@ def _create_oauth_state(
         "iat": issued_at,
         "exp": issued_at + _OAUTH_STATE_TTL_SECONDS,
     }
+    if ecosystem_id is not None:
+        payload["ecosystem_id"] = str(ecosystem_id)
     encoded_payload = base64.urlsafe_b64encode(
         _json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     ).rstrip(b"=").decode()
@@ -193,6 +197,10 @@ def _verify_oauth_state(
         return None
 
     normalized_origin = _normalize_frontend_origin(origin)
+    try:
+        requested_ecosystem_id(payload)
+    except SignupEcosystemNotFound:
+        return None
     if (
         normalized_origin != origin
         or normalized_origin not in _allowed_frontend_origins(settings)
@@ -325,10 +333,21 @@ async def oauth_initiate(request: Request, provider: str):
         if frontend_origin not in _allowed_frontend_origins(settings):
             return json({"error": "Frontend origin is not allowed"}, status=400)
 
+    try:
+        target_id = requested_ecosystem_id(request.args)
+        if target_id is not None:
+            async with request.app.ctx.db() as session:
+                target = await signup_ecosystem(session, settings, target_id)
+                if target.status != "active":
+                    raise SignupEcosystemNotFound(str(target_id))
+    except SignupEcosystemNotFound:
+        return json({"error": "Community is unavailable for joining"}, status=400)
+
     state = _create_oauth_state(
         provider,
         frontend_origin,
         settings.SESSION_SECRET,
+        ecosystem_id=target_id,
     )
     redirect_uri = (
         f"{settings.OAUTH_REDIRECT_BASE}/api/v1/auth/oauth/{provider}/callback"
@@ -393,6 +412,12 @@ async def oauth_callback(request: Request, provider: str):
             "/login",
             error="oauth_state_invalid",
         )
+
+    # The target is trusted only after signature and browser binding checks.
+    encoded_payload = state.split(".", 1)[0]
+    verified_payload = _json.loads(base64.urlsafe_b64decode(
+        encoded_payload + "=" * (-len(encoded_payload) % 4)))
+    target_id = requested_ecosystem_id(verified_payload)
 
     if error or not code:
         return _oauth_callback_redirect(
@@ -482,10 +507,15 @@ async def oauth_callback(request: Request, provider: str):
 
         # Returning users keep their memberships; only a user with none is placed.
         # A newcomer behind the agreement-consent gate lands on the gate page.
-        landing_path = "/dashboard"
+        landing_path = f"/ethos/{target_id}" if target_id else "/dashboard"
         member = await existing_membership(session, user.id)
         if member is None:
-            ecosystem = await signup_ecosystem(session, settings)
+            try:
+                ecosystem = await signup_ecosystem(session, settings, target_id)
+                if target_id and ecosystem.status != "active":
+                    raise SignupEcosystemNotFound(str(target_id))
+            except SignupEcosystemNotFound:
+                return _oauth_callback_redirect(frontend_origin, "/login", error="community_unavailable")
             if ecosystem is None:
                 return _oauth_callback_redirect(
                     frontend_origin,

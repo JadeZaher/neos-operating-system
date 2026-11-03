@@ -31,6 +31,12 @@ PUBLIC_EXACT = frozenset({
 
 def is_public_route(path: str, method: str = "GET") -> bool:
     """Check if a request path is publicly accessible."""
+    if method == "GET" and (path == "/api/v1/communities" or re.fullmatch(r"/api/v1/communities/[0-9a-fA-F-]{36}", path)):
+        return True
+    if method in {"GET", "POST"} and path == "/api/v1/engagement/unsubscribe":
+        return True
+    if method == "POST" and path in {"/api/v1/engagement/webhooks/resend", "/api/v1/engagement/webhooks/twilio"}:
+        return True
     if method == "GET" and (path in {"/api/v1/node-admin/audit", "/api/v1/node-admin/roster"} or re.fullmatch(r"/api/v1/node-admin/audit/[0-9a-fA-F-]{36}", path)):
         return True
     if path in PUBLIC_EXACT:

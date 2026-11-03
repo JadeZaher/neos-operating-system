@@ -428,6 +428,9 @@ async def _enter_proposal_stage(session, proposal: Proposal, target: str, *, act
     """Set the status; a send-back opens a revision; entering ratified captures the text and mints the decision artifact."""
     source = PROPOSAL_LIFECYCLE.canonical(proposal.status)
     proposal.status = target
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, proposal, kind="proposal", family="governance", action=target,
+                       actor_user_id=actor.user_id if actor is not None else None)
     if target == "advice" and source in {"consent", "test"}:
         await _open_revision(session, proposal, source, actor=actor, note=evidence)
         return None
@@ -1001,8 +1004,9 @@ async def _enter_agreement_stage(session, agreement: Agreement, target: str, *, 
                                  automatic: bool, evidence: str | None) -> str | None:
     """Set the status and record its ceremony; entering active mints the commitment artifact."""
     agreement.status = target
+    ceremony_id = uuid.uuid4()
     session.add(AgreementCeremony(
-        id=uuid.uuid4(),
+        id=ceremony_id,
         agreement_id=agreement.id,
         stage=target,
         completed_by_member_id=actor.id if actor is not None else None,
@@ -1010,6 +1014,9 @@ async def _enter_agreement_stage(session, agreement: Agreement, target: str, *, 
         evidence=_AUTOMATIC_EVIDENCE.get(target) if automatic else (evidence or None),
         completed_at=_utcnow(),
     ))
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, agreement, kind="agreement", family="governance", action=target,
+                       actor_user_id=actor.user_id if actor is not None else None, occurrence_id=ceremony_id)
     if target != "active":
         return None
     if agreement.ratification_date is None:

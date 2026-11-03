@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from sanic import Sanic
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from neos_agent.db.models import Base, Ecosystem, Member, User, AuthSession
@@ -26,6 +27,53 @@ ECOSYSTEM_ID = uuid.UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
 SESSION_SECRET = "test-secret-for-oauth-flow-1234567890abcdef"
 ALTERNATE_FRONTEND_ORIGIN = "https://neos.primusneo.com"
 OAUTH_TRANSACTION_COOKIE = "neos_oauth_transaction"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("available", [True, False])
+async def test_oauth_preserves_selected_community_and_rechecks_availability(available):
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    target_id = uuid.uuid4()
+    async with sf() as session:
+        session.add(Ecosystem(id=target_id, name="Chosen community", status="active", visibility="public"))
+        await session.commit()
+    _, initiation = await app.asgi_client.get(
+        f"/api/v1/auth/oauth/google?ecosystem_id={target_id}")
+    assert initiation.status_code == 200
+    state = parse_qs(urlsplit(initiation.json["url"]).query)["state"][0]
+    if not available:
+        async with sf() as session:
+            target = await session.get(Ecosystem, target_id)
+            target.visibility = "private"
+            await session.commit()
+    with patch("neos_agent.api.oauth._exchange_google_code", new_callable=AsyncMock) as exchange:
+        exchange.return_value = FAKE_GOOGLE_USER
+        _, response = await app.asgi_client.get(
+            "/api/v1/auth/oauth/google/callback?" + urlencode({"code": "fixture", "state": state}),
+            cookies={OAUTH_TRANSACTION_COOKIE: state}, follow_redirects=False)
+    assert response.status_code == 302
+    async with sf() as session:
+        if available:
+            member = await session.scalar(select(Member))
+            assert member.ecosystem_id == target_id
+            assert response.headers["location"].endswith(f"/ethos/{target_id}")
+        else:
+            assert "community_unavailable" in response.headers["location"]
+            assert await session.scalar(select(func.count()).select_from(User)) == 0
+            assert await session.scalar(select(func.count()).select_from(AuthSession)) == 0
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["invalid", str(uuid.uuid4())])
+async def test_oauth_rejects_unavailable_target_at_initiation(target):
+    engine, sf = await _setup_db()
+    app = _create_app(sf)
+    _, response = await app.asgi_client.get(f"/api/v1/auth/oauth/google?ecosystem_id={target}")
+    assert response.status_code == 400
+    assert not _cookie_header(response, OAUTH_TRANSACTION_COOKIE)
+    await engine.dispose()
 
 
 # ---------------------------------------------------------------------------

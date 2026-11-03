@@ -1,5 +1,9 @@
 # Services
 
+## Community engagement
+
+`engagement_events.py` records source occurrences in the caller's transaction. `engagement.py` owns current source visibility, follows and personal inbox state. `engagement_delivery.py` owns contact generations, consent, immutable provider attempts and leased delivery; `engagement_providers.py` is the transport boundary. External sending defaults off. Neither a read receipt nor a notification changes governance obligations. Design, provider sources and the full lifecycle/precedence contract are in the root `conductor/tracks/community_engagement_20261102/` track. Messages from both ordinary chat and opportunity-response branches share message-ID occurrence identity; private message bodies never enter community events.
+
 ## Ordinary operator service boundaries
 
 `member_messaging.py` is the request-free implementation used by the messaging
@@ -724,3 +728,6 @@ Orientation validation computes the effective saved status before checking proof
 Private matching writes and erasure serialize first on the actual User row, then recheck current consent. This persistent lock covers absent-consent creation, answer/assessment/correction writes, scoped/global withdrawal, and retention cleanup; no matching-data path acquires support locks afterward. Retention enumerates candidates without locks, processes one owner per transaction, then rechecks expiration. See api/ORIENTATION_MATCHING.md for privacy semantics and PostgreSQL concurrency evidence.
 
 No-retakes means one server-verified attempt for the current quiz fingerprint, including a genuine failed attempt. Historical or unverified results remain available without blocking the first attempt for revised content. Invalid submissions never create a verified attempt. Exact owner-result responses supply current-version eligibility so the UI can distinguish a current retake from a first attempt on revised content.
+
+## Notification support privacy
+The engagement tables are explicitly internal to the generic NodeAdmin resource catalog. They carry personal follows, contact destinations, verification proofs, push capabilities and delivery manifests. Generic support repair must not forge channel consent, verification or delivery receipts, or copy these values into public audit payloads. Existing account/session revocation remains available for support; dedicated owner-scoped notification APIs enforce enrollment and withdrawal.

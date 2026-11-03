@@ -495,7 +495,8 @@ async def join_domain_participation(request: Request, domain_id: uuid.UUID):
         ))
         from neos_agent.services.join_gates import join_gate_summary, require_join_gates
         gates = await join_gate_summary(session, ecosystem_id=domain.ecosystem_id, member=local_member, domain=domain)
-        if participation is None or participation.status != "active":
+        participation_changed = participation is None or participation.status != "active"
+        if participation_changed:
             require_join_gates(gates)
             from neos_agent.services.join_gates import record_quiz_bypass
             await record_quiz_bypass(session, local_member, gates)
@@ -509,6 +510,9 @@ async def join_domain_participation(request: Request, domain_id: uuid.UUID):
             session.add(participation)
         else:
             participation.status = "active"
+        if participation_changed:
+            from neos_agent.services.engagement_events import source_event
+            await source_event(session, domain, kind="domain", family="community", action="participation_changed", actor_user_id=local_member.user_id)
         await session.commit()
 
     return json({

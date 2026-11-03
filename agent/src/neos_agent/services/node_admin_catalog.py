@@ -65,6 +65,11 @@ EVIDENCE = frozenset({
 SECURITY = frozenset({"auth_sessions", "auth_challenges", "agent_tokens", "push_subscriptions"})
 INTERNAL = frozenset({"node_admins", "node_admin_actions", "node_admin_snapshots"})
 INTERNAL = INTERNAL | {"orientation_chat_sessions", "matching_consents", "ecosystem_matching_profiles", "matching_answers", "matching_assessments"}
+INTERNAL = INTERNAL | {
+    "engagement_preferences", "engagement_subscriptions", "engagement_events", "engagement_inbox_items",
+    "notification_contacts", "notification_challenges", "engagement_push_devices", "notification_deliveries",
+    "notification_consumptions", "notification_webhook_receipts", "notification_rate_limits",
+}
 SECRET_FIELDS = frozenset({"password_hash", "phone", "oauth_id", "share_token", "token_hash", "token", "challenge", "challenge_text", "endpoint", "p256dh", "p256dh_key", "auth_key", "auth", "keys", "subscription", "subscription_json", "secret", "session_id", "auth_session_id", "ip_address", "user_agent", "cookie", "access_token", "refresh_token"})
 SETTING_KEYS = frozenset({"ctc_map", "sharesneeds_categories", "shares_needs_categories"})
 LIST_FIELDS = ("id", "name", "title", "display_name", "username", "badge_name", "user_id", "member_id", "ecosystem_id", "status", "current_status", "active", "is_active", "archived", "created_at", "updated_at")

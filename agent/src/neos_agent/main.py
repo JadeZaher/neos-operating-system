@@ -149,6 +149,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     from neos_agent.api.ai_assist import ai_assist_bp
     from neos_agent.api.compliance import compliance_api_bp
     from neos_agent.api.notifications import notifications_api_bp
+    from neos_agent.api.engagement import engagement_api_bp
+    from neos_agent.api.engagement_delivery import engagement_delivery_api_bp
+    from neos_agent.api.communities import communities_api_bp
     from neos_agent.api.oauth import oauth_bp
     from neos_agent.api.orientation import orientation_api_bp
     from neos_agent.api.orientation_chat import orientation_chat_api_bp
@@ -189,6 +192,9 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
     app.blueprint(ai_assist_bp)
     app.blueprint(compliance_api_bp)
     app.blueprint(notifications_api_bp)
+    app.blueprint(engagement_api_bp)
+    app.blueprint(engagement_delivery_api_bp)
+    app.blueprint(communities_api_bp)
     app.blueprint(oauth_bp)
     app.blueprint(orientation_api_bp)
     app.blueprint(orientation_chat_api_bp)
@@ -233,14 +239,32 @@ def create_app(settings: "Settings | None" = None) -> Sanic:
         import asyncio
         from neos_agent.services.cron import run_cron_loop
         app.ctx.cron_task = asyncio.create_task(run_cron_loop(app))
+        from neos_agent.services.engagement_delivery import run_engagement_loop
+        app.ctx.engagement_stop = asyncio.Event()
+        app.ctx.engagement_task = asyncio.create_task(run_engagement_loop(app))
         logger.info("Cron service started")
 
     @app.before_server_stop
     async def stop_cron(app, loop):
-        """Cancel the background cron loop."""
+        """Drain background work before the database shutdown listener runs."""
+        import asyncio
+        task = getattr(app.ctx, "engagement_task", None)
+        if task:
+            app.ctx.engagement_stop.set()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Engagement worker stopped with an error")
         cron_task = getattr(app.ctx, "cron_task", None)
-        if cron_task and not cron_task.done():
-            cron_task.cancel()
+        if cron_task:
+            if not cron_task.done():
+                cron_task.cancel()
+            try:
+                await cron_task
+            except asyncio.CancelledError:
+                pass
             logger.info("Cron service stopped")
 
     # Auth middleware — protect all non-public routes

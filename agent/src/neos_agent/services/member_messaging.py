@@ -207,6 +207,8 @@ async def post_message(session, prepared):
     session.add(message)
     await session.flush()
     await session.refresh(message)
+    from neos_agent.services.engagement_events import message_event
+    await message_event(session, message)
     payload = message_payload(message, sender.display_name)
     ids = list((await session.scalars(select(ConversationParticipant.member_id).where(
         ConversationParticipant.conversation_id == conversation.id))).all())

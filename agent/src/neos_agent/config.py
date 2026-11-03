@@ -76,6 +76,29 @@ class Settings(BaseSettings):
     PLATFORM_HOME_ECOSYSTEM_ID: str = ""
     NODE_ADMIN_BOOTSTRAP_USER_IDS: str = ""
 
+    ENGAGEMENT_EXTERNAL_ENABLED: bool = False
+    ENGAGEMENT_EMAIL_ENABLED: bool = False
+    ENGAGEMENT_PUSH_ENABLED: bool = False
+    ENGAGEMENT_SMS_ENABLED: bool = False
+    ENGAGEMENT_PUBLIC_URL: str = ""
+    ENGAGEMENT_API_PUBLIC_URL: str = ""
+    ENGAGEMENT_SIGNING_SECRET: str = ""
+    ENGAGEMENT_WORKER_INTERVAL_SECONDS: float = Field(default=15, ge=1, le=300)
+    ENGAGEMENT_SEND_TIMEOUT_SECONDS: float = Field(default=15, ge=1, le=30)
+    RESEND_API_KEY: str = ""
+    RESEND_FROM: str = ""
+    RESEND_REPLY_TO: str = ""
+    RESEND_WEBHOOK_SECRET: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = ""
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_API_KEY_SID: str = ""
+    TWILIO_API_KEY_SECRET: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_MESSAGING_SERVICE_SID: str = ""
+    TWILIO_VERIFY_SERVICE_SID: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",

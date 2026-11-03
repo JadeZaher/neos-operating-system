@@ -493,6 +493,9 @@ async def publish(session, viewer: Viewer, body) -> SharesNeeds:
     session.add(record)
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="published",
+                       actor_user_id=viewer.user_id, occurrence_id=record.id)
     return record
 
 
@@ -526,6 +529,9 @@ async def update_publication(session, viewer: Viewer, record: SharesNeeds, body)
             doing="edit")
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="updated",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return record
 
 
@@ -560,6 +566,9 @@ async def move_publication(session, viewer: Viewer, record: SharesNeeds, to: str
     record.fulfilled_by_member_id = responder
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="status_changed",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return record
 
 
@@ -580,6 +589,9 @@ async def hide_publication(session, viewer: Viewer, record: SharesNeeds, reason)
     record.hidden_at, record.hidden_by_member_id, record.hidden_reason = _now(), moderator.id, reason
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="hidden",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return record
 
 
@@ -591,6 +603,9 @@ async def restore_publication(session, viewer: Viewer, record: SharesNeeds) -> S
     record.hidden_at = None
     await session.flush()
     await session.refresh(record)  # server-set columns (updated_at) loaded for the payload
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="restored",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return record
 
 
@@ -600,6 +615,8 @@ async def delete_publication(session, viewer: Viewer, record: SharesNeeds) -> No
     if not can_delete_publication(writer, record, answered=await response_count(session, record.id) > 0):
         raise ApiError(409, "Someone has answered this post, so it stays on record. Withdraw it instead.",
                        {"code": HAS_RESPONSES})
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="share", family="opportunities", action="deleted", actor_user_id=viewer.user_id)
     await session.delete(record)
     await session.flush()
 
@@ -652,22 +669,28 @@ async def respond(session, viewer: Viewer, record: SharesNeeds, message, *,
             ConversationParticipant.conversation_id == link.conversation_id,
             ConversationParticipant.member_id.in_(list(viewer.member_ids)),
         ).limit(1))
-        session.add(Message(id=uuid.uuid4(), conversation_id=link.conversation_id, sender_id=sender or link.created_by,
-                            content=text))
+        sent_message = Message(id=uuid.uuid4(), conversation_id=link.conversation_id,
+                               sender_id=sender or link.created_by, content=text)
+        session.add(sent_message)
         await session.flush()
+        from neos_agent.services.engagement_events import message_event
+        await message_event(session, sent_message)
         return link.conversation_id, False
     conversation = Conversation(id=uuid.uuid4(), ecosystem_id=record.ecosystem_id, type="dm",
                                 title=f"Re: {record.title}"[:TITLE_MAX], created_by=responder.id)
     session.add(conversation)
     await session.flush()
+    sent_message = Message(id=uuid.uuid4(), conversation_id=conversation.id, sender_id=responder.id, content=text)
     session.add_all([
         ConversationParticipant(id=uuid.uuid4(), conversation_id=conversation.id, member_id=responder.id, role="owner"),
         ConversationParticipant(id=uuid.uuid4(), conversation_id=conversation.id, member_id=author.id, role="member"),
         ConversationLink(id=uuid.uuid4(), conversation_id=conversation.id, entity_type=SHARE_NEED_LINK,
                          entity_id=record.id, created_by=responder.id),
-        Message(id=uuid.uuid4(), conversation_id=conversation.id, sender_id=responder.id, content=text),
+        sent_message,
     ])
     await session.flush()
+    from neos_agent.services.engagement_events import message_event
+    await message_event(session, sent_message)
     return conversation.id, True
 
 
@@ -889,6 +912,9 @@ async def propose_collaboration(session, viewer: Viewer, body, *, today: _dt.dat
                                           member_id=proposer.id, approved_at=_now()))
         await session.flush()
     await session.refresh(record)
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, record, kind="collaboration", family="collaboration", action="proposed",
+                       actor_user_id=viewer.user_id, occurrence_id=record.id)
     return record
 
 
@@ -956,6 +982,9 @@ async def approve_collaboration(session, viewer: Viewer, collaboration: Collabor
         collaboration.review_date = collaboration.review_date or today + _dt.timedelta(days=REVIEW_AFTER_DAYS)
     await session.flush()
     await session.refresh(collaboration)
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, collaboration, kind="collaboration", family="collaboration", action="approved",
+                       actor_user_id=viewer.user_id, occurrence_id=approved[side].id)
     return collaboration
 
 
@@ -975,6 +1004,9 @@ async def end_collaboration(session, viewer: Viewer, collaboration: Collaboratio
     collaboration.ended_by_member_id, collaboration.end_reason, collaboration.ended_at = actor.id, reason, _now()
     await session.flush()
     await session.refresh(collaboration)
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, collaboration, kind="collaboration", family="collaboration", action="ended",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return collaboration
 
 
@@ -1017,6 +1049,9 @@ async def review_collaboration(session, viewer: Viewer, collaboration: Collabora
     collaboration.reviewed_by_member_id, collaboration.review_note, collaboration.reviewed_at = reviewer.id, text, _now()
     await session.flush()
     await session.refresh(collaboration)
+    from neos_agent.services.engagement_events import source_event
+    await source_event(session, collaboration, kind="collaboration", family="collaboration", action="reviewed",
+                       actor_user_id=viewer.user_id, occurrence_id=None)
     return collaboration
 
 

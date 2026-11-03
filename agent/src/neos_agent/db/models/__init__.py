@@ -8,6 +8,11 @@ after the split into per-model files.
 from ._base import Base, GUID, TimestampMixin  # noqa: F401
 
 # Models
+from .engagement import (
+    EngagementPreference, EngagementSubscription, EngagementEvent, EngagementInboxItem,
+    NotificationContact, NotificationChallenge, EngagementPushDevice, NotificationDelivery,
+    NotificationConsumption, NotificationWebhookReceipt, NotificationRateLimit,
+)
 from .ecosystem import Ecosystem  # noqa: F401
 from .user import User  # noqa: F401
 from .member import Member  # noqa: F401
@@ -143,4 +148,7 @@ __all__ = [
     "QuizAssignment",
     "AppSetting",
     "CtcHandoff",
+    "EngagementPreference", "EngagementSubscription", "EngagementEvent", "EngagementInboxItem",
+    "NotificationContact", "NotificationChallenge", "EngagementPushDevice", "NotificationDelivery",
+    "NotificationConsumption", "NotificationWebhookReceipt", "NotificationRateLimit",
 ]

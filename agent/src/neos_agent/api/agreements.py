@@ -950,13 +950,18 @@ async def register_ratified_proposal(db, proposal: Proposal, *, caller: Member |
             changed_by=caller.display_name,
         ))
         await synchronize_agreement_requirements(db, agreement)
+    ceremony_id = uuid.uuid4()
     db.add(AgreementCeremony(
-        id=uuid.uuid4(), agreement_id=agreement.id, stage=agreement.status,
+        id=ceremony_id, agreement_id=agreement.id, stage=agreement.status,
         completed_by_member_id=caller.id, outcome="registered",
         evidence=f"Registered from ratified proposal {proposal.proposal_id} (decision DEC-{proposal.proposal_id})",
         completed_at=_utcnow(),
     ))
     proposal.registered_agreement_id = agreement.id
+    from neos_agent.services.engagement_events import source_event
+    await source_event(db, agreement, kind="agreement", family="governance",
+                       action="amended" if proposal.amends_agreement_id else "registered",
+                       actor_user_id=caller.user_id, occurrence_id=ceremony_id)
     await db.flush()
     return agreement
 

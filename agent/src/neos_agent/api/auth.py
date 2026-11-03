@@ -475,6 +475,8 @@ async def api_logout(request: Request):
                     if auth_session:
                         # Expire, never delete: an agent token may reference the row (FK).
                         auth_session.expires_at = _dt.datetime.now(timezone.utc)
+                        from neos_agent.services.engagement_delivery import disable_user_devices
+                        await disable_user_devices(db, auth_session.user_id, auth_session_id=auth_session.id)
                         await db.commit()
             except Exception:
                 logger.exception("Error during API logout session cleanup")

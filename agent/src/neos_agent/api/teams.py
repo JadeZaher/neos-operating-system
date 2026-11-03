@@ -151,6 +151,8 @@ async def join_team(request: Request, team_id: uuid.UUID):
             from neos_agent.services.join_gates import record_quiz_bypass
             await record_quiz_bypass(session, caller, gates)
             session.add(TeamMembership(team_id=team.id, member_id=caller.id, role="member"))
+            from neos_agent.services.engagement_events import source_event
+            await source_event(session, team, kind="team", family="community", action="participation_changed", actor_user_id=caller.user_id)
             await session.commit()
         else:
             gates.update(eligible=True, status="ready", grandfathered=True)
@@ -333,6 +335,8 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
             role=add_req.role or "member",
         )
         session.add(tm)
+        from neos_agent.services.engagement_events import source_event
+        await source_event(session, team, kind="team", family="community", action="participation_changed", actor_user_id=administrator.user_id)
         await session.commit()
         await session.refresh(tm)
 
@@ -354,7 +358,7 @@ async def add_team_member(request: Request, team_id: uuid.UUID):
 async def remove_team_member(request: Request, team_id: uuid.UUID, member_id: uuid.UUID):
     """DELETE /api/v1/teams/:id/members/:member_id -- Remove a member from a team."""
     async with request.app.ctx.db() as session:
-        await _managed_team(session, request, team_id)
+        team, administrator = await _managed_team(session, request, team_id)
         tm = (
             await session.execute(
                 select(TeamMembership).where(
@@ -367,6 +371,8 @@ async def remove_team_member(request: Request, team_id: uuid.UUID, member_id: uu
             return json({"error": "Team membership not found"}, status=404)
 
         await session.delete(tm)
+        from neos_agent.services.engagement_events import source_event
+        await source_event(session, team, kind="team", family="community", action="participation_changed", actor_user_id=administrator.user_id)
         await session.commit()
 
     return json({"success": True})

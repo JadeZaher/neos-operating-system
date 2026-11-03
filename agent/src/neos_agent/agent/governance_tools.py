@@ -2658,6 +2658,10 @@ async def join_domain(
         ))
     else:
         participation.status = "active"
+    if not already:
+        from neos_agent.services.engagement_events import source_event
+        await source_event(db, domain, kind="domain", family="community",
+                           action="participation_changed", actor_user_id=member.user_id)
     await db.flush()
     return {"success": True, "data": {
         "domain": name,
