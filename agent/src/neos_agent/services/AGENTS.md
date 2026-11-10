@@ -77,7 +77,9 @@ time spent, resolves the actual caller, checks publication and ecosystem access,
 required field must have a valid typed answer from its allowed choices; legacy fields without `isRequired`
 are required. Explicit boolean false is an answer. Unknown fields, unsupported formats, malformed choices,
 empty submissions and blank required text cannot complete a questionnaire. Nongraded results keep `is_passed`
-null; knowledge results additionally require a passing score for admission. No client completion/pass flag is accepted.
+null; knowledge results additionally require a passing score for admission. `quiz_attempt_complete` is that
+check for one stored attempt; the first-month queue uses it too (admission still matches the current fingerprint).
+No client completion/pass flag is accepted.
 `target_ecosystem_id` is optional submission scope context for a shared global quiz. The server resolves the
 actual caller's active/pending row there; a local quiz rejects a mismatched target. It never accepts a member
 identity override. Orientation passes its current ecosystem, so a shared quiz result binds the journey's actual
@@ -542,7 +544,7 @@ Kind `newcomer` (queue order 2), record = the member row; each item carries its 
 | `finish_joining` | a pending member with nothing left to consent to | they press "Check my membership" (join heals) |
 | `confirm_membership` | active stewards of that ecosystem (`can_manage_onboarding`, founders included; FX-Onboard) | a steward confirms (`MEMBER_MOVES`) or the newcomer heals; its words offer both: ask them to press Check my membership on their consent page, or confirm them on their member page (pass 03: it used to say "a steward confirms them" while the page said nobody needs approval) |
 | `start_orientation` | an active member in their first 30 days, the ecosystem has an active journey | a `complete` progress row |
-| `take_entry_quiz` | the same, the ecosystem has a published entry quiz | a passing result on that row; listed after `start_orientation` (`_STEP_ORDER`), and while the journey is unfinished its `why` says to take it after the journey |
+| `take_entry_quiz` | the same, the ecosystem has a published entry quiz | `quiz_attempt_complete` on that row: a verified pass when the quiz has answer keys, or a verified completion with `is_passed` null when it does not; listed after `start_orientation` (`_STEP_ORDER`), and while the journey is unfinished its `why` says to take it after the journey |
 
 Waiting newcomers whose consent is still missing are NOT steward items (owner decision: consent
 activates them; G-Maint's health snapshot counts them). The 30-day window compares the row's

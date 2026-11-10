@@ -1302,6 +1302,7 @@ from neos_agent.api.policy import can_manage_onboarding, can_move_member  # noqa
 from neos_agent.db.course_models import Quiz, QuizResult  # noqa: E402
 from neos_agent.db.models import JourneyMap, UserJourneyProgress  # noqa: E402
 from neos_agent.services.agreement_consent import missing_agreement_consents  # noqa: E402
+from neos_agent.services.join_gates import quiz_attempt_complete  # noqa: E402
 
 NEWCOMER_DAYS = 30  # a member's first month: orientation and the entry quiz are offered in the queue
 ROUTES.setdefault("newcomer", "/members")  # the record of a newcomer item is a member row
@@ -1383,8 +1384,15 @@ async def first_month_items(session, scope: QueueScope) -> list[dict]:
     entry_quizzes = {quiz.ecosystem_id: quiz for quiz in (await session.scalars(select(Quiz).where(
         Quiz.ecosystem_id.in_(eco_ids), Quiz.is_entry_quiz.is_(True), Quiz.is_published.is_(True),
     ).order_by(Quiz.created_at))).all()}
-    passed = set((await session.execute(select(QuizResult.member_id, QuizResult.quiz_id).where(
-        QuizResult.member_id.in_(row_ids), QuizResult.is_passed.is_(True)))).all())
+    # quiz_attempt_complete: a verified pass, or a verified ungraded questionnaire (is_passed stays null).
+    completed: set[tuple] = set()
+    if entry_quizzes:
+        by_id = {quiz.id: quiz for quiz in entry_quizzes.values()}
+        attempts = (await session.execute(select(
+            QuizResult.member_id, QuizResult.quiz_id, QuizResult.is_passed, QuizResult.completion_verified,
+        ).where(QuizResult.member_id.in_(row_ids), QuizResult.quiz_id.in_(list(by_id))))).all()
+        completed = {(member_id, quiz_id) for member_id, quiz_id, is_passed, verified in attempts
+                     if quiz_attempt_complete(by_id[quiz_id], is_passed=is_passed, completion_verified=verified)}
     items: list[dict] = []
     for row in rows:  # the journey before the quiz that checks it: _STEP_ORDER keeps that order in the queue
         ecosystem = scope.names.get(row.ecosystem_id)
@@ -1396,7 +1404,7 @@ async def first_month_items(session, scope: QueueScope) -> list[dict]:
                 why="New members get to know the ecosystem's ethos and ways of working in their first month.",
                 ecosystem=ecosystem, clock=scope.clock, link_to=f"/orientation/{row.ecosystem_id}"))
         quiz = entry_quizzes.get(row.ecosystem_id)
-        if quiz is not None and (row.id, quiz.id) not in passed:
+        if quiz is not None and (row.id, quiz.id) not in completed:
             items.append(_newcomer_item(
                 row, action="take_entry_quiz", part=str(quiz.id), title=f"Take {quiz.title}",
                 what=f"{ecosystem}'s entry quiz checks what the orientation covered.",
