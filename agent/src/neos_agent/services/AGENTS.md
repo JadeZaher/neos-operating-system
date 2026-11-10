@@ -13,8 +13,14 @@ New conversations validate all recipients against active memberships in the
 caller's active ecosystems, including cross-ecosystem contacts surfaced by the
 existing member picker. The creator/sender is resolved from the actual User's
 Member rows. A caller cannot add an unrelated private outsider or supply a
-different sender. Services flush but do not commit. Message WebSocket events
-are queued on the SQLAlchemy session and broadcast only after successful commit.
+different sender. One exception: a signed-in account with an active or
+pending row may open a direct conversation with an ecosystem's public owner
+(the oldest active `role="owner"` whose user is not disabled; none is null).
+Pending rows can message that owner and no one else. A private ecosystem
+still requires a row there. Repeating it reuses the direct conversation.
+Pending sends use the messaging websocket's one-second limit. Services flush
+but do not commit. Message WebSocket events are queued on the SQLAlchemy
+session and broadcast only after successful commit.
 
 `exchange.prepare_collaboration` validates the normal source/target, consent,
 linked-post, date and active-domain requirements without writing, allowing the

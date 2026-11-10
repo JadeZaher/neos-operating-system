@@ -247,7 +247,8 @@ async def test_public_ethos_preview_returns_the_active_count_and_no_identities(w
     for who in (None, "bea"):
         detail = await _call(world, "get", who, f"/api/v1/communities/{HARBOR}")
         assert detail.status == 200, detail.text
-        assert set(detail.json) == PUBLIC_FIELDS | {"opportunities_require_sign_in", "opportunities"}
+        assert set(detail.json) == PUBLIC_FIELDS | {"opportunities_require_sign_in", "opportunities", "owner"}
+        assert detail.json["owner"] is None
         assert detail.json["member_count"] == ACTIVE_COUNT
         assert detail.json["opportunities"] == []
         assert isinstance(detail.json["member_count"], int)

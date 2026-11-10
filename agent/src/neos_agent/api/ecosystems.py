@@ -20,6 +20,7 @@ from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
 from neos_agent.services.member_lifecycle import JOINED, counts_as_member, place_member, placement_payload  # G-Onboard
+from neos_agent.services.member_messaging import owner_contact
 
 from .errors import ApiError
 from .guards import authenticated, caller_in, caller_user_id
@@ -28,6 +29,7 @@ from .policy import can_administer_ecosystem, can_manage_onboarding, can_update_
 from .schemas import (
     EcosystemCreateRequest,
     EcosystemDetail,
+    EcosystemOwnerContact,
     EcosystemStewardItem,
     EcosystemSummary,
     EcosystemUpdateRequest,
@@ -227,6 +229,10 @@ async def get_ecosystem(request: Request, ecosystem_id: uuid.UUID):
             EcosystemStewardItem(id=row.id, display_name=row.display_name, role=row.role)
             for row in steward_rows
         ]
+        contact = await owner_contact(db, eco.id)
+        detail.owner = None if contact is None else EcosystemOwnerContact(
+            id=contact["id"], display_name=contact["display_name"], role=contact["role"],
+        )
 
         # Caller's own role tier in this ecosystem (drives role-management UI gating)
         detail.caller_role = caller.role if caller else None
