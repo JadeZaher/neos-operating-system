@@ -19,13 +19,13 @@ from datetime import timedelta, timezone
 
 from sanic import Blueprint, json
 from sanic.request import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from neos_agent.auth.did import verify_did_signature
 from neos_agent.auth.middleware import make_session_cookie, verify_session_cookie
 from neos_agent.db.models import AuthChallenge, AuthSession, Ecosystem, Member, User
 from neos_agent.services.agreement_consent import missing_agreement_consents
-from neos_agent.services.member_lifecycle import SIGNUP, place_member
+from neos_agent.services.member_lifecycle import SIGNUP, counts_as_member, place_member
 from neos_agent.api.guards import default_member
 from neos_agent.api.helpers import home_ecosystem_id  # FX-Onboard: sign-up prefers the pinned home
 from neos_agent.api.policy import can_administer_ecosystem  # FX-Onboard: /auth/me `is_steward` per ecosystem
@@ -407,11 +407,10 @@ async def api_me(request: Request):
                 select(Ecosystem).where(Ecosystem.id.in_(eco_ids))
             )
             for eco in eco_result.scalars().all():
-                # Count members in this ecosystem
-                count_result = await db.execute(
-                    select(Member.id).where(Member.ecosystem_id == eco.id)
-                )
-                member_count = len(count_result.all())
+                # Active members only. Pending sign-ups, and suspended or departed rows, are not counted.
+                member_count = await db.scalar(
+                    select(func.count(Member.id)).where(Member.ecosystem_id == eco.id, counts_as_member())
+                ) or 0
                 ecosystems.append(
                     EcosystemSummary(
                         id=eco.id,

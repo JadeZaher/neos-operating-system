@@ -29,6 +29,7 @@ from neos_agent.api.errors import ApiError
 from neos_agent.api.guards import authenticated, caller_user_id
 from neos_agent.api.helpers import parse_pagination
 from neos_agent.services import exchange
+from neos_agent.services.member_lifecycle import counts_as_member
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ async def discover_feed(request: Request):
                         Member.ecosystem_id,
                         func.count(Member.id).label("cnt"),
                     )
-                    .where(Member.ecosystem_id.in_(eco_ids))
+                    .where(Member.ecosystem_id.in_(eco_ids), counts_as_member())
                     .group_by(Member.ecosystem_id)
                 )
                 for r in mc_rows:

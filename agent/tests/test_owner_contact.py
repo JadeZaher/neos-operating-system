@@ -160,6 +160,8 @@ async def test_public_payloads_expose_only_the_owner_contact(app):
     community = await _call(app, "get", None, f"/api/v1/communities/{HARBOR}")
     assert community.status == 200
     _assert_owner(community.json["owner"])
+    # Harbor has four active members and one pending row. The count is active only.
+    assert community.json["member_count"] == 4
     _assert_no_sentinels(community.text)
     quiet = await _call(app, "get", None, f"/api/v1/communities/{QUIET}")
     dormant = await _call(app, "get", None, f"/api/v1/communities/{DORMANT}")
@@ -173,6 +175,7 @@ async def test_public_payloads_expose_only_the_owner_contact(app):
     ethos = await _call(app, "get", "noa", f"/api/v1/orientation/ethos/{HARBOR}")
     assert ethos.status == 200
     _assert_owner(ethos.json["owner"])
+    assert ethos.json["member_count"] == 4
     _assert_no_sentinels(ethos.text)
     quiet_ethos = await _call(app, "get", "noa", f"/api/v1/orientation/ethos/{QUIET}")
     dormant_ethos = await _call(app, "get", "noa", f"/api/v1/orientation/ethos/{DORMANT}")
@@ -184,6 +187,7 @@ async def test_public_payloads_expose_only_the_owner_contact(app):
     detail = await _call(app, "get", "noa", f"/api/v1/ecosystems/{HARBOR}")
     assert detail.status == 200
     _assert_owner(detail.json["owner"])
+    assert detail.json["member_count"] == 4
     assert (await _call(app, "get", "noa", f"/api/v1/ecosystems/{QUIET}")).json["owner"] is None
 
 

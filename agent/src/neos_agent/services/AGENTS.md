@@ -514,6 +514,13 @@ return, `POST /members`, the assistant's `join_ecosystem` / `move_member` and th
 consent call sites cannot drift. Owner decisions and the API shapes: api/AGENTS.md "Onboarding
 (G-Onboard)". Nothing commits; callers own the transaction.
 
+`counts_as_member()` is the published member count: `current_status == "active"`. Ecosystem,
+community, discover, orientation, `/auth/me`, and both dashboard summaries use it. A pending
+sign-up, a suspended row, and a departed row (`exited` or `inactive`) stay out of that count.
+The public community preview (`GET /api/v1/communities` and `GET /api/v1/communities/:id`) adds
+`member_count` and no member identity. `can_update_ecosystem` still receives every membership
+row, so a pending sign-up does not change who may edit ecosystem settings.
+
 `place_member(session, *, user_id, ecosystem, display_name, member_key, trigger, public_only)`:
 
 | The user's row there | Outcome | Transition |

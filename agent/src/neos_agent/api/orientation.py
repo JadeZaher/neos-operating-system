@@ -24,6 +24,7 @@ from neos_agent.db.models import (
     Member,
     UserJourneyProgress,
 )
+from neos_agent.services.member_lifecycle import counts_as_member
 
 from neos_agent.services.member_messaging import owner_contact
 
@@ -131,7 +132,7 @@ async def get_ethos_detail(request: Request, ecosystem_id: uuid.UUID):
         eco, _ = await visible_ecosystem(db, ecosystem_id, caller_user_id(request))
 
         member_count = await db.scalar(
-            select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id)
+            select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id, counts_as_member())
         )
 
         return json({

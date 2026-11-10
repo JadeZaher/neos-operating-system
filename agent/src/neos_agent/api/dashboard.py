@@ -29,6 +29,7 @@ from neos_agent.api.helpers import (
     get_ecosystem_ids,
     require_auth,
 )
+from neos_agent.services.member_lifecycle import counts_as_member
 from neos_agent.api.schemas import ActivityItem, DashboardSummary, SummaryCard
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ async def _summary_counts(session, ecosystem_ids=None) -> dict:
         _eco_filter(select(func.count()).select_from(Agreement), Agreement)
     )
     member_count = await session.scalar(
-        _eco_filter(select(func.count()).select_from(Member), Member)
+        _eco_filter(select(func.count()).select_from(Member).where(counts_as_member()), Member)
     )
     domain_count = await session.scalar(
         _eco_filter(select(func.count()).select_from(Domain), Domain)
