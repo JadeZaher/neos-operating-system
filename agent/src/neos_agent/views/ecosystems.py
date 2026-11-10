@@ -16,6 +16,7 @@ from sanic.response import redirect
 from sqlalchemy import select, func, or_
 
 from neos_agent.db.models import Ecosystem, Member
+from neos_agent.services.member_lifecycle import counts_as_member
 from neos_agent.views._rendering import render, parse_pagination, escape_like, retired_write
 
 logger = logging.getLogger(__name__)
@@ -69,10 +70,10 @@ def _apply_filters(stmt, request: Request):
 
 
 def _member_count_subquery():
-    """Build a correlated subquery for ecosystem member count."""
+    """Correlated count of active (consented) members. Pending, suspended, and departed rows are excluded."""
     return (
         select(func.count(Member.id))
-        .where(Member.ecosystem_id == Ecosystem.id)
+        .where(Member.ecosystem_id == Ecosystem.id, counts_as_member())
         .correlate(Ecosystem)
         .scalar_subquery()
         .label("member_count")

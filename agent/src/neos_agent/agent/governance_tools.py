@@ -62,6 +62,7 @@ from neos_agent.api.agreements import ends_review, parse_review_date, review_out
 from neos_agent.api.agreements import gate_refusal as agreement_gate_refusal  # FX-Maint: the archive gate's words
 from neos_agent.api.errors import ApiError  # G-Maint
 from neos_agent.services.dates import aoe_today  # FX-Maint: the one date rule
+from neos_agent.services.member_lifecycle import counts_as_member
 from neos_agent.api.agreements import transition_agreement as conduct_agreement_transition
 from neos_agent.api.conflicts import TRIAGE_DENIED as CONFLICT_TRIAGE_DENIED, conflict_stage
 from neos_agent.api.conflicts import allowed_moves as conflict_allowed_moves  # unknown legacy statuses fall back like REST
@@ -2255,7 +2256,7 @@ async def get_ecosystem(
     member_count = await db.execute(
         select(func.count()).select_from(Member).where(
             Member.ecosystem_id == eco.id,
-            Member.current_status == "active",
+            counts_as_member(),
         )
     )
     member_count = member_count.scalar() or 0
