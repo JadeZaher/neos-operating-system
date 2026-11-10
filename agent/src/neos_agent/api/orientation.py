@@ -25,6 +25,8 @@ from neos_agent.db.models import (
     UserJourneyProgress,
 )
 
+from neos_agent.services.member_messaging import owner_contact
+
 from .errors import ApiError
 from .guards import JOIN_REQUIRED, authenticated, caller_in, caller_in_or_join_required
 from .policy import can_manage_onboarding
@@ -141,6 +143,7 @@ async def get_ethos_detail(request: Request, ecosystem_id: uuid.UUID):
             "member_count": member_count or 0,
             "tags": eco.tags if isinstance(eco.tags, list) else [],
             "governance_summary": eco.governance_summary,
+            "owner": await owner_contact(db, eco.id),
         })
 
 

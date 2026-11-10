@@ -15,6 +15,13 @@ class EcosystemStewardItem(BaseModel):
     role: str  # per-ecosystem tier: admin | owner
 
 
+class EcosystemOwnerContact(BaseModel):
+    """The one public owner: display name, role label, and the member id used to start a direct message."""
+    id: UUID
+    display_name: str
+    role: str
+
+
 class EcosystemDetail(EcosystemSummary):
     uaf_agreement_id: UUID | None = None
     website: str | None = None
@@ -24,6 +31,7 @@ class EcosystemDetail(EcosystemSummary):
     governance_summary: str | None = None
     visibility: str = "public"
     stewards: list[EcosystemStewardItem] = []
+    owner: EcosystemOwnerContact | None = None
     caller_role: str | None = None  # caller's per-ecosystem role tier, None if not a member
 
 

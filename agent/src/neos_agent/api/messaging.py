@@ -57,9 +57,10 @@ async def create_conversation(request: Request):
         prepared = await messaging.prepare_thread(session, caller_user_id(request), eco_ids[0] if eco_ids else None,
             create_req.participant_ids, type=create_req.type, title=create_req.title)
         conversation = await messaging.open_thread(session, prepared)
+        reused = bool(session.info.get("reused_dm"))
         detail = await messaging.read_thread(session, caller_user_id(request), conversation.id)
         await session.commit()
-        return json(detail, status=201)
+        return json(detail, status=200 if reused else 201)
 
 
 @messaging_api_bp.post("/conversations/<conversation_id:uuid>/messages")

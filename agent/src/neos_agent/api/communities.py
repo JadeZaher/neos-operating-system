@@ -12,6 +12,7 @@ from neos_agent.api.errors import ApiError
 from neos_agent.db.models import Ecosystem, SharesNeeds
 from neos_agent.services.engagement import after_cursor, cursor_for
 from neos_agent.services.exchange import OPEN, load_viewer, visible_clause
+from neos_agent.services.member_messaging import owner_contact
 
 communities_api_bp = Blueprint("communities_api", url_prefix="/api/v1/communities")
 
@@ -60,6 +61,7 @@ async def community_detail(request, community_id: uuid.UUID):
             SharesNeeds.ecosystem_id == row.id, SharesNeeds.visibility == "public",
             SharesNeeds.hidden_at.is_(None), SharesNeeds.status == OPEN, visible_clause(viewer))
             .order_by(SharesNeeds.created_at.desc(), SharesNeeds.id.desc()).limit(5))).all()
-        return json({**community_payload(row), "opportunities_require_sign_in": viewer.user_id is None, "opportunities": [
+        return json({**community_payload(row), "owner": await owner_contact(session, row.id),
+                     "opportunities_require_sign_in": viewer.user_id is None, "opportunities": [
             {"id": str(item.id), "title": item.title, "url": "/discover?post=" + str(item.id)}
             for item in opportunities]})

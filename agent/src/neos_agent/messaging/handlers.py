@@ -79,6 +79,19 @@ def _check_rate_limit(member_id: uuid.UUID) -> bool:
     return len(times) < MAX_MESSAGES_PER_SECOND
 
 
+def record_send(member_id: uuid.UUID) -> None:
+    """Consume one slot of the one-second send limit."""
+    _last_message_times.setdefault(member_id, []).append(datetime.now(timezone.utc).timestamp())
+
+
+def allow_send(member_id: uuid.UUID) -> bool:
+    """True when this member may send now. A success consumes one slot of the one-second limit."""
+    if not _check_rate_limit(member_id):
+        return False
+    record_send(member_id)
+    return True
+
+
 async def handle_message(ws, member, data: dict, app, member_ids: list[uuid.UUID] | None = None) -> None:
     """Handle a new message: validate, persist, broadcast.
 
@@ -130,10 +143,7 @@ async def handle_message(ws, member, data: dict, app, member_ids: list[uuid.UUID
         db.add(msg)
         await db.commit()
         await db.refresh(msg)
-
-        # Track rate limit
-        now = datetime.now(timezone.utc).timestamp()
-        _last_message_times.setdefault(member.id, []).append(now)
+        record_send(member.id)
 
         # Build broadcast payload
         payload = {

@@ -4,21 +4,58 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 import logging
+from types import SimpleNamespace
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import aliased
 
 from neos_agent.api.errors import ApiError
 from neos_agent.api.schemas.messaging import MessageSchema, ParticipantSummary
-from neos_agent.db.models import Conversation, ConversationLink, ConversationParticipant, Ecosystem, Member, Message
+from neos_agent.db.models import Conversation, ConversationLink, ConversationParticipant, Ecosystem, Member, Message, User
+from neos_agent.messaging.queries import _find_existing_dm
 
 logger = logging.getLogger(__name__)
 
 
+async def membership_rows(session, user_id, statuses=None):
+    if not user_id:
+        return []
+    statement = select(Member).where(Member.user_id == user_id)
+    if statuses:
+        statement = statement.where(Member.current_status.in_(tuple(statuses)))
+    return list((await session.scalars(statement.order_by(Member.created_at, Member.id))).all())
+
+
 async def active_rows(session, user_id):
-    return list((await session.scalars(select(Member).where(
-        Member.user_id == user_id, Member.current_status == "active",
-    ).order_by(Member.created_at, Member.id))).all()) if user_id else []
+    return await membership_rows(session, user_id, ("active",))
+
+
+def owner_contact_payload(member):
+    """Display name, role label, and the member id a client passes to start a direct message."""
+    return {"id": str(member.id), "display_name": member.display_name, "role": member.role}
+
+
+async def owner_member(session, ecosystem_id, *, lock=False):
+    """The active owner of an ecosystem, or None.
+
+    Several owners: the oldest row (created_at, then id). A disabled account is
+    not a public contact. No owner row: None.
+    """
+    enabled = select(User.id).where(User.disabled_at.is_(None))
+    statement = select(Member).where(
+        Member.ecosystem_id == ecosystem_id,
+        Member.role == "owner",
+        Member.current_status == "active",
+        Member.user_id.in_(enabled),
+    ).order_by(Member.created_at.asc(), Member.id.asc()).limit(1)
+    if lock:
+        statement = statement.with_for_update()
+    return await session.scalar(statement)
+
+
+async def owner_contact(session, ecosystem_id):
+    member = await owner_member(session, ecosystem_id)
+    return None if member is None else owner_contact_payload(member)
 
 
 def listed_participation(selected_ids, active_ids):
@@ -43,20 +80,52 @@ async def recipient_binding(session, conversation_id, sender_id):
     return [{"member_id": str(row.id), "user_id": str(row.user_id), "name": row.display_name} for row in rows]
 
 
+async def participating_owner_dm(session, user_id, conversation_id, *, lock=False):
+    """A direct conversation whose other person is that ecosystem's public owner, for a pending or active row."""
+    rows = [row for row in await membership_rows(session, user_id) if row.current_status in {"active", "pending_consent"}]
+    if not rows:
+        return None
+    ids = {row.id for row in rows}
+    statement = select(Conversation).where(
+        Conversation.id == conversation_id, Conversation.type == "dm",
+        Conversation.id.in_(select(ConversationParticipant.conversation_id).where(ConversationParticipant.member_id.in_(ids))),
+    )
+    conversation = await session.scalar(statement.with_for_update() if lock else statement)
+    if conversation is None:
+        return None
+    people = list((await session.scalars(select(Member).join(
+        ConversationParticipant, ConversationParticipant.member_id == Member.id,
+    ).where(ConversationParticipant.conversation_id == conversation.id))).all())
+    if len(people) != 2:
+        return None
+    actor = next((person for person in people if person.id in ids), None)
+    other = next((person for person in people if actor is not None and person.id != actor.id), None)
+    owner = await owner_member(session, conversation.ecosystem_id)
+    if actor is None or other is None or owner is None or other.id != owner.id:
+        return None
+    return conversation, actor
+
+
 async def require_participant(session, user_id, conversation_id, *, lock=False):
     own = await active_rows(session, user_id)
     ids = [row.id for row in own]
-    query = select(Conversation).where(Conversation.id == conversation_id, Conversation.id.in_(
-        select(ConversationParticipant.conversation_id).where(ConversationParticipant.member_id.in_(ids)),
-    ))
-    conversation = await session.scalar(query.with_for_update() if lock else query)
-    if conversation is None:
+    conversation = None
+    if ids:
+        query = select(Conversation).where(Conversation.id == conversation_id, Conversation.id.in_(
+            select(ConversationParticipant.conversation_id).where(ConversationParticipant.member_id.in_(ids)),
+        ))
+        conversation = await session.scalar(query.with_for_update() if lock else query)
+    if conversation is not None:
+        participant_ids = set((await session.scalars(select(ConversationParticipant.member_id).where(
+            ConversationParticipant.conversation_id == conversation_id, ConversationParticipant.member_id.in_(ids),
+        ))).all())
+        actor = next(row for row in own if row.id in participant_ids)
+        return conversation, actor, ids
+    found = await participating_owner_dm(session, user_id, conversation_id, lock=lock)
+    if found is None:
         raise ApiError(404, "Conversation not found")
-    participant_ids = set((await session.scalars(select(ConversationParticipant.member_id).where(
-        ConversationParticipant.conversation_id == conversation_id, ConversationParticipant.member_id.in_(ids),
-    ))).all())
-    actor = next(row for row in own if row.id in participant_ids)
-    return conversation, actor, ids
+    conversation, actor = found
+    return conversation, actor, [actor.id]
 
 
 def message_payload(message, sender_name):
@@ -91,13 +160,44 @@ async def read_thread(session, user_id, conversation_id, *, page=1, limit=50):
         "page": page, "per_page": limit}
 
 
+async def pending_owner_participations(session, user_id):
+    """Pending rows' direct conversations with the ecosystem's public owner."""
+    pending_ids = {row.id for row in await membership_rows(session, user_id) if row.current_status == "pending_consent"}
+    if not pending_ids:
+        return []
+    links = list((await session.scalars(select(ConversationParticipant).join(
+        Conversation, Conversation.id == ConversationParticipant.conversation_id,
+    ).where(ConversationParticipant.member_id.in_(pending_ids), Conversation.type == "dm"))).all())
+    kept = []
+    owners = {}
+    for link in links:
+        conversation = await session.get(Conversation, link.conversation_id)
+        people = list((await session.scalars(select(Member.id).join(
+            ConversationParticipant, ConversationParticipant.member_id == Member.id,
+        ).where(ConversationParticipant.conversation_id == link.conversation_id))).all())
+        if conversation is None or len(people) != 2:
+            continue
+        other_id = next(person_id for person_id in people if person_id != link.member_id)
+        if conversation.ecosystem_id not in owners:
+            owner = await owner_member(session, conversation.ecosystem_id)
+            owners[conversation.ecosystem_id] = None if owner is None else owner.id
+        if owners[conversation.ecosystem_id] == other_id:
+            kept.append(link)
+    return kept
+
+
 async def listed_ids(session, user_id, ecosystem_ids):
     own = await active_rows(session, user_id)
     scope = {str(value) for value in ecosystem_ids or []}
     selected_ids = [row.id for row in own if str(row.ecosystem_id) in scope]
     ids = [row.id for row in own]
-    rows = (await session.execute(select(ConversationParticipant.conversation_id, ConversationParticipant.last_read_at)
-        .where(listed_participation(selected_ids, ids)))).all()
+    rows = []
+    if selected_ids or ids:
+        rows = list((await session.execute(select(ConversationParticipant.conversation_id, ConversationParticipant.last_read_at)
+            .where(listed_participation(selected_ids, ids)))).all())
+    for link in await pending_owner_participations(session, user_id):
+        rows.append(SimpleNamespace(conversation_id=link.conversation_id, last_read_at=link.last_read_at))
+        ids.append(link.member_id)
     return rows, ids
 
 
@@ -158,12 +258,61 @@ async def find_recipients(session, user_id, *, query="", limit=50):
              "ecosystem_id": str(row.ecosystem_id), "ecosystem_name": name} for row, name in rows]
 
 
+class PreparedThread(tuple):
+    """(creator, recipients, kind, title), plus owner-contact reuse when that path was used."""
+
+    def __new__(cls, creator, recipients, kind, title, *, reuse_dm=False, ecosystem_id=None):
+        prepared = tuple.__new__(cls, (creator, recipients, kind, title))
+        prepared.reuse_dm = reuse_dm
+        prepared.ecosystem_id = ecosystem_id
+        return prepared
+
+
+async def owner_direct(session, user_id, kind, participant_ids, title):
+    """A direct conversation with the ecosystem's public owner, for any signed-in account that holds a usable row.
+
+    Pending rows may use this and nothing else. A private ecosystem still requires a row there.
+    The caller's own ids never qualify. Returns None when this is not that case, so the ordinary
+    refusal stays unchanged.
+    """
+    if kind != "dm" or not user_id:
+        return None
+    try:
+        asked = [uuid.UUID(str(value)) for value in participant_ids]
+    except (TypeError, ValueError):
+        return None
+    rows = await membership_rows(session, user_id)
+    foreign = [value for value in asked if value not in {row.id for row in rows}]
+    if len(asked) != 1 or len(foreign) != 1:
+        return None
+    target = await session.get(Member, foreign[0])
+    if target is None:
+        return None
+    published = await owner_member(session, target.ecosystem_id, lock=True)
+    if published is None or published.id != target.id:
+        return None
+    ecosystem = await session.get(Ecosystem, target.ecosystem_id)
+    usable = [row for row in rows if row.current_status in {"active", "pending_consent"}]
+    in_ecosystem = next((row for row in usable if row.ecosystem_id == target.ecosystem_id), None)
+    if ecosystem is None or (ecosystem.visibility != "public" and in_ecosystem is None):
+        return None
+    creator = in_ecosystem or (usable[0] if usable else None)
+    if creator is None:
+        return None
+    if title is not None and (not isinstance(title, str) or len(title) > 255):
+        raise ApiError(400, "Keep the conversation title to 255 characters.")
+    return PreparedThread(creator, [published], "dm", title, reuse_dm=True, ecosystem_id=target.ecosystem_id)
+
+
 async def prepare_thread(session, user_id, ecosystem_id, participant_ids, *, type="dm", title=None):
     own = await active_rows(session, user_id)
     creator = next((row for row in own if row.ecosystem_id == ecosystem_id), None)
-    if creator is None:
-        raise ApiError(403, "An active membership in this ecosystem is required to start a conversation.")
     kind = "dm" if type == "direct" else type
+    if creator is None:
+        opened = await owner_direct(session, user_id, kind, participant_ids, title)
+        if opened is not None:
+            return opened
+        raise ApiError(403, "An active membership in this ecosystem is required to start a conversation.")
     if kind not in {"dm", "group"}:
         raise ApiError(400, "type must be 'dm' or 'group'")
     try:
@@ -175,6 +324,9 @@ async def prepare_thread(session, user_id, ecosystem_id, participant_ids, *, typ
     recipients = list((await session.scalars(select(Member).where(Member.id.in_(ids), Member.current_status == "active",
         Member.ecosystem_id.in_({row.ecosystem_id for row in own})))).all())
     if len(recipients) != len(ids):
+        opened = await owner_direct(session, user_id, kind, participant_ids, title)
+        if opened is not None:
+            return opened
         raise ApiError(404, "A selected member is unavailable in your ecosystems.")
     if title is not None and (not isinstance(title, str) or len(title) > 255):
         raise ApiError(400, "Keep the conversation title to 255 characters.")
@@ -183,7 +335,14 @@ async def prepare_thread(session, user_id, ecosystem_id, participant_ids, *, typ
 
 async def open_thread(session, prepared):
     creator, recipients, kind, title = prepared
-    conversation = Conversation(id=uuid.uuid4(), ecosystem_id=creator.ecosystem_id, type=kind, title=title, created_by=creator.id)
+    ecosystem_id = getattr(prepared, "ecosystem_id", None) or creator.ecosystem_id
+    session.info["reused_dm"] = False
+    if getattr(prepared, "reuse_dm", False) and kind == "dm" and len(recipients) == 1:
+        existing = await _find_existing_dm(session, creator.id, recipients[0].id, ecosystem_id)
+        if existing is not None:
+            session.info["reused_dm"] = True
+            return existing
+    conversation = Conversation(id=uuid.uuid4(), ecosystem_id=ecosystem_id, type=kind, title=title, created_by=creator.id)
     session.add(conversation)
     await session.flush()
     for member, role in [(creator, "owner"), *((row, "member") for row in recipients)]:
@@ -198,6 +357,10 @@ async def prepare_message(session, user_id, conversation_id, content):
     if len(content) > 10_000:
         raise ApiError(400, "Message too long (max 10000 chars)")
     conversation, sender, _ = await require_participant(session, user_id, conversation_id, lock=True)
+    if sender.current_status != "active":
+        from neos_agent.messaging.handlers import allow_send
+        if not allow_send(sender.id):
+            raise ApiError(429, "Rate limit exceeded")
     return conversation, sender, content.strip()
 
 

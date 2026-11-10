@@ -1249,6 +1249,18 @@ they do not take part in (participation is still the check); unread counting exc
 client opens `/messaging?conversation=<id>` (`MessagingLayout`, `lib/exchange.conversationIdFromQuery`).
 Tests: `tests/test_exchange_flows.py::test_a_poster_in_two_ecosystems_reads_an_answer_whatever_the_selection`.
 
+### Public owner contact
+
+`owner` on `GET /api/v1/communities/:id`, `GET /api/v1/orientation/ethos/:id`, and
+`GET /api/v1/ecosystems/:id` is the ecosystem's public owner or `null`. The object
+is exactly `id` (member id), `display_name`, and `role` (`owner`). No email, DID,
+or other member. Several owners: the oldest active row whose user is not disabled.
+`POST /api/v1/messaging/conversations` with `{"type":"dm","participant_ids":["<owner.id>"]}`
+starts that direct conversation for any signed-in account that has an active or
+pending row (201, or 200 when that pair already has one). Pending accounts still
+cannot message anyone else. A signed-out request is 401. Pending sends reuse the
+websocket message limit (`Rate limit exceeded`, 429).
+
 The chat UI's `_TOOL_DISPLAY_NAMES` (`api/chat.py`) labels every wave-C tool; `tests/test_exchange_parity.py` fails
 when a tool has no label or a page hint names a tool that does not exist.
 
