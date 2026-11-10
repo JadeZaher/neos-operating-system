@@ -1,5 +1,17 @@
 # alembic - schema migrations
 
+## b8d3f1a6c4e2: ecosystem cross-link admins
+
+Follows `z6f0c4e8b2d5`. Creates `ecosystem_admins` when the table is missing
+(fresh `create_all` databases already have it). For each ecosystem, if an
+active non-disabled member is an `owner`, else a `co_creator`, else a root
+domain steward (else any active domain steward), the revision inserts that
+member's `internal` and `external` links when those exact rows are absent.
+It does not update members, drop columns, or replace an existing link. A
+second upgrade inserts nothing. Downgrade drops only `ecosystem_admins`;
+the `ecosystem_admin` transition rows stay. `tests/test_ecosystem_admins.py`
+covers the backfill on SQLite and, when configured, disposable PostgreSQL.
+
 ## x4d8a2c6f0b3: configured join quizzes
 
 Follows `w3c7f1a9d5e2`; the orientation/matching migration `y5e9b3d7a1c4` follows this revision.

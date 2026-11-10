@@ -11,7 +11,7 @@ from sqlalchemy.orm import aliased
 
 from neos_agent.api.errors import ApiError
 from neos_agent.api.schemas.messaging import MessageSchema, ParticipantSummary
-from neos_agent.db.models import Conversation, ConversationLink, ConversationParticipant, Ecosystem, Member, Message, User
+from neos_agent.db.models import Conversation, ConversationLink, ConversationParticipant, Ecosystem, Member, Message
 from neos_agent.messaging.queries import _find_existing_dm
 
 logger = logging.getLogger(__name__)
@@ -30,32 +30,25 @@ async def active_rows(session, user_id):
     return await membership_rows(session, user_id, ("active",))
 
 
-def owner_contact_payload(member):
+def owner_contact_payload(member, role=None):
     """Display name, role label, and the member id a client passes to start a direct message."""
-    return {"id": str(member.id), "display_name": member.display_name, "role": member.role}
+    return {"id": str(member.id), "display_name": member.display_name, "role": member.role if role is None else role}
 
 
 async def owner_member(session, ecosystem_id, *, lock=False):
-    """The active owner of an ecosystem, or None.
-
-    Several owners: the oldest row (created_at, then id). A disabled account is
-    not a public contact. No owner row: None.
-    """
-    enabled = select(User.id).where(User.disabled_at.is_(None))
-    statement = select(Member).where(
-        Member.ecosystem_id == ecosystem_id,
-        Member.role == "owner",
-        Member.current_status == "active",
-        Member.user_id.in_(enabled),
-    ).order_by(Member.created_at.asc(), Member.id.asc()).limit(1)
-    if lock:
-        statement = statement.with_for_update()
-    return await session.scalar(statement)
+    """The member a caller may message: the same person `owner_contact` publishes."""
+    from neos_agent.services.ecosystem_admins import resolve_public_contact
+    found = await resolve_public_contact(session, ecosystem_id, lock=lock)
+    return None if found is None else found[0]
 
 
 async def owner_contact(session, ecosystem_id):
-    member = await owner_member(session, ecosystem_id)
-    return None if member is None else owner_contact_payload(member)
+    from neos_agent.services.ecosystem_admins import resolve_public_contact
+    found = await resolve_public_contact(session, ecosystem_id)
+    if found is None:
+        return None
+    member, label = found
+    return owner_contact_payload(member, label)
 
 
 def listed_participation(selected_ids, active_ids):
