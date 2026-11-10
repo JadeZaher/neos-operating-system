@@ -31,7 +31,7 @@ from neos_agent.db.course_models import (
 from neos_agent.db.models import Domain, Member, QuizAssignment, Team
 from neos_agent.api.errors import ApiError
 from neos_agent.api.guards import caller_in, caller_user_id
-from neos_agent.services.join_gates import activate_if_ready, completion_questions, quiz_fingerprint, quiz_questions, same_answer_value, verify_quiz_completion
+from neos_agent.services.join_gates import activate_if_ready, completion_questions, quiz_attempt_complete, quiz_fingerprint, quiz_questions, same_answer_value, verify_quiz_completion
 from neos_agent.api.helpers import require_auth, require_auth_user, require_admin, get_ecosystem_ids
 from neos_agent.api.policy import can_manage_onboarding
 
@@ -580,7 +580,7 @@ async def submit_quiz(request: Request, quiz_id: str):
         )
         session.add(quiz_result)
         await session.flush()
-        if grading["is_passed"] or grading["is_passed"] is None and completion_verified:
+        if quiz_attempt_complete(quiz, is_passed=grading["is_passed"], completion_verified=completion_verified):
             for assignment in (await session.execute(select(QuizAssignment).where(
                 QuizAssignment.quiz_id == qid, QuizAssignment.member_id == member_row_id,
                 QuizAssignment.status != "completed",

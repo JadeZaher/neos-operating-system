@@ -36,6 +36,20 @@ def quiz_questions(quiz: Quiz) -> list[dict]:
         if isinstance(page, dict) for question in walk(page.get("elements"))]
 
 
+def quiz_attempt_complete(quiz: Quiz, *, is_passed: bool | None, completion_verified: bool) -> bool:
+    """A stored attempt finishes this quiz.
+
+    Knowledge quizzes (any answer key) count only when verified and passed. A readiness
+    questionnaire with no answer key is finished when completion is verified and
+    ``is_passed`` is null: those answers are not graded. Admission, assignment completion
+    and the first-month queue share this check. Callers that admit someone still match
+    the current content fingerprint themselves.
+    """
+    if completion_verified is not True:
+        return False
+    return is_passed is True if quiz_questions(quiz) else is_passed is None
+
+
 def same_answer_value(left, right) -> bool:
     """Compare JSON answer types without case or string/number coercion."""
     if type(left) in {int, float} and type(right) in {int, float}:
@@ -195,12 +209,12 @@ async def join_gate_summary(session, *, ecosystem_id: uuid.UUID, member: Member 
         graded = bool(quiz_questions(quiz))
         passed = False
         if member is not None:
-            passed = await session.scalar(select(QuizResult.id).where(
+            attempts = (await session.execute(select(QuizResult.is_passed, QuizResult.completion_verified).where(
                 QuizResult.quiz_id == quiz.id, QuizResult.member_id == member.id,
-                QuizResult.completion_verified.is_(True),
-                QuizResult.is_passed.is_(True) if graded else QuizResult.is_passed.is_(None),
                 QuizResult.graded_fingerprint == quiz_fingerprint(quiz, course),
-            ).limit(1)) is not None
+            ))).all()
+            passed = any(quiz_attempt_complete(quiz, is_passed=is_passed, completion_verified=verified)
+                         for is_passed, verified in attempts)
         valid_scope = course is None or (course.ecosystem_id == ecosystem_id and
             (quiz.domain_id is None or course.domain_id in (None, quiz.domain_id)))
         status = "bypassed" if quiz_exempt else "unavailable" if not valid_scope or not quiz_available(quiz) else ("passed" if graded else "completed") if passed else "required"

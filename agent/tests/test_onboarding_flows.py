@@ -455,6 +455,38 @@ async def test_a_first_month_member_is_asked_to_orient_and_take_the_entry_quiz_u
     assert await queue_actions(world, "kit") == []
 
 
+_READINESS = {"pages": [{"elements": [{"type": "comment", "name": "readiness"}]}]}
+
+
+async def _record_entry_attempt(world, *, survey, is_passed, completion_verified) -> list[tuple]:
+    """Store one entry-quiz attempt for the first-month member and read GET /api/v1/me/next-steps."""
+    kit = PEOPLE["kit"].member_id(OMNIONE)
+    async with world.db() as session:
+        quiz = await session.get(Quiz, OMNI_QUIZ)
+        if survey is not None:
+            quiz.survey_json = survey
+        session.add(QuizResult(quiz_id=OMNI_QUIZ, member_id=kit, is_passed=is_passed,
+                               completion_verified=completion_verified))
+        await session.commit()
+    return await queue_actions(world, "kit")
+
+
+async def test_a_verified_ungraded_entry_questionnaire_leaves_next_steps(world):
+    # is_passed stays null on a readiness questionnaire; a verified completion is still done.
+    actions = await _record_entry_attempt(world, survey=_READINESS, is_passed=None, completion_verified=True)
+    assert ("take_entry_quiz", "Take Community Onboarding") not in actions
+
+
+async def test_a_graded_entry_quiz_that_was_not_passed_stays_in_next_steps(world):
+    actions = await _record_entry_attempt(world, survey=None, is_passed=False, completion_verified=True)
+    assert ("take_entry_quiz", "Take Community Onboarding") in actions
+
+
+async def test_an_unfinished_orientation_stays_in_next_steps_after_the_questionnaire(world):
+    actions = await _record_entry_attempt(world, survey=_READINESS, is_passed=None, completion_verified=True)
+    assert ("start_orientation", "Walk through OmniOne's orientation") in actions
+
+
 @pytest.mark.parametrize("who, expected", [
     ("nia", [("consent_to_join", "Consent to Universal Agreement Field")]),  # an agreement is still missing
     ("tess", [("finish_joining", "Finish joining Escherbridge")]),  # nothing is left: she checks her membership
