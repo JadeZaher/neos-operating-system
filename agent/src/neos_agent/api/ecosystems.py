@@ -19,7 +19,7 @@ from neos_agent.db.models import Domain, Ecosystem, Member, SharesNeeds, User
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
-from neos_agent.services.member_lifecycle import JOINED, place_member, placement_payload  # G-Onboard
+from neos_agent.services.member_lifecycle import JOINED, counts_as_member, place_member, placement_payload  # G-Onboard
 
 from .errors import ApiError
 from .guards import authenticated, caller_in, caller_user_id
@@ -74,7 +74,15 @@ async def _get_member_ecosystem_ids(db, member_or_user) -> list[uuid.UUID]:
 
 
 async def _get_member_count(db, ecosystem_id: uuid.UUID) -> int:
-    """Return the number of members in an ecosystem."""
+    """Active (consented) members. Pending sign-ups, and suspended or departed rows, are not counted."""
+    result = await db.execute(
+        select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id, counts_as_member())
+    )
+    return result.scalar() or 0
+
+
+async def _roster_size(db, ecosystem_id: uuid.UUID) -> int:
+    """Every membership row. The sole-member settings gate still uses this, so a pending sign-up does not change who may edit."""
     result = await db.execute(
         select(func.count(Member.id)).where(Member.ecosystem_id == ecosystem_id)
     )
@@ -332,8 +340,8 @@ async def update_ecosystem(request: Request, ecosystem_id: uuid.UUID):
                 Domain.steward_id == caller.id,
             ).limit(1)
         ) is not None
-        member_count = await _get_member_count(db, ecosystem_id)
-        if not can_update_ecosystem(caller, stewards_a_domain=stewards_a_domain, member_count=member_count):
+        roster_size = await _roster_size(db, ecosystem_id)
+        if not can_update_ecosystem(caller, stewards_a_domain=stewards_a_domain, member_count=roster_size):
             raise ApiError(403, "Only ecosystem stewards can update ecosystem settings")
 
         # Update fields that are not None

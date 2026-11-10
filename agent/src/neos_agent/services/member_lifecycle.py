@@ -48,6 +48,15 @@ STATUS_WORDS = {
     "active": "active", "pending_consent": "waiting on consent", "suspended": "suspended",
     "inactive": "inactive", "exited": "ended", "prospective": "not started",
 }
+
+
+def counts_as_member():
+    """A published member count includes a consented, active row and nothing else.
+
+    Pending sign-ups (`pending_consent`), suspended rows, and departed rows (`exited`, `inactive`)
+    stay out of the ecosystem, community, and dashboard counts.
+    """
+    return Member.current_status == "active"
 # (from, to) -> (button label, confirmation sentence); {name} and {ecosystem} are filled in.
 _MOVE_WORDS = {
     ("active", "suspended"): (
