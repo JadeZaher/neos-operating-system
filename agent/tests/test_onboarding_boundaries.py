@@ -25,8 +25,8 @@ from neos_agent.api.helpers import PLATFORM_HOME_SETTING_KEY
 from neos_agent.auth.middleware import make_session_cookie
 from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.db.models import (
-    Agreement, AgreementMemberConsent, AgreementRequirement, AppSetting, AuthSession, Base, Domain, Ecosystem, Member,
-    MemberStatusTransition, NodeAdmin, SharesNeeds, User,
+    Agreement, AgreementMemberConsent, AgreementRequirement, AppSetting, AuthSession, Base, Domain, Ecosystem,
+    EcosystemAdmin, Member, MemberStatusTransition, NodeAdmin, SharesNeeds, User,
 )
 
 SECRET = "fx-onboard-boundaries-secret-0123456789"
@@ -103,6 +103,13 @@ def boundaries(tmp_path_factory):
                                     expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
             cookies[name] = make_session_cookie(str(session_id), SECRET)
         session.flush()
+        # The founder holds both cross-links, as the backfill would. Quiz creation stays steward-gated while an admin is active.
+        fern = _row_id("fern", RIVERBANK)
+        for designation in ("internal", "external"):
+            session.add(EcosystemAdmin(
+                id=uuid.uuid5(fern, designation), ecosystem_id=RIVERBANK, member_id=fern,
+                designation=designation, appointed_by_member_id=fern,
+            ))
         session.add(AgreementMemberConsent(  # Olga consented to the home's membership agreement before leaving
             id=uuid.uuid4(), agreement_id=UAF, member_id=_row_id("olga", OMNIONE), agreement_version="1.0",
             attestation="I consent to the Universal Agreement Field", attested_at=datetime(2026, 3, 2),

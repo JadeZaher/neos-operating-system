@@ -23,6 +23,7 @@ from neos_agent.api.agreements import CEREMONY_DENIED  # noqa: E402
 from neos_agent.api.proposals import MANAGE_DENIED, SELF_ADVICE_DENIED  # noqa: E402
 from neos_agent.db.models import AdviceEntry, Agreement, Proposal, User  # noqa: E402
 from neos_agent.services.act_gates import ADVICE_CLOSE_PROPOSER_ONLY, PROPOSER_CLOSES_ADVICE  # noqa: E402
+from neos_agent.services.dates import aoe_today  # noqa: E402
 
 from .test_uxqa_p1_governance import (  # noqa: E402,F401 — env is the shared fixture
     ECO,
@@ -181,7 +182,8 @@ AGREEMENT_SCRIPT = [
     ("ari", "ceremony", {"status": "active", "evidence": "Adopting it straight away"}, ("refused", "Invalid transition"), "advice"),
 ]
 SEEDED_AGREEMENT_VERSION = "1.0"  # a ceremony never bumps it: member consent is bound to the version
-TOMORROW, YESTERDAY = dt.date.today() + dt.timedelta(days=1), dt.date.today() - dt.timedelta(days=1)
+_TODAY = aoe_today()  # due dates pass on the server's Anywhere-on-Earth day, not the UTC calendar day
+TOMORROW, YESTERDAY = _TODAY + dt.timedelta(days=1), _TODAY - dt.timedelta(days=1)
 # Mo (a steward who did not write it) closes Ada's advice: (advice deadline, expected outcome, status afterwards).
 ADVICE_DEADLINE_SCRIPT = [
     (TOMORROW, ("refused", f"{ADVICE_CLOSE_PROPOSER_ONLY}: {PROPOSER_CLOSES_ADVICE} You can close it after the "

@@ -1147,7 +1147,8 @@ table, sign-in placement, profiles) plus rows in `test_onboarding_flows.py`, `_a
   Becoming an admin again is a fresh grant by an owner.
 - **Quizzes and results belong to the quiz's ecosystem's stewards** (A2). `api/quizzes.py`
   `quiz_steward_or_error`: create (for the body's `ecosystem_id`; a `domain_id` must be that ecosystem's, 400
-  `field: domain_id`), update, delete, `GET .../results` and `.../results/all` need `can_manage_onboarding` there;
+  `field: domain_id`) needs `can_manage_onboarding` there, except that any active member may create one while
+  that ecosystem has no active admin; update, delete, `GET .../results` and `.../results/all` stay steward-only;
   a shared quiz (no ecosystem) needs `ctx.platform_admin`. `created_by` is the steward's row, never a client id.
   `GET /members/:id/quiz-history` is the member's own rows or a steward of that member's ecosystem, else 404.
   The domain quiz assign/unassign routes check a steward of the domain's ecosystem, and refuse another
@@ -1252,9 +1253,19 @@ Tests: `tests/test_exchange_flows.py::test_a_poster_in_two_ecosystems_reads_an_a
 ### Public owner contact
 
 `owner` on `GET /api/v1/communities/:id`, `GET /api/v1/orientation/ethos/:id`, and
-`GET /api/v1/ecosystems/:id` is the ecosystem's public owner or `null`. The object
-is exactly `id` (member id), `display_name`, and `role` (`owner`). No email, DID,
-or other member. Several owners: the oldest active row whose user is not disabled.
+`GET /api/v1/ecosystems/:id` is one contact or `null`. The object is exactly
+`id` (member id), `display_name`, and `role` (`external`, else `internal`).
+No active admin means `owner` is null. No email, DID, or other member.
+`GET /ecosystems/:id/admins` is for owners, either link, or a node admin.
+`POST /ecosystems/:id/admins` grants a link: an active owner, an active internal
+admin, or a node admin (403 `ADMIN_REQUIRED` otherwise).
+`POST /ecosystems/:id/admins/claim` lets any active member take a vacant seat
+for themselves (403 `SEAT_HELD` when that seat has an active holder; pending
+members are refused). `PUT` and `DELETE /ecosystems/:id/admins/:member_id`
+change or remove a link only for that admin or a node admin. An ecosystem may
+have no admins. A member election of the external rep is not implemented.
+`POST /api/v1/quizzes` stays steward-gated while an admin is active; with none,
+any active member of that ecosystem may create one.
 `POST /api/v1/messaging/conversations` with `{"type":"dm","participant_ids":["<owner.id>"]}`
 starts that direct conversation for any signed-in account that has an active or
 pending row (201, or 200 when that pair already has one). Pending accounts still
