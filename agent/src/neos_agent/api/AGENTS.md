@@ -1255,9 +1255,10 @@ Tests: `tests/test_exchange_flows.py::test_a_poster_in_two_ecosystems_reads_an_a
 `GET /api/v1/ecosystems/:id` is one contact or `null`. The object is exactly
 `id` (member id), `display_name`, and `role` (`external`, else `internal`, else
 `owner` when no admin link exists yet). No email, DID, or other member.
-`GET|POST /ecosystems/:id/admins`, `PUT|DELETE /ecosystems/:id/admins/:member_id`
-are owners and admins only (403 `ADMIN_REQUIRED`). DELETE of the last admin is
-409 `LAST_ADMIN`. A member election of the external rep is not implemented.
+`GET /ecosystems/:id/admins` is for owners and either link. `POST`, `PUT`, and
+`DELETE /ecosystems/:id/admins/:member_id` are an active owner tier or an active
+internal admin only (403 `ADMIN_REQUIRED` for an external rep and everyone else).
+DELETE of the last admin is 409 `LAST_ADMIN`. A member election of the external rep is not implemented.
 `POST /api/v1/messaging/conversations` with `{"type":"dm","participant_ids":["<owner.id>"]}`
 starts that direct conversation for any signed-in account that has an active or
 pending row (201, or 200 when that pair already has one). Pending accounts still

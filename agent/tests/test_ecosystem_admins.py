@@ -267,7 +267,7 @@ async def test_non_admins_cannot_grant_and_the_last_admin_cannot_be_removed(api)
     assert granted.status == 201
     again = await _call(api, "post", "owner", f"/api/v1/ecosystems/{ECO}/admins", json=body)
     assert again.status == 200 and again.json["status"] == "exists"
-    moved = await _call(api, "put", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "internal"})
+    moved = await _call(api, "put", "founder", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "internal"})
     assert moved.status == 200
     # Founder still holds both, so dropping one link is allowed.
     dropped = await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
@@ -301,11 +301,9 @@ async def test_public_contact_is_the_external_rep_and_is_the_only_person_a_pendi
 
     await _call(api, "post", "founder", f"/api/v1/ecosystems/{ECO}/admins",
                 json={"member_id": str(PEER), "designation": "internal"})
+    await _call(api, "put", "founder", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "external"})
     await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
     await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
-    await _call(api, "put", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "external"})
-    # Founder was removed and peer is external. If founder still had a link the deletes above clear them
-    # only when peer already holds one, which the grant did.
     community = await _call(api, "get", None, f"/api/v1/communities/{ECO}")
     assert community.json["owner"] == {"id": str(PEER), "display_name": "peer", "role": "external"}
     assert "founder" not in community.text
@@ -315,3 +313,15 @@ async def test_public_contact_is_the_external_rep_and_is_the_only_person_a_pendi
     refused = await _call(api, "post", "pending", "/api/v1/messaging/conversations",
                           json={"type": "dm", "participant_ids": [str(FOUNDER)]})
     assert refused.status == 403
+
+
+async def test_an_external_admin_cannot_grant_or_revoke(api):
+    dropped = await _call(api, "delete", "owner", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
+    assert dropped.status == 200
+    grant = await _call(api, "post", "founder", f"/api/v1/ecosystems/{ECO}/admins",
+                        json={"member_id": str(PEER), "designation": "internal"})
+    revoke = await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
+    assert grant.status == 403 and grant.json["code"] == "ADMIN_REQUIRED"
+    assert revoke.status == 403 and revoke.json["code"] == "ADMIN_REQUIRED"
+    async with api.ctx.db() as session:
+        assert await _links_of(session, ECO) == {(FOUNDER, "external")}

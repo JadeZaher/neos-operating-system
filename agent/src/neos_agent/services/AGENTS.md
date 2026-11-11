@@ -48,8 +48,9 @@ source and tests are authored before the coordinator's integrated sweep.
 `ecosystem_admins.py` is the Lead Link / Rep Link roster. `internal` stewards
 the ecosystem inward; `external` is its public representative and the `owner`
 contact. Founding (`POST /ecosystems` and `create_ecosystem`) gives the creator
-both links. Owners (`Member.role == "owner"`) and anyone holding a link may
-grant, revoke, and re-designate. The last admin cannot be removed. Changes are
+both links. An active owner (`Member.role == "owner"`) or an active internal
+admin may grant, revoke, and re-designate. An external rep cannot. The last
+admin cannot be removed. Changes are
 `MemberStatusTransition` rows with trigger `ecosystem_admin`. Member election
 of the external rep is not built. The migration `b8d3f1a6c4e2` backfills one
 default admin per ecosystem that has an owner role, a `co_creator`, or a

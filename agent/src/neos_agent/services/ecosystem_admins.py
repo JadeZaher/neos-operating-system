@@ -119,6 +119,7 @@ async def ensure_default_admin(session, member: Member) -> None:
 
 
 async def _caller_can_manage(session, caller: Member | None) -> bool:
+    """Read the roster: an active owner-tier member, or anyone holding a link."""
     if caller is None or caller.current_status != "active":
         return False
     if caller.role == "owner":
@@ -129,9 +130,26 @@ async def _caller_can_manage(session, caller: Member | None) -> bool:
     return held is not None
 
 
+async def _caller_can_edit(session, caller: Member | None) -> bool:
+    """Change the roster: an active owner-tier member, or an active internal (Lead Link) admin.
+
+    An external rep is the public contact and cannot grant, revoke, or re-designate.
+    """
+    if caller is None or caller.current_status != "active":
+        return False
+    if caller.role == "owner":
+        return True
+    held = await session.scalar(select(EcosystemAdmin.id).where(
+        EcosystemAdmin.ecosystem_id == caller.ecosystem_id,
+        EcosystemAdmin.member_id == caller.id,
+        EcosystemAdmin.designation == INTERNAL,
+    ))
+    return held is not None
+
+
 def _require_manager(caller: Member | None, allowed: bool) -> None:
     if not allowed:
-        raise ApiError(403, "Only an owner or an ecosystem admin can change ecosystem admins.", {"code": ADMIN_REQUIRED})
+        raise ApiError(403, "Only an owner or an internal admin can change ecosystem admins.", {"code": ADMIN_REQUIRED})
 
 
 async def _active_target(session, ecosystem_id: uuid.UUID, member_id: uuid.UUID) -> Member:
@@ -182,7 +200,7 @@ async def grant_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, m
     """Add one designation. Returns `created` or `exists`."""
     if caller is None or caller.ecosystem_id != ecosystem_id:
         _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_manage(session, caller))
+    _require_manager(caller, await _caller_can_edit(session, caller))
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     await _active_target(session, ecosystem_id, member_id)
@@ -204,7 +222,7 @@ async def grant_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, m
 async def revoke_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str) -> None:
     if caller is None or caller.ecosystem_id != ecosystem_id:
         _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_manage(session, caller))
+    _require_manager(caller, await _caller_can_edit(session, caller))
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     rows = await _rows(session, ecosystem_id, lock=True)
@@ -222,7 +240,7 @@ async def redesignate_admin(session, caller: Member | None, ecosystem_id: uuid.U
     """Leave this admin holding exactly `designation`. They stay an admin, so the last admin is not removed."""
     if caller is None or caller.ecosystem_id != ecosystem_id:
         _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_manage(session, caller))
+    _require_manager(caller, await _caller_can_edit(session, caller))
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     await _active_target(session, ecosystem_id, member_id)
