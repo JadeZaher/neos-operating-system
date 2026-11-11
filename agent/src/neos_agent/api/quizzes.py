@@ -60,15 +60,23 @@ QUIZ_STEWARDS_ONLY = "Only an active steward of this quiz's ecosystem can change
 GLOBAL_QUIZ_ADMINS_ONLY = "A quiz shared by every ecosystem is changed only by a platform admin"
 
 
-async def quiz_steward_or_error(session, request: Request, ecosystem_id: uuid.UUID | None) -> Member:
+async def quiz_steward_or_error(session, request: Request, ecosystem_id: uuid.UUID | None, *, creating: bool = False) -> Member:
     """The row that may write a quiz of `ecosystem_id` or read its results: a steward there (can_manage_onboarding),
-    or for a global quiz (no ecosystem) a platform admin; else 403."""
+    or for a global quiz (no ecosystem) a platform admin; else 403.
+
+    Creating is the exception when the ecosystem has no active admin: any active member may create one.
+    Update, delete, and results stay with the steward.
+    """
     if ecosystem_id is None:
         administrator, error = await require_admin(request)
         if error is not None:
             raise ApiError(403, GLOBAL_QUIZ_ADMINS_ONLY)
         return administrator
     caller = await caller_in(session, request, ecosystem_id)
+    if creating and caller is not None and caller.current_status == "active":
+        from neos_agent.services.ecosystem_admins import has_active_admin
+        if not await has_active_admin(session, ecosystem_id):
+            return caller
     if not can_manage_onboarding(caller, ecosystem_id):
         raise ApiError(403, QUIZ_STEWARDS_ONLY)
     return caller
@@ -344,7 +352,7 @@ async def create_quiz(request: Request):
         return json({"error": str(e)}, status=400)
 
     async with request.app.ctx.db() as session:
-        author = await quiz_steward_or_error(session, request, body.ecosystem_id)
+        author = await quiz_steward_or_error(session, request, body.ecosystem_id, creating=True)
         if body.domain_id is not None:  # a domain quiz belongs to that domain's ecosystem
             domain_ecosystem = await session.scalar(select(Domain.ecosystem_id).where(Domain.id == body.domain_id))
             if domain_ecosystem is None or domain_ecosystem != body.ecosystem_id:

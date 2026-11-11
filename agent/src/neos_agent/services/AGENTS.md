@@ -16,7 +16,7 @@ Member rows. A caller cannot add an unrelated private outsider or supply a
 different sender. One exception: a signed-in account with an active or
 pending row may open a direct conversation with the ecosystem's public contact
 (`ecosystem_admins.resolve_public_contact`: the external rep, else an internal
-admin, else the oldest active `role="owner"`; none is null).
+admin; no active admin means there is no contact).
 Pending rows can message that owner and no one else. A private ecosystem
 still requires a row there. Repeating it reuses the direct conversation.
 Pending sends use the messaging websocket's one-second limit. Services flush
@@ -48,9 +48,12 @@ source and tests are authored before the coordinator's integrated sweep.
 `ecosystem_admins.py` is the Lead Link / Rep Link roster. `internal` stewards
 the ecosystem inward; `external` is its public representative and the `owner`
 contact. Founding (`POST /ecosystems` and `create_ecosystem`) gives the creator
-both links. An active owner (`Member.role == "owner"`) or an active internal
-admin may grant, revoke, and re-designate. An external rep cannot. The last
-admin cannot be removed. Changes are
+both links. An active owner or an active internal admin, and a node admin
+(`NodeAdmin` on the User), may grant links. Only that admin or a node admin
+may remove or re-designate a link, and the ecosystem may be left with none.
+Any active member may claim a vacant internal or external seat for themselves.
+While no active admin remains, any active member may create a quiz
+(`POST /api/v1/quizzes`). Changes are
 `MemberStatusTransition` rows with trigger `ecosystem_admin`. Member election
 of the external rep is not built. The migration `b8d3f1a6c4e2` backfills one
 default admin per ecosystem that has an owner role, a `co_creator`, or a

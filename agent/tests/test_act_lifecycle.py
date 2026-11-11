@@ -24,6 +24,7 @@ from neos_agent.api.policy import can_confirm_ratification
 from neos_agent.api.errors import register_api_errors
 from neos_agent.db.models import Agreement, Base, ConsentParticipant, ConsentRecord, Ecosystem, Member, Proposal, User
 from neos_agent.services import act_gates
+from neos_agent.services.dates import aoe_today
 from neos_agent.services.act_gates import (
     ADVICE_CLOSE_PROPOSER_ONLY,
     AGREEMENT_LIFECYCLE,
@@ -164,7 +165,7 @@ async def test_a_steward_who_wrote_the_proposal_cannot_confirm_its_ratification(
 # Who closes advice (owner decision 2026-11-01): the proposer; another steward only after the deadline
 # ---------------------------------------------------------------------------
 
-TODAY = dt.date.today()
+TODAY = aoe_today()  # due dates pass on the server's Anywhere-on-Earth day, not the UTC calendar day
 NO_DEADLINE, TOMORROW, DEADLINE_TODAY, YESTERDAY = None, TODAY + dt.timedelta(days=1), TODAY, TODAY - dt.timedelta(days=1)
 
 

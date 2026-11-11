@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 
 from neos_agent.api.errors import ApiError
-from neos_agent.db.models import Domain, EcosystemAdmin, Member, MemberStatusTransition, User
+from neos_agent.db.models import Ecosystem, EcosystemAdmin, Member, MemberStatusTransition, User
 from neos_agent.db.models._base import GUID
 from neos_agent.services import dates
 
@@ -29,8 +29,8 @@ INTERNAL = "internal"
 EXTERNAL = "external"
 DESIGNATIONS = frozenset({INTERNAL, EXTERNAL})
 ADMIN_AUDIT = "ecosystem_admin"
-LAST_ADMIN = "LAST_ADMIN"
 ADMIN_REQUIRED = "ADMIN_REQUIRED"
+SEAT_HELD = "SEAT_HELD"
 
 
 @dataclass(frozen=True)
@@ -93,10 +93,10 @@ def choose_default_admin(members: list[AdminCandidate], domains: list[StewardDom
     return None
 
 
-def _audit(member_id: uuid.UUID, actor_id: uuid.UUID | None, old: str, new: str) -> MemberStatusTransition:
+def _audit(member_id: uuid.UUID, actor_id: uuid.UUID | None, old: str, new: str, notes: str | None = None) -> MemberStatusTransition:
     return MemberStatusTransition(
         id=uuid.uuid4(), member_id=member_id, date=dates.utc_today(), trigger=ADMIN_AUDIT,
-        actor_member_id=actor_id, from_status=old[:50], to_status=new[:50],
+        actor_member_id=actor_id, from_status=old[:50], to_status=new[:50], notes=notes,
     )
 
 
@@ -131,9 +131,10 @@ async def _caller_can_manage(session, caller: Member | None) -> bool:
 
 
 async def _caller_can_edit(session, caller: Member | None) -> bool:
-    """Change the roster: an active owner-tier member, or an active internal (Lead Link) admin.
+    """Grant a link: an active owner-tier member, or an active internal (Lead Link) admin.
 
-    An external rep is the public contact and cannot grant, revoke, or re-designate.
+    An external rep cannot grant. Removing or re-designating someone else is narrower
+    (`_can_remove`): only that admin, or a node admin.
     """
     if caller is None or caller.current_status != "active":
         return False
@@ -147,9 +148,19 @@ async def _caller_can_edit(session, caller: Member | None) -> bool:
     return held is not None
 
 
-def _require_manager(caller: Member | None, allowed: bool) -> None:
+async def _actor_is_node_admin(session, user_id) -> bool:
+    """The platform administrator of this NEOS node: an enabled NodeAdmin assignment on the User."""
+    from neos_agent.services.node_admin import is_node_admin
+    return await is_node_admin(session, user_id)
+
+
+def _require_manager(allowed: bool, message: str) -> None:
     if not allowed:
-        raise ApiError(403, "Only an owner or an internal admin can change ecosystem admins.", {"code": ADMIN_REQUIRED})
+        raise ApiError(403, message, {"code": ADMIN_REQUIRED})
+
+
+_GRANT_DENIED = "Only an owner, an internal admin, or a node admin can grant an ecosystem admin."
+_REMOVE_DENIED = "Only that admin or a node admin can remove or re-designate an ecosystem admin."
 
 
 async def _active_target(session, ecosystem_id: uuid.UUID, member_id: uuid.UUID) -> Member:
@@ -171,17 +182,32 @@ async def _rows(session, ecosystem_id: uuid.UUID, *, lock: bool = False):
     return list((await session.scalars(statement)).all())
 
 
-def _last_admin_blocked(rows, member_id: uuid.UUID, dropping: set[str]) -> bool:
-    """True when this change would leave the ecosystem with no admin."""
-    remaining = {
-        row.member_id for row in rows
-        if not (row.member_id == member_id and row.designation in dropping)
-    }
-    return not remaining
+async def has_active_admin(session, ecosystem_id: uuid.UUID) -> bool:
+    """True when an active, non-disabled member holds an internal or external link."""
+    enabled = select(User.id).where(User.disabled_at.is_(None))
+    held = await session.scalar(select(EcosystemAdmin.id).join(Member, Member.id == EcosystemAdmin.member_id).where(
+        EcosystemAdmin.ecosystem_id == ecosystem_id,
+        Member.current_status == "active",
+        Member.user_id.in_(enabled),
+    ))
+    return held is not None
 
 
-async def list_admins(session, caller: Member | None, ecosystem_id: uuid.UUID) -> list[dict]:
-    _require_manager(caller, await _caller_can_manage(session, caller) and caller.ecosystem_id == ecosystem_id)
+async def _seat_held(session, ecosystem_id: uuid.UUID, designation: str) -> bool:
+    enabled = select(User.id).where(User.disabled_at.is_(None))
+    held = await session.scalar(select(EcosystemAdmin.id).join(Member, Member.id == EcosystemAdmin.member_id).where(
+        EcosystemAdmin.ecosystem_id == ecosystem_id,
+        EcosystemAdmin.designation == designation,
+        Member.current_status == "active",
+        Member.user_id.in_(enabled),
+    ))
+    return held is not None
+
+
+async def list_admins(session, caller: Member | None, ecosystem_id: uuid.UUID, *, actor_user_id=None) -> list[dict]:
+    allowed = await _actor_is_node_admin(session, actor_user_id) or (
+        await _caller_can_manage(session, caller) and caller is not None and caller.ecosystem_id == ecosystem_id)
+    _require_manager(allowed, "Only an owner or an ecosystem admin can view ecosystem admins.")
     rows = await _rows(session, ecosystem_id)
     names = {}
     grouped: dict[uuid.UUID, dict] = {}
@@ -196,11 +222,12 @@ async def list_admins(session, caller: Member | None, ecosystem_id: uuid.UUID) -
     return list(grouped.values())
 
 
-async def grant_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str) -> str:
+async def grant_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str, *, actor_user_id=None) -> str:
     """Add one designation. Returns `created` or `exists`."""
-    if caller is None or caller.ecosystem_id != ecosystem_id:
-        _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_edit(session, caller))
+    node_admin = await _actor_is_node_admin(session, actor_user_id)
+    in_ecosystem = caller is not None and caller.ecosystem_id == ecosystem_id
+    if not node_admin and not (in_ecosystem and await _caller_can_edit(session, caller)):
+        _require_manager(False, _GRANT_DENIED)
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     await _active_target(session, ecosystem_id, member_id)
@@ -212,35 +239,44 @@ async def grant_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, m
         return "exists"
     session.add(EcosystemAdmin(
         id=uuid.uuid4(), ecosystem_id=ecosystem_id, member_id=member_id, designation=designation,
-        appointed_by_member_id=caller.id,
+        appointed_by_member_id=caller.id if in_ecosystem else None,
     ))
-    session.add(_audit(member_id, caller.id, "none", designation))
+    session.add(_audit(member_id, caller.id if in_ecosystem else None, "none", designation, "node admin" if node_admin else None))
     await session.flush()
     return "created"
 
 
-async def revoke_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str) -> None:
-    if caller is None or caller.ecosystem_id != ecosystem_id:
-        _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_edit(session, caller))
+async def revoke_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str, *, actor_user_id=None) -> None:
+    """Remove one link. Only that admin, or a node admin, may do it. The ecosystem may be left with none."""
+    node_admin = await _actor_is_node_admin(session, actor_user_id)
+    self_removal = (
+        caller is not None and caller.id == member_id and caller.ecosystem_id == ecosystem_id
+        and caller.current_status == "active"
+    )
+    if not node_admin and not self_removal:
+        _require_manager(False, _REMOVE_DENIED)
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     rows = await _rows(session, ecosystem_id, lock=True)
     held = [row for row in rows if row.member_id == member_id and row.designation == designation]
     if not held:
         raise ApiError(404, "That admin designation was not found")
-    if _last_admin_blocked(rows, member_id, {designation}):
-        raise ApiError(409, "An ecosystem keeps at least one admin.", {"code": LAST_ADMIN})
     await session.delete(held[0])
-    session.add(_audit(member_id, caller.id, designation, "none"))
+    session.add(_audit(
+        member_id, caller.id if self_removal else None, designation, "none", "node admin" if node_admin and not self_removal else None,
+    ))
     await session.flush()
 
 
-async def redesignate_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str) -> None:
-    """Leave this admin holding exactly `designation`. They stay an admin, so the last admin is not removed."""
-    if caller is None or caller.ecosystem_id != ecosystem_id:
-        _require_manager(caller, False)
-    _require_manager(caller, await _caller_can_edit(session, caller))
+async def redesignate_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, member_id: uuid.UUID, designation: str, *, actor_user_id=None) -> None:
+    """Leave this admin holding exactly `designation`. Another person's link changes only for that admin or a node admin."""
+    node_admin = await _actor_is_node_admin(session, actor_user_id)
+    self_change = (
+        caller is not None and caller.id == member_id and caller.ecosystem_id == ecosystem_id
+        and caller.current_status == "active"
+    )
+    if not node_admin and not self_change:
+        _require_manager(False, _REMOVE_DENIED)
     if designation not in DESIGNATIONS:
         raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
     await _active_target(session, ecosystem_id, member_id)
@@ -258,18 +294,51 @@ async def redesignate_admin(session, caller: Member | None, ecosystem_id: uuid.U
     if designation not in current:
         session.add(EcosystemAdmin(
             id=uuid.uuid4(), ecosystem_id=ecosystem_id, member_id=member_id, designation=designation,
+            appointed_by_member_id=caller.id if caller is not None else None,
+        ))
+    session.add(_audit(
+        member_id, caller.id if self_change else None, previous, designation,
+        "node admin" if node_admin and not self_change else None,
+    ))
+    await session.flush()
+
+
+async def claim_admin(session, caller: Member | None, ecosystem_id: uuid.UUID, designations: list[str]) -> None:
+    """Take a vacant seat for yourself. A held seat, or a claim for anyone else, is refused.
+
+    The ecosystem row is locked for the transaction so two claims of one vacant seat cannot both succeed.
+    """
+    if caller is None or caller.ecosystem_id != ecosystem_id or caller.current_status != "active":
+        raise ApiError(403, "Only an active member of this ecosystem can claim a vacant admin seat.", {"code": ADMIN_REQUIRED})
+    user = await session.get(User, caller.user_id)
+    if user is None or user.disabled_at is not None:
+        raise ApiError(403, "Only an active member of this ecosystem can claim a vacant admin seat.", {"code": ADMIN_REQUIRED})
+    designations = list(dict.fromkeys(designations))
+    if not designations or any(item not in DESIGNATIONS for item in designations):
+        raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
+    locked = await session.scalar(select(Ecosystem).where(Ecosystem.id == ecosystem_id).with_for_update())
+    if locked is None:
+        raise ApiError(404, "Ecosystem not found")
+    await session.execute(
+        sa.update(Ecosystem).where(Ecosystem.id == ecosystem_id).values(updated_at=sa.func.now())
+    )
+    for designation in designations:
+        if await _seat_held(session, ecosystem_id, designation):
+            raise ApiError(403, "That admin seat is already held.", {"code": SEAT_HELD})
+        session.add(EcosystemAdmin(
+            id=uuid.uuid4(), ecosystem_id=ecosystem_id, member_id=caller.id, designation=designation,
             appointed_by_member_id=caller.id,
         ))
-    session.add(_audit(member_id, caller.id, previous, designation))
+        session.add(_audit(caller.id, caller.id, "none", designation, "self-claim"))
     await session.flush()
 
 
 async def resolve_public_contact(session, ecosystem_id, *, lock: bool = False):
-    """The public contact: external rep, else an internal admin, else an owner-tier member.
+    """The public contact: external rep, else an internal admin, else none.
 
-    Returns `(member, role label)` or None. The label is `external`, `internal`, or `owner`.
-    Disabled accounts and non-active rows are skipped. The same result is what a direct
-    message may be opened with.
+    Returns `(member, role label)` or None. The label is `external` or `internal`.
+    An ecosystem with no active admin has no public contact. Disabled accounts and
+    non-active rows are skipped. Direct messages use this same person.
     """
     enabled = select(User.id).where(User.disabled_at.is_(None))
     rows = (await session.execute(
@@ -288,14 +357,6 @@ async def resolve_public_contact(session, ecosystem_id, *, lock: bool = False):
         chosen = next(((admin, member) for admin, member in rows if admin.designation == INTERNAL), None)
         label = INTERNAL
     member = chosen[1] if chosen is not None else None
-    if member is None:
-        member = await session.scalar(select(Member).where(
-            Member.ecosystem_id == ecosystem_id,
-            Member.role == "owner",
-            Member.current_status == "active",
-            Member.user_id.in_(enabled),
-        ).order_by(Member.created_at.asc(), Member.id.asc()).limit(1))
-        label = "owner"
     if member is None:
         return None
     if lock:

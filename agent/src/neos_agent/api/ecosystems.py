@@ -20,7 +20,7 @@ from neos_agent.db.course_models import Quiz, QuizResult
 from neos_agent.services.fingerprint import generate_fingerprint
 from neos_agent.services.agreement_consent import missing_agreement_consents
 from neos_agent.services.ecosystem_admins import (
-    ensure_default_admin, grant_admin, list_admins, redesignate_admin, revoke_admin,
+    claim_admin, ensure_default_admin, grant_admin, list_admins, redesignate_admin, revoke_admin,
 )
 from neos_agent.services.member_lifecycle import JOINED, counts_as_member, place_member, placement_payload  # G-Onboard
 from neos_agent.services.member_messaging import owner_contact
@@ -336,8 +336,26 @@ async def get_ecosystem_admins(request: Request, ecosystem_id: uuid.UUID):
     """Owners and ecosystem admins: the cross-link roster. Not a public list."""
     async with request.app.ctx.db() as db:
         caller = await caller_in(db, request, ecosystem_id)
-        admins = await list_admins(db, caller, ecosystem_id)
+        admins = await list_admins(db, caller, ecosystem_id, actor_user_id=caller_user_id(request))
     return json({"admins": admins})
+
+
+@ecosystems_api_bp.post("/<ecosystem_id:uuid>/admins/claim")
+@authenticated
+async def claim_ecosystem_admin(request: Request, ecosystem_id: uuid.UUID):
+    """Take a vacant internal and/or external seat for yourself. A held seat is refused."""
+    body = request.json or {}
+    raw = body.get("designations")
+    if raw is None:
+        one = body.get("designation")
+        raw = ["internal", "external"] if one == "both" else [one]
+    if not isinstance(raw, list):
+        raise ApiError(400, "designation must be 'internal' or 'external'.", {"field": "designation"})
+    async with request.app.ctx.db() as db:
+        caller = await caller_in(db, request, ecosystem_id)
+        await claim_admin(db, caller, ecosystem_id, raw)
+        await db.commit()
+    return json({"designations": raw}, status=201)
 
 
 @ecosystems_api_bp.post("/<ecosystem_id:uuid>/admins")
@@ -355,7 +373,9 @@ async def post_ecosystem_admin(request: Request, ecosystem_id: uuid.UUID):
         raise ApiError(400, "member_id is required", {"field": "member_id"}) from None
     async with request.app.ctx.db() as db:
         caller = await caller_in(db, request, ecosystem_id)
-        outcome = await grant_admin(db, caller, ecosystem_id, member_id, body.get("designation"))
+        outcome = await grant_admin(
+            db, caller, ecosystem_id, member_id, body.get("designation"), actor_user_id=caller_user_id(request),
+        )
         await db.commit()
     return json({"member_id": str(member_id), "designation": body.get("designation"), "status": outcome}, status=201 if outcome == "created" else 200)
 
@@ -367,7 +387,9 @@ async def put_ecosystem_admin(request: Request, ecosystem_id: uuid.UUID, member_
     body = request.json or {}
     async with request.app.ctx.db() as db:
         caller = await caller_in(db, request, ecosystem_id)
-        await redesignate_admin(db, caller, ecosystem_id, member_id, body.get("designation"))
+        await redesignate_admin(
+            db, caller, ecosystem_id, member_id, body.get("designation"), actor_user_id=caller_user_id(request),
+        )
         await db.commit()
     return json({"member_id": str(member_id), "designation": body.get("designation")})
 
@@ -379,7 +401,9 @@ async def delete_ecosystem_admin(request: Request, ecosystem_id: uuid.UUID, memb
     designation = request.args.get("designation")
     async with request.app.ctx.db() as db:
         caller = await caller_in(db, request, ecosystem_id)
-        await revoke_admin(db, caller, ecosystem_id, member_id, designation)
+        await revoke_admin(
+            db, caller, ecosystem_id, member_id, designation, actor_user_id=caller_user_id(request),
+        )
         await db.commit()
     return json({"member_id": str(member_id), "designation": designation, "status": "revoked"})
 

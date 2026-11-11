@@ -7,6 +7,7 @@ is that same person. A later role='owner' grant outranks the co_creator.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import uuid
 from datetime import datetime
@@ -19,6 +20,7 @@ from alembic.operations import Operations
 from sanic import Sanic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import neos_agent.db.course_models  # noqa: F401
 from neos_agent.agent.governance_tools import create_ecosystem
@@ -26,10 +28,11 @@ from neos_agent.api.communities import communities_api_bp
 from neos_agent.api.ecosystems import ecosystems_api_bp
 from neos_agent.api.errors import register_api_errors
 from neos_agent.api.messaging import messaging_api_bp
+from neos_agent.api.quizzes import quizzes_api_bp
 from neos_agent.db.models import (
-    Base, Domain, Ecosystem, EcosystemAdmin, Member, MemberStatusTransition, User,
+    Base, Domain, Ecosystem, EcosystemAdmin, Member, MemberStatusTransition, NodeAdmin, User,
 )
-from neos_agent.services.ecosystem_admins import AdminCandidate, StewardDomain, choose_default_admin
+from neos_agent.services.ecosystem_admins import AdminCandidate, StewardDomain, choose_default_admin, claim_admin
 from .test_platform_admin_migration import BACKENDS, _engine
 
 MIGRATION_PATH = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "b8d3f1a6c4e2_ecosystem_cross_link_admins.py"
@@ -158,12 +161,14 @@ PEER = uuid.uuid4()
 OUTSIDER = uuid.uuid4()
 OWNER = uuid.uuid4()
 PENDING = uuid.uuid4()
+NODE = uuid.uuid4()
 PEOPLE = {
     "founder": (FOUNDER, "user", "active", "co_creator"),
     "peer": (PEER, "user", "active", None),
     "outsider": (OUTSIDER, "user", "active", None),
     "owner": (OWNER, "owner", "active", None),
     "pending": (PENDING, "user", "pending_consent", None),
+    "node": (NODE, "user", "active", None),
 }
 
 
@@ -183,6 +188,7 @@ async def _seed_api(session: AsyncSession) -> None:
         session.add(EcosystemAdmin(
             ecosystem_id=ECO, member_id=FOUNDER, designation=designation, appointed_by_member_id=FOUNDER,
         ))
+    session.add(NodeAdmin(user_id=NODE, active=True))
     await session.commit()
 
 
@@ -204,7 +210,7 @@ def _app() -> Sanic:
         request.ctx.selected_ecosystem_ids = [ECO] if status == "active" else []
         request.ctx.authorized_ecosystem_ids = [ECO] if status == "active" else []
 
-    for blueprint in (ecosystems_api_bp, communities_api_bp, messaging_api_bp):
+    for blueprint in (ecosystems_api_bp, communities_api_bp, messaging_api_bp, quizzes_api_bp):
         app.blueprint(blueprint)
     return app
 
@@ -254,7 +260,7 @@ async def _links_of(session, ecosystem_id):
     return {(row.member_id, row.designation) for row in rows}
 
 
-async def test_non_admins_cannot_grant_and_the_last_admin_cannot_be_removed(api):
+async def test_non_admins_cannot_grant_and_self_removal_can_leave_none(api):
     body = {"member_id": str(PEER), "designation": "external"}
     refused = await _call(api, "post", "outsider", f"/api/v1/ecosystems/{ECO}/admins", json=body)
     assert refused.status == 403 and refused.json["code"] == "ADMIN_REQUIRED"
@@ -267,21 +273,18 @@ async def test_non_admins_cannot_grant_and_the_last_admin_cannot_be_removed(api)
     assert granted.status == 201
     again = await _call(api, "post", "owner", f"/api/v1/ecosystems/{ECO}/admins", json=body)
     assert again.status == 200 and again.json["status"] == "exists"
-    moved = await _call(api, "put", "founder", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "internal"})
+    # An owner or internal admin cannot re-designate or remove someone else.
+    assert (await _call(api, "put", "founder", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "internal"})).status == 403
+    assert (await _call(api, "delete", "owner", f"/api/v1/ecosystems/{ECO}/admins/{PEER}?designation=external")).status == 403
+    moved = await _call(api, "put", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "internal"})
     assert moved.status == 200
-    # Founder still holds both, so dropping one link is allowed.
-    dropped = await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
-    assert dropped.status == 200
-    dropped = await _call(api, "delete", "owner", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
-    assert dropped.status == 200
-    # Peer is the only remaining admin. Removing that link is refused.
-    last = await _call(api, "delete", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}?designation=internal")
-    assert last.status == 409 and last.json["code"] == "LAST_ADMIN"
+    # The founder removes their own links. The ecosystem can be left with one admin, then with none.
+    assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")).status == 200
+    assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")).status == 200
+    assert (await _call(api, "delete", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}?designation=internal")).status == 200
     async with api.ctx.db() as session:
-        assert await _links_of(session, ECO) == {(PEER, "internal")}
-        assert await session.scalar(select(func.count(MemberStatusTransition.id)).where(
-            MemberStatusTransition.trigger == "ecosystem_admin", MemberStatusTransition.actor_member_id.is_not(None),
-        )) >= 1
+        assert await _links_of(session, ECO) == set()
+    assert (await _call(api, "get", None, f"/api/v1/communities/{ECO}")).json["owner"] is None
 
 
 async def test_public_contact_is_the_external_rep_and_is_the_only_person_a_pending_account_can_message(api):
@@ -300,8 +303,7 @@ async def test_public_contact_is_the_external_rep_and_is_the_only_person_a_pendi
     assert refused.status == 403
 
     await _call(api, "post", "founder", f"/api/v1/ecosystems/{ECO}/admins",
-                json={"member_id": str(PEER), "designation": "internal"})
-    await _call(api, "put", "founder", f"/api/v1/ecosystems/{ECO}/admins/{PEER}", json={"designation": "external"})
+                json={"member_id": str(PEER), "designation": "external"})
     await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
     await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
     community = await _call(api, "get", None, f"/api/v1/communities/{ECO}")
@@ -315,13 +317,99 @@ async def test_public_contact_is_the_external_rep_and_is_the_only_person_a_pendi
     assert refused.status == 403
 
 
-async def test_an_external_admin_cannot_grant_or_revoke(api):
-    dropped = await _call(api, "delete", "owner", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")
-    assert dropped.status == 200
+async def test_an_external_admin_cannot_grant_or_revoke_someone_else(api):
+    assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")).status == 200
     grant = await _call(api, "post", "founder", f"/api/v1/ecosystems/{ECO}/admins",
                         json={"member_id": str(PEER), "designation": "internal"})
-    revoke = await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
+    revoke = await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{OWNER}?designation=external")
     assert grant.status == 403 and grant.json["code"] == "ADMIN_REQUIRED"
     assert revoke.status == 403 and revoke.json["code"] == "ADMIN_REQUIRED"
     async with api.ctx.db() as session:
         assert await _links_of(session, ECO) == {(FOUNDER, "external")}
+
+
+async def test_only_the_admin_or_a_node_admin_can_remove_a_link(api):
+    refused = await _call(api, "delete", "owner", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
+    assert refused.status == 403 and refused.json["code"] == "ADMIN_REQUIRED"
+    assert (await _call(api, "put", "owner", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}", json={"designation": "internal"})).status == 403
+    assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=internal")).status == 200
+    removed = await _call(api, "delete", "node", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation=external")
+    assert removed.status == 200
+    async with api.ctx.db() as session:
+        assert await _links_of(session, ECO) == set()
+        claimed = await session.scalar(select(func.count(MemberStatusTransition.id)).where(
+            MemberStatusTransition.notes == "node admin"))
+    assert claimed == 1
+
+
+async def test_active_members_claim_vacant_seats_and_a_held_seat_is_refused(api):
+    for designation in ("internal", "external"):
+        assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation={designation}")).status == 200
+    assert (await _call(api, "get", None, f"/api/v1/communities/{ECO}")).json["owner"] is None
+    pending = await _call(api, "post", "pending", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "internal"})
+    assert pending.status == 403
+    internal = await _call(api, "post", "outsider", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "internal"})
+    assert internal.status == 201
+    held = await _call(api, "post", "peer", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "internal"})
+    assert held.status == 403 and held.json["code"] == "SEAT_HELD"
+    external = await _call(api, "post", "peer", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "external"})
+    assert external.status == 201
+    async with api.ctx.db() as session:
+        assert await _links_of(session, ECO) == {(OUTSIDER, "internal"), (PEER, "external")}
+    assert (await _call(api, "delete", "outsider", f"/api/v1/ecosystems/{ECO}/admins/{OUTSIDER}?designation=internal")).status == 200
+    assert (await _call(api, "delete", "peer", f"/api/v1/ecosystems/{ECO}/admins/{PEER}?designation=external")).status == 200
+    both = await _call(api, "post", "outsider", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "both"})
+    assert both.status == 201
+    held_again = await _call(api, "post", "peer", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "external"})
+    assert held_again.status == 403 and held_again.json["code"] == "SEAT_HELD"
+    async with api.ctx.db() as session:
+        assert await _links_of(session, ECO) == {(OUTSIDER, "internal"), (OUTSIDER, "external")}
+        assert await session.scalar(select(func.count(MemberStatusTransition.id)).where(
+            MemberStatusTransition.notes == "self-claim")) == 4
+
+
+async def test_plain_member_creates_a_quiz_only_while_the_ecosystem_has_no_admin(api):
+    quiz = {"title": "How we decide", "ecosystem_id": str(ECO)}
+    gated = await _call(api, "post", "outsider", "/api/v1/quizzes", json=quiz)
+    assert gated.status == 403
+    for designation in ("internal", "external"):
+        assert (await _call(api, "delete", "founder", f"/api/v1/ecosystems/{ECO}/admins/{FOUNDER}?designation={designation}")).status == 200
+    assert (await _call(api, "post", "pending", "/api/v1/quizzes", json=quiz)).status == 403
+    opened = await _call(api, "post", "outsider", "/api/v1/quizzes", json=quiz)
+    assert opened.status == 201 and opened.json["title"] == "How we decide"
+    assert (await _call(api, "post", "outsider", f"/api/v1/ecosystems/{ECO}/admins/claim", json={"designation": "internal"})).status == 201
+    assert (await _call(api, "post", "peer", "/api/v1/quizzes", json={"title": "Another", "ecosystem_id": str(ECO)})).status == 403
+
+
+async def test_concurrent_claims_of_one_vacant_seat_leave_a_single_holder(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'claims.db'}", poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    eco_id, first, second = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    async with factory() as session:
+        session.add(Ecosystem(id=eco_id, name="Race", status="active", visibility="public"))
+        session.add_all([User(id=first, display_name="First"), User(id=second, display_name="Second")])
+        await session.flush()
+        session.add_all([
+            Member(id=first, ecosystem_id=eco_id, user_id=first, member_id="M1", display_name="First", current_status="active", role="user"),
+            Member(id=second, ecosystem_id=eco_id, user_id=second, member_id="M2", display_name="Second", current_status="active", role="user"),
+        ])
+        await session.commit()
+
+    async def claim(member_id):
+        async with factory() as session:
+            caller = await session.get(Member, member_id)
+            try:
+                await claim_admin(session, caller, eco_id, ["internal"])
+                await session.commit()
+                return "claimed"
+            except Exception as exc:
+                await session.rollback()
+                return getattr(exc, "status", None)
+
+    results = await asyncio.gather(claim(first), claim(second))
+    assert results.count("claimed") == 1 and results.count(403) == 1
+    async with factory() as session:
+        assert len(await _links_of(session, eco_id)) == 1
+    await engine.dispose()
