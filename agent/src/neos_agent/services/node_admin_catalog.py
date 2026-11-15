@@ -63,7 +63,7 @@ EVIDENCE = frozenset({
     "quiz_results", "conversation_links",
 })
 SECURITY = frozenset({"auth_sessions", "auth_challenges", "agent_tokens", "push_subscriptions"})
-INTERNAL = frozenset({"node_admins", "node_admin_actions", "node_admin_snapshots"})
+INTERNAL = frozenset({"node_admins", "node_admin_actions", "node_admin_snapshots", "ecosystem_admins"})
 INTERNAL = INTERNAL | {"orientation_chat_sessions", "matching_consents", "ecosystem_matching_profiles", "matching_answers", "matching_assessments"}
 INTERNAL = INTERNAL | {
     "engagement_preferences", "engagement_subscriptions", "engagement_events", "engagement_inbox_items",

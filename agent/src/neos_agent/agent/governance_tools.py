@@ -2019,6 +2019,8 @@ async def create_ecosystem(
     )
     db.add(core_domain)
     await db.flush()
+    from neos_agent.services.ecosystem_admins import ensure_default_admin
+    await ensure_default_admin(db, founding_member)
 
     return {
         "success": True,

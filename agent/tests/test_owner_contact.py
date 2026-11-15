@@ -1,7 +1,8 @@
 """Public owner contact, and who may start a direct conversation with that owner.
 
-The contact is the oldest active member with role owner whose account is not
-disabled. Payloads carry that person's display name, role label and member id.
+The contact is the external admin when one is active, else an internal admin.
+With no active admin the payload is null. Payloads carry that person's display
+name, role label and member id.
 A pending account can message that owner and no other member.
 """
 
@@ -23,7 +24,7 @@ from neos_agent.api.ecosystems import ecosystems_api_bp
 from neos_agent.api.errors import register_api_errors
 from neos_agent.api.messaging import messaging_api_bp
 from neos_agent.api.orientation import orientation_api_bp
-from neos_agent.db.models import Base, Conversation, Ecosystem, Member, User
+from neos_agent.db.models import Base, Conversation, Ecosystem, EcosystemAdmin, Member, User
 from neos_agent.messaging.handlers import _last_message_times
 
 HARBOR = uuid.UUID("0000000c-0000-0000-0000-000000000001")
@@ -89,6 +90,12 @@ async def _seed(session: AsyncSession) -> None:
             display_name=person.name, current_status=person.status, role=person.role,
             created_at=getattr(person, "created_at", datetime(2022, 1, 1)),
         ))
+    await session.flush()
+    for designation in ("internal", "external"):
+        session.add(EcosystemAdmin(
+            ecosystem_id=HARBOR, member_id=MEMBER_IDS["ada"], designation=designation,
+            appointed_by_member_id=MEMBER_IDS["ada"],
+        ))
     await session.commit()
 
 
@@ -138,7 +145,7 @@ async def _call(app: Sanic, method: str, who: str | None, url: str, **kwargs):
 
 def _assert_owner(owner: dict) -> None:
     assert set(owner) == {"id", "display_name", "role"}
-    assert owner == {"id": str(MEMBER_IDS["ada"]), "display_name": "Ada", "role": "owner"}
+    assert owner == {"id": str(MEMBER_IDS["ada"]), "display_name": "Ada", "role": "external"}
 
 
 def _assert_no_sentinels(body: str) -> None:

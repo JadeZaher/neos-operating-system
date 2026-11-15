@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from neos_agent.api.next_steps import next_steps_api_bp
 from neos_agent.auth.ecosystem_scope import EcosystemScope
 from neos_agent.db.models import AdviceLog, Base, Proposal
+from neos_agent.services.dates import aoe_today
 from tests.test_uxqa_p1_governance import (
     ECO, PEOPLE, _call, _create_app, _create_proposal, _open_for_advice, _seed,
 )
 
-TODAY = dt.date.today()
+TODAY = aoe_today()  # due dates pass on the server's Anywhere-on-Earth day, not the UTC calendar day
 STEWARD_PROMPT = "close advice for the proposer"
 
 

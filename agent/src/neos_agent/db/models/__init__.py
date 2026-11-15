@@ -14,6 +14,7 @@ from .engagement import (
     NotificationConsumption, NotificationWebhookReceipt, NotificationRateLimit,
 )
 from .ecosystem import Ecosystem  # noqa: F401
+from .ecosystemadmin import EcosystemAdmin  # noqa: F401
 from .user import User  # noqa: F401
 from .member import Member  # noqa: F401
 from .memberdecision import MemberDecision  # noqa: F401
@@ -90,6 +91,7 @@ __all__ = [
     "GUID",
     "TimestampMixin",
     "Ecosystem",
+    "EcosystemAdmin",
     "User",
     "Member",
     "MemberDecision",
