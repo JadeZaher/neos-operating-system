@@ -38,13 +38,19 @@ from ._base import Base, GUID, TimestampMixin
 class Conversation(TimestampMixin, Base):
     """An ecosystem-scoped conversation thread (DM or group)."""
     __tablename__ = "conversations"
-    __table_args__ = (Index("ix_conversations_ecosystem_id", "ecosystem_id"),)
+    __table_args__ = (
+        Index("ix_conversations_ecosystem_id", "ecosystem_id"),
+        # Set only on direct threads created after this column existed. NULL on groups and on
+        # older DMs, including duplicate pairs: a unique index allows many NULLs, so those rows stay.
+        UniqueConstraint("dm_pair_key", name="uq_conversations_dm_pair_key"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     ecosystem_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("ecosystems.id"), nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)  # "dm" | "group"
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("members.id"), nullable=False)
+    dm_pair_key: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
 
     # Relationships
     participants: Mapped[list["ConversationParticipant"]] = relationship(

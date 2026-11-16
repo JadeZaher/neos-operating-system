@@ -253,7 +253,7 @@ async def test_active_members_still_message_other_members(app):
     assert first.status == 201
     second = await _call(app, "post", "cai", "/api/v1/messaging/conversations",
                          json={"type": "dm", "participant_ids": [str(MEMBER_IDS["bea"])]})
-    assert second.status == 201 and second.json["id"] != first.json["id"]
+    assert second.status == 200 and second.json["id"] == first.json["id"]
     sent = await _call(app, "post", "cai", f"/api/v1/messaging/conversations/{first.json['id']}/messages",
                        json={"content": "Are you coming to the harbor meeting?"})
     assert sent.status == 201

@@ -1,5 +1,14 @@
 # alembic - schema migrations
 
+## c1a9e4b7d2f6: direct-message pair key
+
+Follows `b8d3f1a6c4e2`. Adds nullable `conversations.dm_pair_key` and unique
+index `uq_conversations_dm_pair_key` when either is missing. Existing rows,
+including duplicate direct threads, stay NULL. The index allows many NULLs, so
+the revision does not delete or merge anything. A second upgrade is a no-op.
+Downgrade drops the index and the column. `tests/test_dm_get_or_create.py`
+covers the repeat upgrade and the preserved duplicates on SQLite.
+
 ## b8d3f1a6c4e2: ecosystem cross-link admins
 
 Follows `z6f0c4e8b2d5`. Creates `ecosystem_admins` when the table is missing

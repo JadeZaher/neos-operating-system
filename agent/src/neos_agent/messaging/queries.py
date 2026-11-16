@@ -11,24 +11,37 @@ from neos_agent.db.models import (
 )
 
 
-async def _find_existing_dm(db, member_a_id, member_b_id, ecosystem_id):
-    """Return the existing DM conversation between two members, or None."""
+def dm_pair_key(member_a_id, member_b_id) -> str:
+    """Stable key for one unordered pair of member ids. Groups and legacy rows leave it unset."""
+    left, right = sorted((str(member_a_id), str(member_b_id)))
+    return f"{left}:{right}"
+
+
+async def _find_existing_dm(db, member_a_id, member_b_id, ecosystem_id=None):
+    """The oldest direct thread whose participants are exactly this pair, or None.
+
+    ``ecosystem_id`` narrows the search when given. Duplicate legacy rows are left in place;
+    the oldest one is the thread later creates reuse.
+    """
+    pair = {member_a_id, member_b_id}
     stmt = (
         select(Conversation)
         .join(ConversationParticipant, ConversationParticipant.conversation_id == Conversation.id)
         .where(Conversation.type == "dm")
-        .where(Conversation.ecosystem_id == ecosystem_id)
-        .where(ConversationParticipant.member_id.in_([member_a_id, member_b_id]))
+        .where(ConversationParticipant.member_id.in_(list(pair)))
+        .order_by(Conversation.created_at.asc(), Conversation.id.asc())
     )
-    result = await db.execute(stmt)
-    convos = result.scalars().unique().all()
-    for convo in convos:
-        participant_result = await db.execute(
-            select(ConversationParticipant.member_id)
-            .where(ConversationParticipant.conversation_id == convo.id)
-        )
-        member_ids = {row[0] for row in participant_result.all()}
-        if member_ids == {member_a_id, member_b_id}:
+    if ecosystem_id is not None:
+        stmt = stmt.where(Conversation.ecosystem_id == ecosystem_id)
+    seen = set()
+    for convo in (await db.execute(stmt)).scalars():
+        if convo.id in seen:
+            continue
+        seen.add(convo.id)
+        member_ids = set((await db.scalars(
+            select(ConversationParticipant.member_id).where(ConversationParticipant.conversation_id == convo.id)
+        )).all())
+        if member_ids == pair:
             return convo
     return None
 
