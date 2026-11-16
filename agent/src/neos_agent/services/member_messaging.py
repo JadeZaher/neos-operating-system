@@ -7,12 +7,13 @@ import logging
 from types import SimpleNamespace
 
 from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
 
 from neos_agent.api.errors import ApiError
 from neos_agent.api.schemas.messaging import MessageSchema, ParticipantSummary
 from neos_agent.db.models import Conversation, ConversationLink, ConversationParticipant, Ecosystem, Member, Message
-from neos_agent.messaging.queries import _find_existing_dm
+from neos_agent.messaging.queries import _find_existing_dm, dm_pair_key
 
 logger = logging.getLogger(__name__)
 
@@ -326,13 +327,51 @@ async def prepare_thread(session, user_id, ecosystem_id, participant_ids, *, typ
     return creator, sorted(recipients, key=lambda row: str(row.id)), kind, title
 
 
+async def _direct_pair(session, creator_id, recipient_id):
+    """The direct thread for this unordered pair: a keyed row, else the oldest legacy row."""
+    key = dm_pair_key(creator_id, recipient_id)
+    keyed = await session.scalar(
+        select(Conversation).where(Conversation.dm_pair_key == key)
+        .order_by(Conversation.created_at.asc(), Conversation.id.asc()).limit(1)
+    )
+    if keyed is not None:
+        return keyed
+    return await _find_existing_dm(session, creator_id, recipient_id)
+
+
+async def _insert_direct(session, creator, recipient, ecosystem_id, title, key):
+    conversation = Conversation(
+        id=uuid.uuid4(), ecosystem_id=ecosystem_id, type="dm", title=title, created_by=creator.id, dm_pair_key=key,
+    )
+    session.add(conversation)
+    await session.flush()
+    for member, role in ((creator, "owner"), (recipient, "member")):
+        session.add(ConversationParticipant(
+            id=uuid.uuid4(), conversation_id=conversation.id, member_id=member.id, role=role,
+        ))
+    await session.flush()
+    return conversation
+
+
 async def open_thread(session, prepared):
     creator, recipients, kind, title = prepared
     ecosystem_id = getattr(prepared, "ecosystem_id", None) or creator.ecosystem_id
     session.info["reused_dm"] = False
-    if getattr(prepared, "reuse_dm", False) and kind == "dm" and len(recipients) == 1:
-        existing = await _find_existing_dm(session, creator.id, recipients[0].id, ecosystem_id)
+    if kind == "dm" and len(recipients) == 1:
+        recipient = recipients[0]
+        existing = await _direct_pair(session, creator.id, recipient.id)
         if existing is not None:
+            session.info["reused_dm"] = True
+            return existing
+        key = dm_pair_key(creator.id, recipient.id)
+        try:
+            async with session.begin_nested():
+                return await _insert_direct(session, creator, recipient, ecosystem_id, title, key)
+        except IntegrityError:
+            # The other side of a race inserted this pair. The savepoint is rolled back; read the winner.
+            existing = await _direct_pair(session, creator.id, recipient.id)
+            if existing is None:
+                raise
             session.info["reused_dm"] = True
             return existing
     conversation = Conversation(id=uuid.uuid4(), ecosystem_id=ecosystem_id, type=kind, title=title, created_by=creator.id)

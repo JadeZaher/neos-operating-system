@@ -18,7 +18,9 @@ pending row may open a direct conversation with the ecosystem's public contact
 (`ecosystem_admins.resolve_public_contact`: the external rep, else an internal
 admin; no active admin means there is no contact).
 Pending rows can message that owner and no one else. A private ecosystem
-still requires a row there. Repeating it reuses the direct conversation.
+still requires a row there. Every direct thread is get-or-create on the
+unordered participant pair: a repeat returns the existing one (legacy
+duplicates are left in place and the oldest is reused). Groups stay new.
 Pending sends use the messaging websocket's one-second limit. Services flush
 but do not commit. Message WebSocket events are queued on the SQLAlchemy
 session and broadcast only after successful commit.

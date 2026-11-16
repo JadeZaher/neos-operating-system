@@ -1266,11 +1266,12 @@ change or remove a link only for that admin or a node admin. An ecosystem may
 have no admins. A member election of the external rep is not implemented.
 `POST /api/v1/quizzes` stays steward-gated while an admin is active; with none,
 any active member of that ecosystem may create one.
-`POST /api/v1/messaging/conversations` with `{"type":"dm","participant_ids":["<owner.id>"]}`
-starts that direct conversation for any signed-in account that has an active or
-pending row (201, or 200 when that pair already has one). Pending accounts still
-cannot message anyone else. A signed-out request is 401. Pending sends reuse the
-websocket message limit (`Rate limit exceeded`, 429).
+`POST /api/v1/messaging/conversations` with `{"type":"dm","participant_ids":["<member id>"]}`
+get-or-creates that direct thread by the unordered participant pair (201 the
+first time, 200 when the pair already has one, including an owner contact).
+A group is always a new thread. Pending accounts may message only the public
+owner. A signed-out request is 401. Pending sends reuse the websocket message
+limit (`Rate limit exceeded`, 429).
 
 The chat UI's `_TOOL_DISPLAY_NAMES` (`api/chat.py`) labels every wave-C tool; `tests/test_exchange_parity.py` fails
 when a tool has no label or a page hint names a tool that does not exist.
